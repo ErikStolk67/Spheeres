@@ -2761,7 +2761,7 @@ const controlTypes = [
 let addFieldContext = { tableName: '', tableId: '', typeBadge: '', color: '' };
 
 // API connection
-const API = '/api';
+const API = window.location.hostname === 'localhost' ? '/api' : 'https://spheeres.onrender.com/api';
 let apiAvailable = false;
 let tableMap = {};
 
