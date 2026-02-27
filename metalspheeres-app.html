@@ -479,6 +479,55 @@
         .te-form-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #334155; }
         .te-form-check input { width: 15px; height: 15px; accent-color: #0EA5E9; }
 
+        /* ============ LOOKUP EDITOR ============ */
+        .le-container { display: flex; height: calc(100vh - 140px); border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden; background: #fff; }
+        .le-tree {
+            width: 240px; min-width: 240px; border-right: 1px solid #E2E8F0;
+            overflow-y: auto; background: #FAFBFC; padding: 8px 0;
+        }
+        .le-tree-entity {
+            padding: 6px 12px; font-size: 13px; font-weight: 600; color: #334155;
+            cursor: pointer; display: flex; align-items: center; gap: 8px;
+        }
+        .le-tree-entity:hover { background: #F1F5F9; }
+        .le-tree-entity .le-expand { width: 16px; font-size: 12px; color: #94A3B8; cursor: pointer; text-align: center; }
+        .le-tree-entity .le-icon { font-size: 14px; }
+        .le-tree-lookup {
+            padding: 5px 12px 5px 40px; font-size: 12px; color: #64748B;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+        }
+        .le-tree-lookup:hover { background: #E0F2FE; color: #0369A1; }
+        .le-tree-lookup.active { background: #DBEAFE; color: #1D4ED8; font-weight: 600; }
+        .le-tree-lookup .le-lk-icon { color: #94A3B8; font-size: 11px; }
+        .le-tree-children { display: none; }
+        .le-tree-children.open { display: block; }
+
+        .le-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .le-toolbar {
+            display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+            border-bottom: 1px solid #E2E8F0; background: #F8FAFC;
+        }
+        .le-toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        .le-search { padding: 6px 12px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 12px; width: 200px; font-family: 'DM Sans', sans-serif; }
+        .le-grid-wrap { flex: 1; overflow: auto; }
+        .le-grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .le-grid thead th {
+            text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600;
+            color: #64748B; text-transform: uppercase; letter-spacing: 0.03em;
+            border-bottom: 2px solid #E2E8F0; background: #FAFBFC; position: sticky; top: 0; z-index: 1;
+            white-space: nowrap;
+        }
+        .le-grid tbody tr { border-bottom: 1px solid #F1F5F9; }
+        .le-grid tbody tr:hover { background: #F0F9FF; }
+        .le-grid tbody td { padding: 8px 12px; color: #334155; white-space: nowrap; }
+        .le-grid .le-enabled { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #22C55E; color: #22C55E; font-size: 14px; }
+        .le-grid .le-disabled { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #EF4444; color: #EF4444; font-size: 14px; }
+        .le-sort-btn { width: 24px; height: 24px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; color: #64748B; }
+        .le-sort-btn:hover { background: #E2E8F0; }
+        .le-edit-btn { padding: 3px 10px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; font-size: 11px; color: #64748B; cursor: pointer; }
+        .le-edit-btn:hover { background: #E2E8F0; }
+        .le-pager { padding: 8px 16px; font-size: 12px; color: #94A3B8; border-top: 1px solid #E2E8F0; }
+
         /* ============ FIELD EDITOR POPUP ============ */
         .add-field-popup {
             background: #fff; border-radius: 14px; width: 960px; max-width: 95vw;
@@ -682,6 +731,7 @@ const menuGroups = [
         icon: "pen-tool", description: "Design tools",
         items: [
             { id: "db_designer", label: "Database Designer", icon: "database" },
+            { id: "lookup_editor", label: "Lookup Editor", icon: "list" },
             { id: "form_designer", label: "Form Designer", icon: "monitor" },
             { id: "canvas_designer", label: "Canvas Designer", icon: "layout-dashboard" },
             { id: "workflow_designer", label: "Workflow Designer", icon: "workflow" },
@@ -764,6 +814,14 @@ function renderContent() {
             <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
             <span class="breadcrumb-item">${item.label}</span>`;
         content.innerHTML = renderDbDesigner();
+    } else if (activeItem === 'lookup_editor') {
+        const { item, group } = findContext();
+        breadcrumb.innerHTML = `
+            <span class="breadcrumb-group">${group.label}</span>
+            <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
+            <span class="breadcrumb-item">${item.label}</span>`;
+        content.innerHTML = renderLookupEditor();
+        initLookupTree();
     } else if (activeItem && activeItem.startsWith('cd_')) {
         const { item, group } = findContext();
         breadcrumb.innerHTML = `
@@ -1256,8 +1314,8 @@ const cdSubTables = {
     'CD_TYPES': ['CD_TYPE_FILTERINGSETTINGS','CD_TYPE_RESTRICTIONS'],
 };
 
-// Combine all CD tables for matrix (main + lookup, NO sub)
-const cdTables = [...cdMainTables, ...cdLookupTables].map(t => {
+// Combine main CD tables for matrix (NO sub, NO lookup)
+const cdTables = cdMainTables.map(t => {
     const subs = cdSubTables[t.name] || [];
     return {...t, cols: ["", subs.length || "", ""]};
 });
@@ -1289,7 +1347,6 @@ CR("CD_DATABASES","CD_TABLES","n");         // cd_dbas_tabl
 CR("CD_DICTIONARIES","CD_DICTIONARYCOMPONENTS","n"); // cd_dict_comp
 CR("CD_DICTIONARIES","CD_DATABASES","n");   // cd_dict_data + cd_dict_dbas
 CR("CD_FIELDS","CD_CONTROLS","n");          // cd_fiel_cntr + cd_fiel_cont
-CR("CD_FIELDS","CD_LK_KINDS","—");          // cd_fiel_kinds (ref to lookup)
 CR("CD_FORMS","CD_CONTROLS","n");           // cd_form_cntr + cd_form_cont
 CR("CD_FUNCTIONS","CD_DICTIONARYCOMPONENTS","n"); // cd_func_comp
 CR("CD_LIFESTATUSES","CD_CANVASES","n");    // cd_life_canv
@@ -1300,36 +1357,23 @@ CR("CD_TABLES","CD_FIELDS","n");            // cd_tabl_fiel
 CR("CD_TABLES","CD_FORMS","n");             // cd_tabl_form
 CR("CD_TYPES","CD_LIFESTATUSES","n");       // cd_type_life
 CR("CD_TYPES","CD_TABLES","n");             // cd_type_tabl
-// Reference relations (— = FK to lookup)
-CR("CD_CONTROLS","CD_LK_FORMATS","—");
-CR("CD_CONTROLS","CD_LK_ICONS","—");
-CR("CD_TYPES","CD_LK_KINDS","—");
-CR("CD_TYPES","CD_LK_ICONS","—");
-CR("CD_TRANSLATIONS","CD_LK_LANGUAGES","—");
-CR("CD_LIFESTATUSES","CD_LK_NODETYPES","—");
-CR("CD_LIFESTATUSES","CD_LK_FOLLOWUPMODES","—");
-CR("CD_CANVASES","CD_LK_TRIGGERACTIONS","—");
-CR("CD_CANVASES","CD_LK_TRIGGERSUBJECTS","—");
-CR("CD_CANVASES","CD_LK_SHAPES","—");
-CR("CD_CANVASES","CD_LK_SIDES","—");
-CR("CD_CANVASES","CD_LK_PROTOCOLS","—");
-CR("CD_CANVASES","CD_LK_IMPORTMETHODS","—");
-CR("CD_CANVASES","CD_LK_APITYPES","—");
-CR("CD_CANVASES","CD_LK_REQUESTTYPES","—");
-CR("CD_CANVASES","CD_LK_APIPARAMTYPES","—");
-CR("CD_CANVASES","CD_LK_APIKINDS","—");
-CR("CD_FUNCTIONS","CD_LK_APITYPES","—");
-CR("CD_FUNCTIONS","CD_LK_REQUESTTYPES","—");
-CR("CD_FUNCTIONS","CD_LK_APIPARAMTYPES","—");
-CR("CD_FUNCTIONS","CD_LK_APIKINDS","—");
-CR("CD_FUNCTIONS","CD_LK_PARAMDATATYPES","—");
-CR("CD_FIELDS","CD_LK_FORMATS","—");
-CR("CD_FIELDS","CD_LK_FIELDFLAGS","—");
-CR("CD_FIELDS","CD_LK_PROPERTYMODES","—");
-CR("CD_FORMS","CD_LK_TEMPLATES","—");
-CR("CD_TABLES","CD_LK_SUBJECTAREAS","—");
-CR("CD_TABLES","CD_LK_RELATIONTYPEVALUES","—");
-CR("CD_LIFESTATUSES","CD_LK_FONTSTYLES","—");
+// Lookup mappings: which CD_LK_ tables belong to which entity (for Lookup Editor tree)
+const cdLookupMap = {
+    'Databases':    ['CD_LK_KINDS'],
+    'Tables':       ['CD_LK_KINDS','CD_LK_ICONS','CD_LK_SUBJECTAREAS'],
+    'Fields':       ['CD_LK_FORMATS','CD_LK_KINDS','CD_LK_FIELDFLAGS','CD_LK_ICONS','CD_LK_PROPERTYMODES'],
+    'Controls':     ['CD_LK_FORMATS','CD_LK_ICONS'],
+    'Forms':        ['CD_LK_TEMPLATES'],
+    'Types':        ['CD_LK_KINDS','CD_LK_ICONS'],
+    'Statuses':     ['CD_LK_NODETYPES','CD_LK_FOLLOWUPMODES','CD_LK_FONTSTYLES'],
+    'Canvases':     ['CD_LK_TRIGGERACTIONS','CD_LK_TRIGGERSUBJECTS','CD_LK_SHAPES','CD_LK_SIDES','CD_LK_PROTOCOLS','CD_LK_IMPORTMETHODS','CD_LK_APITYPES','CD_LK_REQUESTTYPES','CD_LK_APIPARAMTYPES','CD_LK_APIKINDS'],
+    'Roles':        [],
+    'Functions':    ['CD_LK_APITYPES','CD_LK_REQUESTTYPES','CD_LK_APIPARAMTYPES','CD_LK_APIKINDS','CD_LK_PARAMDATATYPES'],
+    'Translations': ['CD_LK_LANGUAGES'],
+    'Licences':     [],
+    'Folders':      [],
+    'Dictionaries': [],
+};
 
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
@@ -2212,6 +2256,149 @@ document.addEventListener('keydown', function(e) {
         }
     }
 });
+
+// ============================================================================
+// LOOKUP EDITOR
+// ============================================================================
+let activeLookupTable = null;
+
+function renderLookupEditor() {
+    // Build tree HTML
+    const entityIcons = {
+        'Translations':'&#9998;','Dictionaries':'&#128214;','Databases':'&#128190;','Tables':'&#9638;',
+        'Fields':'&#9776;','Controls':'&#9881;','Forms':'&#9647;','Types':'&#9650;',
+        'Folders':'&#128193;','Statuses':'&#9650;','Licences':'&#128196;','Canvases':'&#9633;',
+        'Roles':'&#128274;','Functions':'&#9881;'
+    };
+
+    let treeHtml = '';
+    for (const [entity, lookups] of Object.entries(cdLookupMap)) {
+        const icon = entityIcons[entity] || '&#9632;';
+        const hasLookups = lookups.length > 0;
+        treeHtml += `<div class="le-tree-entity" onclick="toggleLookupBranch(this)">
+            <span class="le-expand">${hasLookups ? '+' : ''}</span>
+            <span class="le-icon">${icon}</span>
+            ${entity}
+        </div>`;
+        if (hasLookups) {
+            treeHtml += `<div class="le-tree-children">`;
+            for (const lk of lookups) {
+                treeHtml += `<div class="le-tree-lookup" data-table="${lk}" onclick="event.stopPropagation();selectLookupTable('${lk}')">
+                    <span class="le-lk-icon">&#9638;</span> ${lk}
+                </div>`;
+            }
+            treeHtml += `</div>`;
+        }
+    }
+
+    return `<div style="margin-bottom:16px;">
+        <h1>&#9638; Lookup Editor</h1>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+            <input type="text" placeholder="Search..." style="padding:7px 14px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;width:240px;font-family:'DM Sans',sans-serif;">
+            <div style="margin-left:auto;display:flex;gap:8px;">
+                <button class="fe-btn" style="background:#22C55E;color:#fff;">+ New</button>
+                <button class="fe-btn" style="background:#EF4444;color:#fff;">Delete</button>
+            </div>
+        </div>
+    </div>
+    <div class="le-container">
+        <div class="le-tree">${treeHtml}</div>
+        <div class="le-main" id="leMain">
+            <div style="padding:40px;color:#94A3B8;text-align:center;font-size:14px;">
+                Select a lookup table from the tree
+            </div>
+        </div>
+    </div>`;
+}
+
+function initLookupTree() {
+    // Auto-select first lookup if available
+}
+
+function toggleLookupBranch(el) {
+    const children = el.nextElementSibling;
+    if (children && children.classList.contains('le-tree-children')) {
+        children.classList.toggle('open');
+        const expand = el.querySelector('.le-expand');
+        if (expand) expand.textContent = children.classList.contains('open') ? '−' : '+';
+    }
+}
+
+function selectLookupTable(tableName) {
+    activeLookupTable = tableName;
+
+    // Highlight in tree
+    document.querySelectorAll('.le-tree-lookup').forEach(el => el.classList.remove('active'));
+    const activeEl = document.querySelector(`.le-tree-lookup[data-table="${tableName}"]`);
+    if (activeEl) {
+        activeEl.classList.add('active');
+        // Expand parent
+        const parent = activeEl.parentElement;
+        if (parent && !parent.classList.contains('open')) {
+            parent.classList.add('open');
+            const expand = parent.previousElementSibling?.querySelector('.le-expand');
+            if (expand) expand.textContent = '−';
+        }
+    }
+
+    // Load data - generate sample data based on table name
+    const shortName = tableName.replace('CD_LK_','');
+    const pkCol = 'K_' + shortName.replace(/S$/,'');
+
+    // Sample data rows
+    const sampleData = [
+        { pk: 0, name: '—', enabled: true },
+        { pk: 1, name: shortName.charAt(0) + shortName.slice(1).toLowerCase().replace(/s$/,'') + ' 1', enabled: true },
+        { pk: 2, name: shortName.charAt(0) + shortName.slice(1).toLowerCase().replace(/s$/,'') + ' 2', enabled: true },
+    ];
+
+    let rowsHtml = '';
+    for (const r of sampleData) {
+        rowsHtml += `<tr>
+            <td><input type="checkbox" style="width:14px;height:14px;"></td>
+            <td>${r.pk}</td>
+            <td>${r.name}</td>
+            <td>Empty</td>
+            <td>${r.enabled ? '<span class="le-enabled">&#10003;</span>' : '<span class="le-disabled">&#10007;</span>'}</td>
+            <td><button class="le-sort-btn">&#9660;</button> <button class="le-sort-btn">&#9650;</button></td>
+            <td><button class="le-edit-btn">Edit</button></td>
+            <td>Designer User</td>
+            <td style="font-size:11px;color:#94A3B8;">2017-02-09T13:07:59</td>
+            <td>Designer User</td>
+            <td style="font-size:11px;color:#94A3B8;">2017-02-09T13:07:59</td>
+        </tr>`;
+    }
+
+    document.getElementById('leMain').innerHTML = `
+        <div class="le-toolbar">
+            <button class="fe-btn fe-btn-ok" style="background:#22C55E;"><span>&#128190;</span> Save changes</button>
+            <button class="fe-btn" style="background:#fff;color:#EF4444;border:1px solid #EF4444;">&#10007; Cancel</button>
+            <div class="le-toolbar-right">
+                <span style="font-size:12px;color:#64748B;">Search by name:</span>
+                <input class="le-search" type="text" placeholder="Search...">
+            </div>
+        </div>
+        <div class="le-grid-wrap">
+            <table class="le-grid">
+                <thead><tr>
+                    <th style="width:30px;"><input type="checkbox" style="width:14px;height:14px;"></th>
+                    <th>${pkCol}</th>
+                    <th>NAME</th>
+                    <th>F_TYPE</th>
+                    <th>ENABLED</th>
+                    <th>SORT</th>
+                    <th>MEMO</th>
+                    <th>CREATEDBY</th>
+                    <th>CREATEDATE</th>
+                    <th>CHANGEDBY</th>
+                    <th>CHANGEDATE</th>
+                </tr></thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>
+        <div class="le-pager">Show <select style="padding:2px 6px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;"><option>15</option><option>30</option><option>50</option></select> per page</div>
+    `;
+}
 
 // ============================================================================
 // TYPES EDITOR
