@@ -1,0 +1,38 @@
+const { Pool } = require('pg');
+const fs = require('fs');
+
+const DATABASE_URL = 'postgresql://neondb_owner:npg_WA7cM2SDQoiz@ep-delicate-lab-alftggoj.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require';
+
+const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+async function run() {
+    console.log('Connecting to Neon...');
+    const client = await pool.connect();
+    console.log('Connected!');
+
+    // Read and run migration
+    const sql = fs.readFileSync('./database/003_xsd_migration.sql', 'utf8');
+    const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('--'));
+    
+    let ok = 0, fail = 0;
+    for (const stmt of statements) {
+        try {
+            await client.query(stmt);
+            ok++;
+        } catch (e) {
+            console.log('SKIP:', e.message.substring(0, 80));
+            fail++;
+        }
+    }
+    
+    // Check what we created
+    const { rows } = await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
+    console.log(`\nDone! ${ok} statements OK, ${fail} skipped`);
+    console.log(`Tables in database: ${rows.length}`);
+    rows.forEach(r => console.log('  ' + r.tablename));
+    
+    client.release();
+    pool.end();
+}
+
+run().catch(e => { console.error('FATAL:', e.message); process.exit(1); });
