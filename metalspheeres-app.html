@@ -1757,10 +1757,27 @@ function showTablePopup(tableName) {
     const isLk = table.type === 'lk';
     const color = isCd ? '#3B82F6' : (isLk ? '#64748B' : (table.type === 'sys' ? '#F59E0B' : '#64748B'));
     const typeBadge = isCd ? 'Dictionary' : (isLk ? 'Lookup' : (table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity')));
-    const isSub = table.type === 'sub';
 
     // Try to find table ID for API lookup
     const tableId = tableMap[tableName] || tableMap[tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase()];
+
+    function addCustomFields(fields) {
+        // Append custom fields (group 'C') from in-memory store
+        const cf = customFields[tableName] || [];
+        for (const c of cf) {
+            fields.push({
+                name: c.name,
+                group: 'C',
+                type: c.type || 'varchar',
+                pk: false,
+                fk: c.name.startsWith('F_'),
+                req: c.required || false,
+                system: false,
+                id: c.id || null,
+            });
+        }
+        return fields;
+    }
 
     if (apiAvailable && tableId) {
         loadFieldsFromDB(tableId).then(dbFields => {
@@ -1775,15 +1792,15 @@ function showTablePopup(tableName) {
                     system: f.is_system,
                     id: f.k_fields,
                 }));
-                renderPopup(tableName, typeBadge, color, fields, null, tableId);
+                renderPopup(tableName, typeBadge, color, addCustomFields(fields), null, tableId);
             } else {
                 const fields = isLookup || isLk ? lookupFields(tableName) : entityFields(tableName);
-                renderPopup(tableName, typeBadge, color, fields, null, tableId);
+                renderPopup(tableName, typeBadge, color, addCustomFields(fields), null, tableId);
             }
         });
     } else {
         const fields = isLookup || isLk ? lookupFields(tableName) : entityFields(tableName);
-        renderPopup(tableName, typeBadge, color, fields, null, null);
+        renderPopup(tableName, typeBadge, color, addCustomFields(fields), null, null);
     }
 }
 
@@ -2229,6 +2246,7 @@ function saveCustomField() {
             name: name,
             controlType: type,
             dataType: ct.dataType,
+            type: ct.dataType + (size ? '(' + size + ')' : ''),
             required: required,
             maxLength: size,
         });
