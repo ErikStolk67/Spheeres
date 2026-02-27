@@ -3647,21 +3647,69 @@ async function clearDictionary() {
 
 // Seed all XSD dictionary data into Neon cloud database
 async function seedDictionary() {
-    if (!confirm('This will load all ' + Object.keys(xsdFieldData).length + ' table definitions (CD_, SYS_, User) into the Neon database.\n\nExisting dictionary data (cd_tables, cd_fields, cd_tabl_fiel) will be replaced.\n\nContinue?')) return;
+    // Parse xsdFieldData into structured format with types
+    const typeMap = { i: 'int', s: 'string', b: 'boolean', d: 'dateTime', u: 'string', y: 'base64Binary' };
+    const pgMap = { i: 'integer', s: 'varchar(255)', b: 'boolean', d: 'timestamptz', u: 'varchar(255)', y: 'bytea' };
     
-    showLoading('Seeding ' + Object.keys(xsdFieldData).length + ' tables to Neon...');
+    // Classify tables
+    const seedTables = {};
+    const seen = new Set();
+    
+    for (const [tableName, fieldStr] of Object.entries(xsdFieldData)) {
+        const upper = tableName.toUpperCase();
+        if (seen.has(upper) || upper === 'CD_VERSPANING') continue;
+        seen.add(upper);
+        
+        // Only CD_ tables for dictionary
+        if (!upper.startsWith('CD_')) continue;
+        
+        // Determine type
+        let fType = 1;
+        if (upper.startsWith('CD_LK_')) fType = 2;
+        else if (upper.match(/_(?:EXECUTION_LOG|LOGS|REMOTE|CHECKLIST|CLUSTERSETTINGS|FIELDKEY|FIELDVALUE|KINDS|LINKEDITORVISIBILITY|MATCH|TABSETTINGS|FILTERINGSETTINGS|RESTRICTIONS)$/)) fType = 4;
+        else if (upper.match(/^CD_[A-Z]{4}_[A-Z]{4}$/) && !upper.startsWith('CD_LK_')) fType = 3;
+        
+        // Parse fields
+        const fields = [];
+        const seenFields = new Set();
+        for (const fdef of fieldStr.split(',')) {
+            const parts = fdef.trim().split(':');
+            if (parts.length < 2) continue;
+            const fname = parts[0].trim().toUpperCase();
+            const ftype = parts[1].trim();
+            if (!fname || seenFields.has(fname)) continue;
+            seenFields.add(fname);
+            fields.push({ name: fname, pgType: pgMap[ftype] || 'varchar(255)', xsType: typeMap[ftype] || 'string' });
+        }
+        
+        seedTables[upper] = { fType, fields };
+    }
+    
+    // Sort: lookups first, then entities, subs, links
+    const ordered = {};
+    const order = [2, 1, 4, 3]; // lookup, entity, sub, link
+    for (const ft of order) {
+        for (const [name, info] of Object.entries(seedTables)) {
+            if (info.fType === ft && !ordered[name]) ordered[name] = info;
+        }
+    }
+    
+    const count = Object.keys(ordered).length;
+    if (!confirm('Import ' + count + ' CD_ tables into dictionary?\n\nExisting dictionary data will be replaced.\n\nContinue?')) return;
+    
+    showLoading('Seeding ' + count + ' CD_ tables to Neon...');
     
     try {
-        const resp = await fetch(API + '/seed', {
+        const resp = await fetch(API + '/seed-xsd', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ xsdData: xsdFieldData })
+            body: JSON.stringify({ tables: ordered })
         });
         const result = await resp.json();
         hideLoading();
         if (result.success) {
             const s = result.summary || {};
-            alert('✓ Dictionary seeded!\n\nTotal tables: ' + result.tables + '\nTotal fields: ' + result.fields + '\n\nLookups: ' + (s.lookups||0) + '\nEntities: ' + (s.entities||0) + '\nSubtables: ' + (s.subtables||0) + '\nLinks: ' + (s.links||0));
+            alert('✓ Dictionary imported!\n\nTables: ' + result.tables + '\nFields: ' + result.fields + '\n\nLookups: ' + (s.lookups||0) + '\nEntities: ' + (s.entities||0) + '\nSubtables: ' + (s.subtables||0) + '\nLinks: ' + (s.links||0));
             renderContent();
         } else {
             alert('Error: ' + result.error);

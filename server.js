@@ -386,6 +386,92 @@ app.post('/api/clear-dictionary', async (req, res) => {
 });
 
 // ============================================================================
+// SEED XSD - Import parsed XSD metadata into dictionary tables
+// ============================================================================
+
+app.post('/api/seed-xsd', async (req, res) => {
+    const { tables: seedTables } = req.body;
+    if (!seedTables) return res.status(400).json({ error: 'No tables provided' });
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Clear existing dictionary data
+        await client.query('TRUNCATE cd_tabl_fiel, cd_fields, cd_tables CASCADE');
+        
+        // Drop constraints for clean insert
+        try { await client.query('ALTER TABLE cd_tabl_fiel DROP CONSTRAINT IF EXISTS cd_tabl_fiel_pkey'); } catch(e) {}
+        try { await client.query('ALTER TABLE cd_fields DROP CONSTRAINT IF EXISTS cd_fields_pkey'); } catch(e) {}
+        try { await client.query('ALTER TABLE cd_tables DROP CONSTRAINT IF EXISTS cd_tables_pkey'); } catch(e) {}
+        
+        let tableId = 1;
+        let fieldId = 1;
+        const results = { lookups: 0, entities: 0, subtables: 0, links: 0, system: 0 };
+        const typeNames = { 1: 'entities', 2: 'lookups', 3: 'links', 4: 'subtables', 5: 'system' };
+        
+        for (const [tableName, info] of Object.entries(seedTables)) {
+            const fType = info.fType || 1;
+            
+            // Insert table record
+            await client.query(
+                'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                [tableId, tableName, fType, tableId]
+            );
+            results[typeNames[fType] || 'entities']++;
+            
+            // Insert fields and links
+            let fieldSort = 1;
+            for (const field of info.fields) {
+                // Determine field kind: 1=integer, 2=string, 3=boolean, 4=datetime, 5=binary, 6=guid
+                let fFieldType = 2; // default string
+                if (field.xsType === 'int') fFieldType = 1;
+                else if (field.xsType === 'boolean') fFieldType = 3;
+                else if (field.xsType === 'dateTime') fFieldType = 4;
+                else if (field.xsType === 'base64Binary') fFieldType = 5;
+                if (field.name === 'REPLICATIONID') fFieldType = 6;
+                
+                const isPk = field.name.startsWith('K_') && fieldSort <= 3;
+                const isFk = field.name.startsWith('F_');
+                
+                // Insert field
+                await client.query(
+                    'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, field.name, fFieldType, fieldSort]
+                );
+                
+                // Insert table-field link
+                await client.query(
+                    'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, tableId, fieldSort, isPk]
+                );
+                
+                fieldId++;
+                fieldSort++;
+            }
+            tableId++;
+        }
+        
+        await client.query('COMMIT');
+        await client.query('ANALYZE cd_tables');
+        await client.query('ANALYZE cd_fields');
+        await client.query('ANALYZE cd_tabl_fiel');
+        
+        res.json({
+            success: true,
+            tables: tableId - 1,
+            fields: fieldId - 1,
+            summary: results
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================================================
 // SEED ENDPOINT - Load XSD metadata into dictionary tables
 // ============================================================================
 
