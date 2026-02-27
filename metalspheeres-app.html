@@ -1416,6 +1416,9 @@ function renderDbDesigner() {
             if (m === 0) {
                 const display = v === '…' ? '—' : (v || '—');
                 rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${display}</td>`;
+            } else if (m === 1 && v) {
+                // Sub column - clickable with dropdown
+                rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;text-decoration:underline;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
             } else {
                 rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v || ''}</td>`;
             }
@@ -2549,6 +2552,98 @@ function selectLookupTable(tableName) {
         </div>
         <div class="le-pager">Show <select style="padding:2px 6px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;"><option>15</option><option>30</option><option>50</option></select> per page</div>
     `;
+}
+
+// ============================================================================
+// SUB TABLE DROPDOWN
+// ============================================================================
+function openSubDropdown(event, tableName) {
+    event.stopPropagation();
+    // Remove existing dropdown
+    const old = document.getElementById('subDropdown');
+    if (old) old.remove();
+
+    const subs = cdSubTables[tableName] || [];
+    if (subs.length === 0) return;
+
+    const rect = event.target.getBoundingClientRect();
+    const dd = document.createElement('div');
+    dd.id = 'subDropdown';
+    dd.style.cssText = `position:fixed;top:${rect.bottom+2}px;left:${rect.left}px;background:#fff;border:1px solid #D1D5DB;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:9999;min-width:240px;padding:4px 0;font-family:'DM Sans',sans-serif;`;
+
+    let html = `<div style="padding:6px 12px;font-size:11px;color:#94A3B8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Sub-tables of ${tableName}</div>`;
+    for (const sub of subs) {
+        html += `<div class="sub-dd-item" onclick="document.getElementById('subDropdown').remove();showTablePopup('${sub}')" style="padding:8px 14px;font-size:13px;color:#334155;cursor:pointer;display:flex;align-items:center;gap:8px;"
+            onmouseover="this.style.background='#E0F2FE'" onmouseout="this.style.background='transparent'">
+            <span style="color:#3B82F6;">&#9638;</span> ${sub}
+        </div>`;
+    }
+    // New... option
+    html += `<div style="border-top:1px solid #E2E8F0;margin-top:2px;padding-top:2px;">
+        <div class="sub-dd-item" onclick="document.getElementById('subDropdown').remove();openNewSubDialog('${tableName}')" style="padding:8px 14px;font-size:13px;color:#3B82F6;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:8px;"
+            onmouseover="this.style.background='#E0F2FE'" onmouseout="this.style.background='transparent'">
+            <span>+</span> New...
+        </div>
+    </div>`;
+
+    dd.innerHTML = html;
+    document.body.appendChild(dd);
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', function closeDD(e) {
+            const el = document.getElementById('subDropdown');
+            if (el && !el.contains(e.target)) { el.remove(); document.removeEventListener('click', closeDD); }
+        });
+    }, 10);
+}
+
+function openNewSubDialog(parentTable) {
+    const overlay = document.createElement('div');
+    overlay.id = 'newSubOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+    overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:340px;box-shadow:0 12px 40px rgba(0,0,0,0.15);font-family:'DM Sans',sans-serif;">
+        <div style="font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">New sub-table for ${parentTable}</div>
+        <input id="newSubName" type="text" placeholder="SUB TABLE NAME" style="width:100%;padding:10px 14px;border:2px solid #B2E0F0;border-radius:6px;font-size:14px;font-family:'DM Sans',sans-serif;box-sizing:border-box;outline:none;margin-bottom:12px;">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+            <label style="font-size:12px;color:#64748B;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="newSubView"> View</label>
+            <label style="font-size:12px;color:#64748B;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="newSubDynamic"> Dynamic view</label>
+            <label style="font-size:12px;color:#64748B;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="newSubRecipe"> Recipe Version</label>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button onclick="createNewSubTable('${parentTable}')" style="padding:8px 24px;background:#4FC3F7;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;">Ok</button>
+            <button onclick="document.getElementById('newSubOverlay').remove()" style="padding:8px 24px;background:#B0BEC5;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;">Cancel</button>
+        </div>
+    </div>`;
+
+    document.body.appendChild(overlay);
+    setTimeout(() => document.getElementById('newSubName').focus(), 50);
+}
+
+function createNewSubTable(parentTable) {
+    const name = document.getElementById('newSubName').value.trim();
+    if (!name) return;
+
+    // Derive table name: parent prefix + name
+    const prefix = parentTable.replace('CD_','').substring(0,4).toLowerCase();
+    const subName = 'CD_' + prefix.toUpperCase() + '_' + name.toUpperCase().replace(/\s+/g,'_');
+
+    // Add to cdSubTables
+    if (!cdSubTables[parentTable]) cdSubTables[parentTable] = [];
+    cdSubTables[parentTable].push(subName);
+
+    // Update sub count in cdTables
+    const tbl = cdTables.find(t => t.name === parentTable);
+    if (tbl) tbl.cols[1] = cdSubTables[parentTable].length;
+
+    // Close dialog
+    document.getElementById('newSubOverlay').remove();
+
+    // Re-render matrix and open new sub table popup
+    renderContent();
+    setTimeout(() => showTablePopup(subName), 100);
 }
 
 // ============================================================================
