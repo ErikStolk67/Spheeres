@@ -1397,7 +1397,7 @@ function renderDbDesigner() {
     for (const t of tables) {
         const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
         const bg = isMain ? mainBg : secBg;
-        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')"><i data-lucide="${t.icon}" style="width:12px;height:12px;display:block;margin:0 auto 3px;"></i>${t.name}</th>`;
+        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;vertical-align:bottom;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
     // Rows
