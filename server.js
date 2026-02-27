@@ -742,7 +742,11 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     } else if (dtype === 'boolean') {
                         pgVal = val === 'true' || val === '1';
                     } else if (dtype === 'bytea') {
-                        pgVal = Buffer.from(val, 'base64');
+                        try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
+                    }
+                    // Truncate strings that exceed varchar limits
+                    if ((dtype === 'character varying' || dtype === 'text') && typeof pgVal === 'string' && pgVal.length > 500) {
+                        pgVal = pgVal.substring(0, 500);
                     }
                     
                     cols.push(col); vals.push(pgVal); ph.push(`$${pi}`); pi++;
