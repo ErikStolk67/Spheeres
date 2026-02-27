@@ -782,10 +782,6 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     } else if (dtype === 'bytea') {
                         try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
                     }
-                    // Truncate strings that exceed varchar limits
-                    if ((dtype === 'character varying' || dtype === 'text') && typeof pgVal === 'string' && pgVal.length > 500) {
-                        pgVal = pgVal.substring(0, 500);
-                    }
                     
                     cols.push(col); vals.push(pgVal); ph.push(`$${pi}`); pi++;
                 }
@@ -798,23 +794,6 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     inserted++;
                 } catch (e) {
                     await client.query('ROLLBACK TO SAVEPOINT sp');
-                    // If value too long, try to alter column to text and retry
-                    if (e.message.includes('value too long')) {
-                        const colMatch = e.message.match(/column "([^"]+)"/);
-                        if (colMatch) {
-                            try {
-                                await client.query(`ALTER TABLE ${tableName} ALTER COLUMN ${colMatch[1]} TYPE text`);
-                                dbCols[colMatch[1]] = 'text';
-                                await client.query('SAVEPOINT sp2');
-                                await client.query(`INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
-                                await client.query('RELEASE SAVEPOINT sp2');
-                                inserted++;
-                                continue;
-                            } catch(e2) {
-                                try { await client.query('ROLLBACK TO SAVEPOINT sp2'); } catch(e3) {}
-                            }
-                        }
-                    }
                     errors++;
                     if (errors <= 3) lastError = e.message;
                 }
