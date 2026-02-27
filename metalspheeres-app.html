@@ -207,6 +207,44 @@
             color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
             font-family: 'DM Sans', sans-serif;
         }
+
+        /* ============ DATABASE DESIGNER ============ */
+        .designer { padding: 32px; max-width: 100%; overflow: auto; }
+        .designer h1 { font-size: 28px; font-weight: 600; color: #0F172A; letter-spacing: -0.02em; }
+        .designer p { font-size: 14px; color: #64748B; margin-top: 4px; margin-bottom: 24px; }
+        .designer-legend { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+        .designer-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748B; }
+        .designer-legend-color { width: 14px; height: 14px; border-radius: 3px; }
+
+        .matrix-wrapper { overflow: auto; max-height: calc(100vh - 220px); border: 1px solid #E2E8F0; border-radius: 12px; background: #fff; }
+        .matrix { border-collapse: separate; border-spacing: 0; font-size: 11px; width: max-content; }
+        .matrix th, .matrix td { padding: 0; text-align: center; border-right: 1px solid #E8ECF1; border-bottom: 1px solid #E8ECF1; }
+        .matrix th { position: sticky; background: #F8FAFC; z-index: 2; font-weight: 600; color: #334155; white-space: nowrap; }
+        .matrix thead th { top: 0; z-index: 3; border-bottom: 2px solid #CBD5E1; }
+        .matrix thead th:first-child { z-index: 4; left: 0; }
+        .matrix tbody th { position: sticky; left: 0; z-index: 2; text-align: left; }
+
+        .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 120px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; }
+        .matrix .row-header { padding: 4px 10px; min-width: 140px; font-size: 11px; }
+        .matrix .row-header .row-icon { display: inline-block; margin-right: 6px; width: 14px; text-align: center; }
+
+        .matrix td { width: 32px; height: 28px; min-width: 32px; cursor: default; transition: background 0.1s; }
+        .matrix td:hover { filter: brightness(0.95); }
+
+        /* Cell types */
+        .matrix .cell-sys { background: #FEF9C3; }
+        .matrix .cell-user { background: #F1F5F9; }
+        .matrix .cell-empty { background: #fff; }
+        .matrix .cell-self { background: #E2E8F0; }
+        .matrix .cell-nn { background: #FBBF24; color: #92400E; font-weight: 700; font-size: 10px; }
+        .matrix .cell-n { background: #FDE68A; color: #92400E; font-weight: 600; font-size: 10px; }
+        .matrix .cell-dash { background: #FEF3C7; color: #B45309; font-size: 10px; }
+        .matrix .cell-nn-user { background: #94A3B8; color: #fff; font-weight: 700; font-size: 10px; }
+        .matrix .cell-n-user { background: #CBD5E1; color: #334155; font-weight: 600; font-size: 10px; }
+        .matrix .cell-dash-user { background: #E2E8F0; color: #64748B; font-size: 10px; }
+
+        .matrix .corner { position: sticky; left: 0; top: 0; z-index: 5; background: #F8FAFC; min-width: 140px; }
+        .matrix .meta-cols { font-size: 10px; color: #64748B; padding: 2px 4px; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -408,6 +446,13 @@ function renderContent() {
     if (activeItem === null) {
         breadcrumb.innerHTML = '<span class="breadcrumb-item">Dashboard</span>';
         content.innerHTML = renderDashboard();
+    } else if (activeItem === 'db_designer') {
+        const { item, group } = findContext();
+        breadcrumb.innerHTML = `
+            <span class="breadcrumb-group">${group.label}</span>
+            <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
+            <span class="breadcrumb-item">${item.label}</span>`;
+        content.innerHTML = renderDbDesigner();
     } else {
         const { item, group } = findContext();
         breadcrumb.innerHTML = `
@@ -418,6 +463,191 @@ function renderContent() {
     }
     lucide.createIcons();
 }
+
+// ============================================================================
+// DATABASE DESIGNER - Relationship Matrix
+// ============================================================================
+const dbTables = [
+    // SYS tables (yellow)
+    { name: "SYS_LOGS",        type: "sys", icon: "ℹ", cols: [4,"…",2] },
+    { name: "SYS_GLOBALS",     type: "sys", icon: "⊕", cols: [9,"…",3] },
+    { name: "SYS_LOCKS",       type: "sys", icon: "🔒", cols: ["…","…",""] },
+    { name: "SYS_OBJECTS",     type: "sys", icon: "★", cols: [2,"…",""] },
+    { name: "SYS_QUEUES",      type: "sys", icon: "☰", cols: [11,2,2] },
+    { name: "SYS_RIGHTS",      type: "sys", icon: "🔑", cols: ["…","…",""] },
+    { name: "SYS_SECURITY",    type: "sys", icon: "🔐", cols: ["…","…",""] },
+    { name: "SYS_SESSIONS",    type: "sys", icon: "⚡", cols: ["…",1,""] },
+    { name: "SYS_THINGS",      type: "sys", icon: "▦", cols: [1,"…",2] },
+    { name: "SYS_THESAURI",    type: "sys", icon: "📖", cols: [12,2,3] },
+    { name: "SYS_TRANSPORTS",  type: "sys", icon: "📦", cols: [2,"…",1] },
+    { name: "SYS_USERS",       type: "sys", icon: "👥", cols: [6,20,3] },
+    { name: "SYS_COMMANDS",    type: "sys", icon: "▤", cols: [9,1,2] },
+    { name: "SYS_COMPETENCES", type: "sys", icon: "🎓", cols: ["…",3,3] },
+    { name: "SYS_PLANNING",    type: "sys", icon: "📅", cols: [7,1,3] },
+    { name: "SYS_HOOK",        type: "sys", icon: "⇵", cols: ["…",3,1] },
+    { name: "SYS_HISTORY",     type: "sys", icon: " ", cols: ["…","…",""] },
+    // User tables (grey)
+    { name: "ACTIONS",         type: "user", icon: "☰", cols: [3,4,4] },
+    { name: "STATS",           type: "user", icon: " ", cols: ["","",""] },
+    { name: "CONTACTS",        type: "user", icon: " ", cols: ["","",""] },
+    { name: "COMPANIES",       type: "user", icon: " ", cols: ["","",""] },
+    { name: "PROJECTS",        type: "user", icon: " ", cols: ["","",""] },
+    { name: "CASES",           type: "user", icon: " ", cols: ["","",""] },
+    { name: "OPPORTUNITIES",   type: "user", icon: " ", cols: ["","",""] },
+    { name: "AGENDA",          type: "user", icon: " ", cols: ["","",""] },
+    { name: "DOCUMENTS",       type: "user", icon: " ", cols: ["","",""] },
+];
+
+// Relationship matrix: relations[rowIndex][colIndex] = "nn" | "n" | "—" | ""
+// Based on the user's architecture diagram
+const relations = {};
+function R(row, col, val) {
+    if (!relations[row]) relations[row] = {};
+    relations[row][col] = val;
+}
+
+// SYS_GLOBALS relationships
+R("SYS_GLOBALS","SYS_LOCKS","nn");
+R("SYS_GLOBALS","SYS_TRANSPORTS","—");
+
+// SYS_OBJECTS relationships
+R("SYS_OBJECTS","SYS_QUEUES","nn");
+R("SYS_OBJECTS","SYS_USERS","n");
+
+// SYS_QUEUES relationships
+R("SYS_QUEUES","SYS_HISTORY","n");
+R("SYS_QUEUES","CONTACTS","n");
+R("SYS_QUEUES","OPPORTUNITIES","n");
+
+// SYS_THESAURI relationships
+R("SYS_THESAURI","SYS_THINGS","nn");
+R("SYS_THESAURI","ACTIONS","—");
+R("SYS_THESAURI","CONTACTS","n");
+R("SYS_THESAURI","COMPANIES","n");
+R("SYS_THESAURI","DOCUMENTS","n");
+
+// SYS_USERS relationships
+R("SYS_USERS","SYS_GLOBALS","n");
+R("SYS_USERS","SYS_OBJECTS","—");
+R("SYS_USERS","SYS_TRANSPORTS","nn");
+R("SYS_USERS","SYS_COMMANDS","—");
+R("SYS_USERS","SYS_COMPETENCES","n");
+R("SYS_USERS","SYS_PLANNING","n");
+R("SYS_USERS","ACTIONS","—");
+R("SYS_USERS","STATS","—");
+R("SYS_USERS","CONTACTS","—");
+R("SYS_USERS","COMPANIES","—");
+R("SYS_USERS","PROJECTS","—");
+R("SYS_USERS","CASES","—");
+R("SYS_USERS","OPPORTUNITIES","—");
+R("SYS_USERS","AGENDA","—");
+R("SYS_USERS","DOCUMENTS","—");
+
+// SYS_COMMANDS relationships
+R("SYS_COMMANDS","SYS_USERS","n");
+R("SYS_COMMANDS","ACTIONS","n");
+R("SYS_COMMANDS","DOCUMENTS","n");
+
+// SYS_COMPETENCES relationships
+R("SYS_COMPETENCES","SYS_USERS","—");
+R("SYS_COMPETENCES","SYS_PLANNING","n");
+R("SYS_COMPETENCES","CONTACTS","—");
+R("SYS_COMPETENCES","OPPORTUNITIES","—");
+
+// SYS_PLANNING relationships
+R("SYS_PLANNING","SYS_USERS","—");
+R("SYS_PLANNING","SYS_COMPETENCES","—");
+R("SYS_PLANNING","CASES","—");
+R("SYS_PLANNING","OPPORTUNITIES","n");
+
+// ACTIONS relationships
+R("ACTIONS","SYS_QUEUES","—");
+R("ACTIONS","SYS_USERS","n");
+R("ACTIONS","SYS_HISTORY","nn");
+R("ACTIONS","STATS","n");
+R("ACTIONS","CONTACTS","n");
+R("ACTIONS","COMPANIES","n");
+R("ACTIONS","PROJECTS","n");
+R("ACTIONS","CASES","n");
+R("ACTIONS","OPPORTUNITIES","n");
+R("ACTIONS","AGENDA","n");
+R("ACTIONS","DOCUMENTS","n");
+
+function renderDbDesigner() {
+    const tables = dbTables;
+
+    // Column headers
+    let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
+    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Type</th>';
+    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Sub</th>';
+    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
+
+    for (const t of tables) {
+        const bg = t.type === 'sys' ? '#FEF9C3' : '#F1F5F9';
+        colHeaders += `<th class="col-header" style="background:${bg};">${t.name}</th>`;
+    }
+
+    // Rows
+    let rows = '';
+    for (let i = 0; i < tables.length; i++) {
+        const row = tables[i];
+        const rowBg = row.type === 'sys' ? '#FFFEF5' : '#FAFBFC';
+
+        rows += `<tr>`;
+        rows += `<th class="row-header" style="background:${rowBg};"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
+
+        // Meta columns (Type, Sub, Screens)
+        for (let m = 0; m < 3; m++) {
+            const v = row.cols[m];
+            rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v || ''}</td>`;
+        }
+
+        // Relationship cells
+        for (let j = 0; j < tables.length; j++) {
+            const col = tables[j];
+
+            if (row.name === col.name) {
+                // Diagonal - self
+                rows += `<td class="cell-self"></td>`;
+            } else {
+                const val = (relations[row.name] && relations[row.name][col.name]) || '';
+                const isSysRow = row.type === 'sys';
+                const isSysCol = col.type === 'sys';
+                const isSysZone = isSysRow && isSysCol;
+
+                let cellClass = 'cell-empty';
+                if (val === 'nn') cellClass = isSysZone ? 'cell-nn' : 'cell-nn-user';
+                else if (val === 'n') cellClass = isSysZone ? 'cell-n' : 'cell-n-user';
+                else if (val === '—') cellClass = isSysZone ? 'cell-dash' : 'cell-dash-user';
+
+                rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}">${val}</td>`;
+            }
+        }
+        rows += `</tr>`;
+    }
+
+    return `<div class="designer">
+        <h1>Database Designer</h1>
+        <p>Relationship matrix — Entity and system table connections</p>
+
+        <div class="designer-legend">
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> nn = N:N (link table)</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> n = 1:N (sub table)</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF3C7;"></div> — = reference</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (user)</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (user)</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (user)</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF9C3;border:1px solid #E5E7EB;"></div> SYS_ tables</div>
+            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
+        </div>
+
+        <div class="matrix-wrapper">
+            <table class="matrix">
+                <thead><tr>${colHeaders}</tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    </div>`;
 
 function renderDashboard() {
     let cards = '';
