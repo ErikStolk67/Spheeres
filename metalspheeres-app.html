@@ -1723,8 +1723,8 @@ async function loadTableMap() {
         apiAvailable = true;
         tableMap = {};
         for (const t of tables) {
-            tableMap[t.name] = t.k_tables;
-            tableMap[t.name.toUpperCase()] = t.k_tables;
+            tableMap[t.name] = t.k_table;
+            tableMap[t.name.toUpperCase()] = t.k_table;
         }
         console.log('API connected, ' + tables.length + ' tables loaded');
     } catch (e) {
@@ -1790,7 +1790,7 @@ function showTablePopup(tableName) {
                     fk: f.is_foreign_key,
                     req: f.is_required,
                     system: f.is_system,
-                    id: f.k_fields,
+                    id: f.k_field,
                 }));
                 renderPopup(tableName, typeBadge, color, addCustomFields(fields), null, tableId);
             } else {
@@ -2453,7 +2453,7 @@ function openTypesEditor(tableName) {
         .then(r => r.ok ? r.json() : [])
         .then(types => {
             typesEditorState.types = types;
-            typesEditorState.selectedId = types.length > 0 ? types[0].k_types : null;
+            typesEditorState.selectedId = types.length > 0 ? types[0].k_type : null;
             renderTypesEditor();
         })
         .catch(() => {
@@ -2471,7 +2471,7 @@ function openTypesEditor(tableName) {
 function renderTypesEditor() {
     const st = typesEditorState;
     const types = st.types;
-    const sel = types.find(t => t.k_types === st.selectedId) || null;
+    const sel = types.find(t => t.k_type === st.selectedId) || null;
 
     // Tree items
     let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
@@ -2481,10 +2481,10 @@ function renderTypesEditor() {
     const children = types.filter(t => t.f_parent);
 
     for (const t of roots) {
-        treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_types ? ' active' : '') + '" onclick="selectType(\'' + t.k_types + '\')">' + escHtml(t.name) + '</div>';
+        treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_type ? ' active' : '') + '" onclick="selectType(\'' + t.k_type + '\')">' + escHtml(t.name) + '</div>';
         // Find children
-        for (const c of children.filter(ch => ch.f_parent === t.k_types)) {
-            treeHtml += '<div class="te-tree-item child' + (st.selectedId === c.k_types ? ' active' : '') + '" onclick="selectType(\'' + c.k_types + '\')">' + escHtml(c.name) + '</div>';
+        for (const c of children.filter(ch => ch.f_parent === t.k_type)) {
+            treeHtml += '<div class="te-tree-item child' + (st.selectedId === c.k_type ? ' active' : '') + '" onclick="selectType(\'' + c.k_type + '\')">' + escHtml(c.name) + '</div>';
         }
     }
 
@@ -2553,18 +2553,18 @@ function addType() {
         })
         .then(r => r.json())
         .then(data => {
-            if (data.k_types) {
+            if (data.k_type) {
                 st.types.push(data);
-                st.selectedId = data.k_types;
+                st.selectedId = data.k_type;
                 renderTypesEditor();
             }
         })
         .catch(err => alert('Error: ' + err.message));
     } else {
         // In-memory
-        const newType = { k_types: 'temp_' + Date.now(), name: 'New Type', memo: '', flow_folder: false, f_parent: null };
+        const newType = { k_type: 'temp_' + Date.now(), name: 'New Type', memo: '', flow_folder: false, f_parent: null };
         st.types.push(newType);
-        st.selectedId = newType.k_types;
+        st.selectedId = newType.k_type;
         renderTypesEditor();
     }
 }
@@ -2573,7 +2573,7 @@ function copyType() {
     // Copy makes an image in the tree, not a new record
     const st = typesEditorState;
     if (!st.selectedId) return;
-    const sel = st.types.find(t => t.k_types === st.selectedId);
+    const sel = st.types.find(t => t.k_type === st.selectedId);
     if (!sel) return;
     alert('Copy creates a tree image reference of "' + sel.name + '" (not a new record). This feature will be connected to cd_type_type.');
 }
@@ -2587,7 +2587,7 @@ function saveType() {
     const flowEl = document.getElementById('teFlowFolder');
     if (!nameEl) { closeTypesEditor(); return; }
 
-    const sel = st.types.find(t => t.k_types === st.selectedId);
+    const sel = st.types.find(t => t.k_type === st.selectedId);
     if (sel) {
         sel.name = nameEl.value;
         sel.memo = descEl ? descEl.value : '';
@@ -2595,8 +2595,8 @@ function saveType() {
     }
 
     // Save to API if available
-    if (apiAvailable && sel && !sel.k_types.startsWith('temp_')) {
-        fetch(API + '/types/' + sel.k_types, {
+    if (apiAvailable && sel && !sel.k_type.startsWith('temp_')) {
+        fetch(API + '/types/' + sel.k_type, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: sel.name, memo: sel.memo, flow_folder: sel.flow_folder })
