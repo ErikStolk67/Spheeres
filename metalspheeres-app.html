@@ -400,16 +400,26 @@
             border-bottom: 2px solid #E2E8F0; background: #FAFBFC; position: sticky; top: 0; z-index: 1;
         }
         .fl-table tbody tr.fl-field-row { cursor: pointer; border-bottom: 1px solid #F1F5F9; }
-        .fl-table tbody tr.fl-field-row:hover { background: #F0F9FF; }
+        .fl-table tbody tr.fl-field-row:hover { background: #F0F9FF !important; }
         .fl-table tbody tr.fl-group-row td { border-top: 1px solid #E2E8F0; }
+        .fl-table tbody tr.fl-field-row.grp-H { background: #F5F3FF; }
+        .fl-table tbody tr.fl-field-row.grp-OH { background: #EFF6FF; }
+        .fl-table tbody tr.fl-field-row.grp-C { background: #F0FDF4; }
+        .fl-table tbody tr.fl-field-row.grp-OF { background: #FFFBEB; }
+        .fl-table tbody tr.fl-field-row.grp-F { background: #F8FAFC; }
 
         .fl-group-label {
             writing-mode: vertical-lr; transform: rotate(180deg);
             font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;
             letter-spacing: 0.06em; padding: 10px 4px; text-align: center;
-            background: #F8FAFC; border-right: 2px solid #E2E8F0;
+            border-right: 2px solid #E2E8F0;
             vertical-align: middle; width: 30px; min-width: 30px;
         }
+        .fl-group-label.glbl-H  { background: #EDE9FE; color: #7C3AED; border-right-color: #8B5CF6; }
+        .fl-group-label.glbl-OH { background: #DBEAFE; color: #2563EB; border-right-color: #3B82F6; }
+        .fl-group-label.glbl-C  { background: #DCFCE7; color: #16A34A; border-right-color: #22C55E; }
+        .fl-group-label.glbl-OF { background: #FEF3C7; color: #D97706; border-right-color: #F59E0B; }
+        .fl-group-label.glbl-F  { background: #F1F5F9; color: #64748B; border-right-color: #94A3B8; }
         .fl-group-label span { white-space: nowrap; }
 
         .fl-field-name { padding: 7px 12px; }
@@ -2030,7 +2040,7 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
         const gFields = groups[g] || [];
         if (g === 'C' && gFields.length === 0) {
             // Show empty custom group
-            rowsHtml += '<tr class="fl-group-row"><td class="fl-group-label" rowspan="1"><span>' + groupNames[g] + '</span></td>' +
+            rowsHtml += '<tr class="fl-group-row"><td class="fl-group-label glbl-' + g + '" rowspan="1"><span>' + groupNames[g] + '</span></td>' +
                 '<td colspan="4" style="padding:10px 12px;color:#CBD5E1;font-style:italic;font-size:12px;">No custom fields defined</td></tr>';
             continue;
         }
@@ -2041,11 +2051,11 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
             const isClickable = g === 'C' || true; // All fields clickable for viewing
             const clickAttr = 'onclick="openFieldEditor(\'' + title + '\',\'' + (tableId||'') + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.group||g) + '\',\'' + (f.type||'').replace(/'/g,"\\'") + '\',' + (f.pk?'true':'false') + ',' + (f.fk?'true':'false') + ',' + (f.req?'true':'false') + ',' + (f.system !== false ? 'true' : 'false') + ')"';
 
-            rowsHtml += '<tr class="fl-field-row" ' + clickAttr + '>';
+            rowsHtml += '<tr class="fl-field-row grp-' + g + '" ' + clickAttr + '>';
 
             // Group label (only on first row of group)
             if (i === 0) {
-                rowsHtml += '<td class="fl-group-label" rowspan="' + gFields.length + '"><span>' + groupNames[g] + '</span></td>';
+                rowsHtml += '<td class="fl-group-label glbl-' + g + '" rowspan="' + gFields.length + '"><span>' + groupNames[g] + '</span></td>';
             }
 
             // Toggle + type icon + field name
