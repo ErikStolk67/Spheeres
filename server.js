@@ -2,10 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname)));
 
 // Use Railway DATABASE_URL or fallback to local
@@ -628,6 +630,160 @@ app.post('/api/seed', async (req, res) => {
         });
     } catch (err) {
         await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================================================
+// IMPORT XML - Large file upload & parse into CD_ tables
+// ============================================================================
+
+// Multipart file upload (no external dependency - use raw body)
+app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const xml = req.body.toString('utf-8');
+        
+        // Parse XML: find all table elements with their row data
+        // XML structure: <CD_Verspaning><CD_TABLES><K_TABLE>1</K_TABLE><NAME>foo</NAME>...</CD_TABLES>...
+        const tableDataRegex = /<(CD_[A-Z_]+?)>([\s\S]*?)<\/\1>/g;
+        const fieldRegex = /<([A-Z_]+?)>([\s\S]*?)<\/\1>/g;
+        
+        // Collect all rows per table
+        const tableRows = {};
+        let match;
+        
+        // First strip the outer dataset wrapper
+        const innerXml = xml.replace(/^[\s\S]*?<CD_[^>]+>/, '').replace(/<\/CD_[^>]+>\s*$/, '');
+        
+        while ((match = tableDataRegex.exec(xml)) !== null) {
+            const tableName = match[1].toLowerCase();
+            if (tableName === 'cd_verspaning') continue; // skip dataset root
+            
+            if (!tableRows[tableName]) tableRows[tableName] = [];
+            
+            // Parse fields from this row
+            const rowXml = match[2];
+            const row = {};
+            let fMatch;
+            const localFieldRegex = /<([A-Za-z_]+?)>([\s\S]*?)<\/\1>/g;
+            while ((fMatch = localFieldRegex.exec(rowXml)) !== null) {
+                const fname = fMatch[1].toLowerCase();
+                const fval = fMatch[2].trim();
+                if (fval !== '') row[fname] = fval;
+            }
+            if (Object.keys(row).length > 0) {
+                tableRows[tableName].push(row);
+            }
+        }
+        
+        // Get existing table columns from DB for type mapping
+        const tableNames = Object.keys(tableRows);
+        const importResults = [];
+        let totalRows = 0;
+        
+        // Import in order: lookups first, then entities, subs, links
+        const ordered = tableNames.sort((a, b) => {
+            const order = (n) => {
+                if (n.startsWith('cd_lk_')) return 1;
+                if (n.match(/^cd_[a-z]+_[a-z]+$/)) return 4; // link
+                if (n.match(/_(?:execution_log|logs|remote|checklist|clustersettings|fieldkey|fieldvalue|kinds|linkeditorvisibility|match|tabsettings|filteringsettings|restrictions)$/)) return 3;
+                return 2; // entity
+            };
+            return order(a) - order(b);
+        });
+        
+        await client.query('BEGIN');
+        
+        for (const tableName of ordered) {
+            const rows = tableRows[tableName];
+            if (!rows || rows.length === 0) continue;
+            
+            // Check if table exists
+            const exists = await client.query(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1",
+                [tableName]
+            );
+            if (exists.rows.length === 0) {
+                importResults.push({ table: tableName, rows: 0, error: 'table not found' });
+                continue;
+            }
+            
+            // Get column info
+            const colInfo = await client.query(
+                "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",
+                [tableName]
+            );
+            const dbCols = {};
+            colInfo.rows.forEach(c => { dbCols[c.column_name] = c.data_type; });
+            
+            // Clear existing data
+            await client.query(`TRUNCATE ${tableName} CASCADE`);
+            
+            // Insert rows in batches
+            let inserted = 0;
+            for (const row of rows) {
+                // Filter to existing columns only, convert values
+                const cols = [];
+                const vals = [];
+                const placeholders = [];
+                let pi = 1;
+                
+                for (const [col, val] of Object.entries(row)) {
+                    if (!dbCols[col]) continue; // skip unknown columns
+                    
+                    const dtype = dbCols[col];
+                    let pgVal = val;
+                    
+                    // Type conversions
+                    if (dtype === 'integer' || dtype === 'bigint') {
+                        pgVal = parseInt(val);
+                        if (isNaN(pgVal)) continue;
+                    } else if (dtype === 'boolean') {
+                        pgVal = val === 'true' || val === '1';
+                    } else if (dtype === 'timestamp with time zone' || dtype === 'timestamp without time zone') {
+                        pgVal = val; // postgres can parse ISO dates
+                    } else if (dtype === 'bytea') {
+                        pgVal = Buffer.from(val, 'base64');
+                    } else if (dtype === 'uuid') {
+                        pgVal = val;
+                    }
+                    
+                    cols.push(col);
+                    vals.push(pgVal);
+                    placeholders.push(`$${pi}`);
+                    pi++;
+                }
+                
+                if (cols.length === 0) continue;
+                
+                try {
+                    await client.query(
+                        `INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${placeholders.join(',')})`,
+                        vals
+                    );
+                    inserted++;
+                } catch (e) {
+                    // Skip individual row errors, continue with next
+                }
+            }
+            
+            totalRows += inserted;
+            importResults.push({ table: tableName, rows: inserted, total: rows.length });
+        }
+        
+        await client.query('COMMIT');
+        
+        res.json({
+            success: true,
+            tablesProcessed: importResults.length,
+            totalRows,
+            details: importResults
+        });
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch(e) {}
         res.status(500).json({ error: err.message });
     } finally {
         client.release();

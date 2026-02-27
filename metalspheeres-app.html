@@ -1607,7 +1607,7 @@ function renderDbDesigner() {
         <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
         <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
         <span style="flex:1;"></span>
-        ${isDictMode ? '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear Dictionary</button><button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed Dictionary to DB</button>' : ''}
+        ${isDictMode ? '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear Dictionary</button><button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed Dictionary to DB</button><button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML</button><input type="file" id="xmlFileInput" accept=".xml" style="display:none" onchange="importXmlFile(this)">' : ''}
         <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
     </div>`;
 
@@ -3622,6 +3622,44 @@ function showLoading(text) {
 }
 function hideLoading() {
     document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+// Import XML data file into CD_ tables
+async function importXmlFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = ''; // reset for re-upload
+    
+    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+    if (!confirm('Import "' + file.name + '" (' + sizeMB + ' MB) into dictionary?\n\nExisting CD_ data will be replaced.\n\nThis may take a few minutes for large files.')) return;
+    
+    showLoading('Uploading ' + sizeMB + ' MB...');
+    
+    try {
+        const resp = await fetch(API + '/import-xml', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file
+        });
+        
+        const result = await resp.json();
+        hideLoading();
+        
+        if (result.success) {
+            let msg = '✓ Import complete!\n\nTables: ' + result.tablesProcessed + '\nTotal records: ' + result.totalRows + '\n\nDetails:\n';
+            for (const d of (result.details || []).slice(0, 20)) {
+                msg += d.table + ': ' + d.rows + (d.error ? ' (' + d.error + ')' : '') + '\n';
+            }
+            if ((result.details || []).length > 20) msg += '... and ' + (result.details.length - 20) + ' more';
+            alert(msg);
+            renderContent();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        hideLoading();
+        alert('Error: ' + err.message);
+    }
 }
 
 // Clear all CD_ dictionary tables
