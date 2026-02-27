@@ -437,6 +437,35 @@
         .fl-field-row[draggable="true"]:active .fl-toggle { cursor: grabbing; }
         .fl-field-row[draggable="true"] { user-select: none; }
 
+        /* ============ DATABASE STATISTICS ============ */
+        .ds-page { padding: 32px; overflow-y: auto; }
+        .ds-section { margin-bottom: 32px; }
+        .ds-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .ds-section-title { font-size: 16px; font-weight: 700; color: #0F172A; }
+        .ds-section-count { font-size: 13px; color: #94A3B8; }
+        .ds-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .ds-card {
+            border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px;
+            background: #fff; min-height: 200px; display: flex; flex-direction: column;
+        }
+        .ds-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .ds-card-title { font-size: 13px; font-weight: 600; color: #334155; }
+        .ds-card-number { font-size: 32px; font-weight: 700; color: #0F172A; line-height: 1.1; }
+        .ds-card-sub { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+        .ds-card-divider { height: 1px; background: #E2E8F0; margin: 12px 0; }
+        .ds-table-header {
+            display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;
+            color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em;
+            padding: 0 0 6px; border-bottom: 1px solid #F1F5F9; margin-bottom: 4px;
+        }
+        .ds-table-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 4px 0; cursor: pointer; border-radius: 4px;
+        }
+        .ds-table-row:hover { background: #F0F9FF; }
+        .ds-table-name { font-size: 12px; font-weight: 500; text-decoration: none; }
+        .ds-table-count { font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums; }
+
         /* ============ TYPES EDITOR ============ */
         .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
         .te-title { font-size: 14px; color: #64748B; padding: 10px 16px; border-bottom: 1px solid #F1F5F9; }
@@ -722,6 +751,7 @@ const menuGroups = [
             { id: "sys_competences", label: "Competences", icon: "gauge" },
             { id: "sys_history", label: "History", icon: "history" },
             { id: "sys_locks", label: "Locks", icon: "lock" },
+            { id: "db_statistics", label: "Statistics", icon: "bar-chart-3" },
         ]
     },
     {
@@ -841,6 +871,14 @@ function renderContent() {
             <span class="breadcrumb-item">${item.label}</span>`;
         content.innerHTML = renderLookupEditor();
         initLookupTree();
+    } else if (activeItem === 'db_statistics') {
+        const { item, group } = findContext();
+        breadcrumb.innerHTML = `
+            <span class="breadcrumb-group">${group.label}</span>
+            <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
+            <span class="breadcrumb-item">${item.label}</span>`;
+        content.innerHTML = renderDbStatistics();
+        initDbStatistics();
     } else if (activeItem && activeItem.startsWith('cd_')) {
         const { item, group } = findContext();
         breadcrumb.innerHTML = `
@@ -3892,6 +3930,174 @@ function saveType() {
 
 function closeTypesEditor() {
     document.getElementById('typesEditorPopup').classList.remove('open');
+}
+
+// ============================================================================
+// DATABASE STATISTICS SCREEN
+// ============================================================================
+function categorizeXsdTables() {
+    const all = Object.keys(xsdFieldData);
+    const cats = {
+        cd: { entities: [], lookups: [], links: [], subtables: [] },
+        sys: { entities: [], lookups: [], links: [], subtables: [] },
+        user: { entities: [], lookups: [], links: [], subtables: [] },
+    };
+    
+    for (const t of all) {
+        let zone;
+        if (t.startsWith('CD_')) zone = 'cd';
+        else if (t.startsWith('SYS_')) zone = 'sys';
+        else zone = 'user';
+        
+        const base = t.startsWith('CD_') ? t.replace('CD_','') : (t.startsWith('SYS_') ? t.replace('SYS_','') : t);
+        
+        if (t.startsWith('CD_LK_') || t.startsWith('SYS_LK_') || t.startsWith('LK_')) {
+            cats[zone === 'user' ? 'user' : zone].lookups.push(t);
+        } else if (base.includes('_') && base.split('_').length === 2 && base.split('_')[0].length <= 4) {
+            // sub or link: check if prefix appears twice (self-ref link) or maps to entity
+            const parts = base.split('_');
+            if (parts[0] === parts[1].substring(0,parts[0].length)) {
+                cats[zone].links.push(t);
+            } else {
+                // Check if second part is also a 4-letter entity prefix
+                const secondIsEntity = all.some(e => {
+                    const eBase = e.startsWith('CD_') ? e.replace('CD_','') : (e.startsWith('SYS_') ? e.replace('SYS_','') : e);
+                    return !eBase.includes('_') && eBase.substring(0,4).toUpperCase() === parts[1].substring(0,4).toUpperCase() && e !== t;
+                });
+                if (secondIsEntity && parts[0].length <= 4 && parts[1].length <= 4) {
+                    cats[zone].links.push(t);
+                } else {
+                    cats[zone].subtables.push(t);
+                }
+            }
+        } else if (!base.includes('_')) {
+            cats[zone].entities.push(t);
+        } else {
+            cats[zone].subtables.push(t);
+        }
+    }
+    return cats;
+}
+
+function renderDbStatistics() {
+    const cats = categorizeXsdTables();
+    
+    function fieldCount(tableName) {
+        const raw = xsdFieldData[tableName];
+        return raw ? raw.split(',').length : 0;
+    }
+    
+    function sectionHtml(zone, label, icon, color) {
+        const c = cats[zone];
+        const totalFields = [...c.entities,...c.lookups,...c.links,...c.subtables].reduce((s,t) => s + fieldCount(t), 0);
+        const totalTables = c.entities.length + c.lookups.length + c.links.length + c.subtables.length;
+        
+        function cardHtml(type, items, cardIcon, cardColor) {
+            const count = items.length;
+            const topItems = items.slice(0,6).sort((a,b) => fieldCount(b) - fieldCount(a));
+            let listHtml = topItems.map(t => 
+                `<div class="ds-table-row" onclick="openStatsTable('${t}')" title="${t}">
+                    <span class="ds-table-name" style="color:${cardColor};">${t}</span>
+                    <span class="ds-table-count">${fieldCount(t)}</span>
+                </div>`
+            ).join('');
+            
+            return `<div class="ds-card">
+                <div class="ds-card-header">
+                    <span class="ds-card-title">${type}</span>
+                    <i data-lucide="${cardIcon}" style="width:18px;height:18px;color:${cardColor};"></i>
+                </div>
+                <div class="ds-card-number">${count}</div>
+                <div class="ds-card-sub">${count} tabellen</div>
+                <div class="ds-card-divider"></div>
+                <div class="ds-table-header">
+                    <span>Tabel</span><span>Fields</span>
+                </div>
+                ${listHtml}
+            </div>`;
+        }
+        
+        return `<div class="ds-section">
+            <div class="ds-section-header">
+                <i data-lucide="${icon}" style="width:20px;height:20px;color:${color};"></i>
+                <span class="ds-section-title">${label}</span>
+                <span class="ds-section-count">— ${totalTables} tabellen, ${totalFields.toLocaleString()} velden</span>
+            </div>
+            <div class="ds-cards">
+                ${cardHtml('Entities', c.entities, 'table', color)}
+                ${cardHtml('Lookups', c.lookups, 'list', color)}
+                ${cardHtml('Links', c.links, 'link', color)}
+                ${cardHtml('Subtables', c.subtables, 'layers', color)}
+            </div>
+        </div>`;
+    }
+    
+    return `<div class="ds-page">
+        <h1 style="font-size:24px;font-weight:600;color:#0F172A;margin-bottom:4px;">Database Statistieken</h1>
+        <p style="font-size:13px;color:#64748B;margin-bottom:24px;">Overzicht van tabellen en velden per categorie</p>
+        ${sectionHtml('cd', 'Dictionary (CD_*)', 'book-open', '#3B82F6')}
+        ${sectionHtml('sys', 'Systeem (SYS_*)', 'settings', '#F59E0B')}
+        ${sectionHtml('user', 'User tabellen', 'users', '#22C55E')}
+    </div>
+    <div class="popup-overlay" id="statsTablePopup"></div>`;
+}
+
+function initDbStatistics() {
+    // Click outside to close popup
+    const pop = document.getElementById('statsTablePopup');
+    if (pop) pop.addEventListener('click', function(e) {
+        if (e.target === pop) pop.classList.remove('open');
+    });
+}
+
+function openStatsTable(tableName) {
+    const raw = xsdFieldData[tableName.toUpperCase()] || xsdFieldData[tableName];
+    if (!raw) return;
+    
+    const fields = raw.split(',').map(f => {
+        const [name, typeCode] = f.split(':');
+        const typeMap = {i:'integer',s:'varchar',b:'boolean',d:'timestamptz',u:'uuid',y:'bytea'};
+        return { name, type: typeMap[typeCode] || typeCode };
+    });
+    
+    let rowsHtml = fields.map((f, idx) => {
+        const typeColor = {integer:'#8B5CF6',varchar:'#0F172A',boolean:'#22C55E',timestamptz:'#0EA5E9',uuid:'#94A3B8',bytea:'#D97706'}[f.type] || '#64748B';
+        const isKey = f.name.startsWith('K_');
+        const isFk = f.name.startsWith('F_');
+        let icon = '';
+        if (isKey) icon = '<span style="color:#D97706;">&#128273;</span> ';
+        else if (isFk) icon = '<span style="color:#2563EB;">&#128279;</span> ';
+        return `<tr style="border-bottom:1px solid #F1F5F9;">
+            <td style="padding:6px 12px;font-size:12px;color:#94A3B8;width:40px;">${idx}</td>
+            <td style="padding:6px 12px;font-size:12px;font-weight:${isKey?700:400};color:#0F172A;">${icon}${f.name}</td>
+            <td style="padding:6px 12px;font-size:12px;color:${typeColor};">${f.type}</td>
+        </tr>`;
+    }).join('');
+    
+    const popup = document.getElementById('statsTablePopup');
+    popup.innerHTML = `<div class="popup" style="width:600px;max-height:80vh;">
+        <div class="popup-header">
+            <div>
+                <span style="font-size:16px;font-weight:700;color:#0F172A;">${tableName}</span>
+                <span style="font-size:12px;color:#94A3B8;margin-left:8px;">${fields.length} velden</span>
+            </div>
+            <button onclick="document.getElementById('statsTablePopup').classList.remove('open')" 
+                style="border:none;background:none;cursor:pointer;font-size:20px;color:#94A3B8;">&#10005;</button>
+        </div>
+        <div style="overflow-y:auto;flex:1;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#F8FAFC;border-bottom:2px solid #E2E8F0;position:sticky;top:0;">
+                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">#</th>
+                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Veld</th>
+                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Type</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>
+    </div>`;
+    popup.classList.add('open');
 }
 
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
