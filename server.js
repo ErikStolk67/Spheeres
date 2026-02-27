@@ -726,6 +726,16 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             
             await client.query(`TRUNCATE ${tableName} CASCADE`);
             
+            // Widen all varchar columns to text to match XSD xs:string (unlimited)
+            for (const [colName, dtype] of Object.entries(dbCols)) {
+                if (dtype === 'character varying') {
+                    try {
+                        await client.query(`ALTER TABLE ${tableName} ALTER COLUMN "${colName}" TYPE text`);
+                        dbCols[colName] = 'text';
+                    } catch(e) {}
+                }
+            }
+            
             let inserted = 0, errors = 0, lastError = '';
             
             for (const row of rows) {
