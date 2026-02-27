@@ -3053,11 +3053,17 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
     }
 
     const popup = document.getElementById('fieldPopup');
+    const isDbTable = title.toLowerCase().startsWith('cd_');
+    const dbBtns = isDbTable ? 
+        '<button class="fe-btn" style="background:#10B981;color:#fff;" onclick="syncTableToDb(\'' + title + '\')">&#9729; Sync DB</button>' +
+        '<button class="fe-btn" style="background:#8B5CF6;color:#fff;" onclick="openAddColumnPopup(\'' + title + '\')">+ Column</button>'
+        : '';
     popup.innerHTML = '<div class="popup fl-popup">' +
         // Toolbar
         '<div class="fl-toolbar">' +
             '<button class="fe-btn fe-btn-ok" onclick="closePopup()">Ok</button>' +
             (tableId ? '<button class="fe-btn" style="background:#0EA5E9;color:#fff;" onclick="closePopup();openAddFieldPopup(\'' + title + '\',\'' + tableId + '\',\'' + typeBadge + '\',\'' + color + '\')">+ New</button>' : '') +
+            dbBtns +
             '<button class="fe-btn fe-btn-cancel" onclick="closePopup()">Cancel</button>' +
             '<span class="fl-toolbar-search"><span style="color:#94A3B8;">&#128269;</span> Search...</span>' +
         '</div>' +
@@ -3442,6 +3448,143 @@ function deleteCustomField(fieldId, tableName) {
 
 function closeAddFieldPopup() {
     document.getElementById('addFieldPopup').classList.remove('open');
+}
+
+// ============================================================================
+// DATABASE MANAGEMENT - Sync tables/columns to Neon cloud DB
+// ============================================================================
+
+async function syncTableToDb(tableName) {
+    const table = tableName.toLowerCase();
+    const fields = xsdFieldData[tableName.toUpperCase()] || xsdFieldData[tableName];
+    if (!fields || fields.length === 0) {
+        alert('No field definitions found for ' + tableName);
+        return;
+    }
+    
+    // Check if table exists in DB
+    try {
+        const resp = await fetch(API + '/schema/tables/' + table + '/columns');
+        const dbCols = await resp.json();
+        const dbColNames = dbCols.map(c => c.column_name);
+        
+        // Find missing columns
+        let added = 0;
+        for (const f of fields) {
+            const colName = f.toLowerCase();
+            if (!dbColNames.includes(colName)) {
+                // Determine type from XSD field name patterns
+                let dtype = 'varchar(100)';
+                if (colName.startsWith('k_')) dtype = 'integer';
+                else if (colName.startsWith('f_')) dtype = 'integer';
+                else if (colName === 'memo') dtype = 'bytea';
+                else if (colName.includes('memo_plaintext')) dtype = 'varchar(500)';
+                else if (colName === 'createdby' || colName === 'changedby') dtype = 'integer';
+                else if (colName === 'createdate' || colName === 'changedate' || colName === 'laststatusdate' || colName === 'lifedate') dtype = 'timestamptz';
+                else if (colName === 'replicationid') dtype = 'uuid';
+                else if (colName === 'sort' || colName === 'k_seq' || colName === 'sort_order') dtype = 'integer';
+                else if (colName.startsWith('is_') || colName === 'enabled' || colName === 'main' || colName === 'locked') dtype = 'boolean';
+                else if (colName.includes('properties') || colName.includes('url') || colName.includes('code') || colName.includes('alias')) dtype = 'varchar(100)';
+                else if (colName.includes('name')) dtype = 'varchar(100)';
+                
+                const addResp = await fetch(API + '/schema/tables/' + table + '/columns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ column_name: colName, data_type: dtype })
+                });
+                if (addResp.ok) added++;
+            }
+        }
+        
+        // Reload column info
+        const resp2 = await fetch(API + '/schema/tables/' + table + '/columns');
+        const updatedCols = await resp2.json();
+        
+        alert('✓ Sync complete for ' + tableName + '\n\nColumns in DB: ' + updatedCols.length + '\nColumns added: ' + added);
+        showTablePopup(tableName);
+    } catch (err) {
+        alert('Error syncing: ' + err.message);
+    }
+}
+
+function openAddColumnPopup(tableName) {
+    const table = tableName.toLowerCase();
+    const popup = document.getElementById('addFieldPopup');
+    popup.innerHTML = '<div class="add-field-popup">' +
+        '<div class="fe-toolbar">' +
+            '<button class="fe-btn fe-btn-ok" onclick="saveNewColumn(\'' + table + '\')">Save to DB</button>' +
+            '<button class="fe-btn fe-btn-cancel" onclick="closeAddFieldPopup()">Cancel</button>' +
+        '</div>' +
+        '<div style="padding:20px;">' +
+            '<h3 style="margin:0 0 16px 0;font-size:16px;color:#0F172A;">Add Column to ' + tableName + '</h3>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+                '<div>' +
+                    '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Column Name</label>' +
+                    '<input id="newColName" type="text" placeholder="e.g. status" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;" />' +
+                '</div>' +
+                '<div>' +
+                    '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Data Type</label>' +
+                    '<select id="newColType" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;">' +
+                        '<option value="varchar(100)">varchar(100)</option>' +
+                        '<option value="varchar(500)">varchar(500)</option>' +
+                        '<option value="integer">integer</option>' +
+                        '<option value="boolean">boolean</option>' +
+                        '<option value="timestamptz">timestamptz</option>' +
+                        '<option value="numeric">numeric</option>' +
+                        '<option value="text">text</option>' +
+                        '<option value="uuid">uuid</option>' +
+                        '<option value="bytea">bytea</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div>' +
+                    '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Default Value (optional)</label>' +
+                    '<input id="newColDefault" type="text" placeholder="e.g. now() or 0" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;" />' +
+                '</div>' +
+            '</div>' +
+        '</div>' +
+    '</div>';
+    popup.classList.add('open');
+}
+
+async function saveNewColumn(table) {
+    const name = document.getElementById('newColName').value.trim();
+    const type = document.getElementById('newColType').value;
+    const def = document.getElementById('newColDefault').value.trim();
+    
+    if (!name) { alert('Column name is required'); return; }
+    
+    try {
+        const resp = await fetch(API + '/schema/tables/' + table + '/columns', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ column_name: name, data_type: type, default_value: def || undefined })
+        });
+        const result = await resp.json();
+        if (result.success) {
+            closeAddFieldPopup();
+            alert('✓ Column "' + name + '" added to ' + table);
+            showTablePopup(table.toUpperCase());
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+// Create new table via UI
+async function createNewTable(tableName, columns) {
+    try {
+        const resp = await fetch(API + '/schema/tables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: tableName, columns })
+        });
+        const result = await resp.json();
+        return result;
+    } catch (err) {
+        return { error: err.message };
+    }
 }
 
 // Close on overlay click

@@ -211,5 +211,148 @@ app.post('/api/migrate', async (req, res) => {
     }
 });
 
+// ============================================================================
+// SCHEMA MANAGEMENT - Tables & Fields CRUD
+// ============================================================================
+
+// Get all tables with their columns from information_schema
+app.get('/api/schema/tables', async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT table_name, 
+                   (SELECT count(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = 'public') as column_count
+            FROM information_schema.tables t 
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        `);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get columns for a specific table
+app.get('/api/schema/tables/:name/columns', async (req, res) => {
+    const table = req.params.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    try {
+        const { rows } = await pool.query(`
+            SELECT column_name, data_type, character_maximum_length, is_nullable, column_default,
+                   ordinal_position
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = $1
+            ORDER BY ordinal_position
+        `, [table]);
+        
+        // Also get primary key info
+        const pk = await pool.query(`
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
+        `, [table]);
+        const pkCols = pk.rows.map(r => r.column_name);
+        
+        rows.forEach(r => { r.is_primary_key = pkCols.includes(r.column_name); });
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create a new table
+app.post('/api/schema/tables', async (req, res) => {
+    const { name, columns } = req.body;
+    if (!name) return res.status(400).json({ error: 'Table name required' });
+    
+    const tableName = name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    
+    // Default columns if none provided
+    const cols = columns || [
+        { name: 'k_' + tableName.replace(/^cd_/, ''), type: 'SERIAL', pk: true },
+        { name: 'name', type: 'varchar(100)' },
+        { name: 'createdby', type: 'integer' },
+        { name: 'createdate', type: 'timestamptz', default: 'now()' },
+        { name: 'changedby', type: 'integer' },
+        { name: 'changedate', type: 'timestamptz', default: 'now()' }
+    ];
+    
+    const colDefs = cols.map(c => {
+        let def = `${c.name} ${c.type}`;
+        if (c.pk) def += ' PRIMARY KEY';
+        if (c.notnull) def += ' NOT NULL';
+        if (c.default) def += ` DEFAULT ${c.default}`;
+        return def;
+    }).join(', ');
+    
+    try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS ${tableName} (${colDefs})`);
+        res.json({ success: true, table: tableName, columns: cols.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Add column to existing table
+app.post('/api/schema/tables/:name/columns', async (req, res) => {
+    const table = req.params.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const { column_name, data_type, default_value } = req.body;
+    if (!column_name || !data_type) return res.status(400).json({ error: 'column_name and data_type required' });
+    
+    const colName = column_name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    let sql = `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${colName} ${data_type}`;
+    if (default_value) sql += ` DEFAULT ${default_value}`;
+    
+    try {
+        await pool.query(sql);
+        res.json({ success: true, table, column: colName, type: data_type });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Drop column from table
+app.delete('/api/schema/tables/:name/columns/:col', async (req, res) => {
+    const table = req.params.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const col = req.params.col.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    try {
+        await pool.query(`ALTER TABLE ${table} DROP COLUMN IF EXISTS ${col}`);
+        res.json({ success: true, table, dropped: col });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Drop table
+app.delete('/api/schema/tables/:name', async (req, res) => {
+    const table = req.params.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    try {
+        await pool.query(`DROP TABLE IF EXISTS ${table}`);
+        res.json({ success: true, dropped: table });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Insert data into table
+app.post('/api/data/:table', async (req, res) => {
+    const table = req.params.table.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const data = req.body;
+    if (!data || Object.keys(data).length === 0) return res.status(400).json({ error: 'No data provided' });
+    
+    const cols = Object.keys(data);
+    const vals = Object.values(data);
+    const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+    
+    try {
+        const { rows } = await pool.query(
+            `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+            vals
+        );
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
