@@ -371,6 +371,12 @@ app.post('/api/seed', async (req, res) => {
         await client.query('DELETE FROM cd_fields');
         await client.query('DELETE FROM cd_tables');
         
+        // Fix primary key on cd_tabl_fiel to be composite (k_fiel, k_tabl, k_seq)
+        try {
+            await client.query('ALTER TABLE cd_tabl_fiel DROP CONSTRAINT IF EXISTS cd_tabl_fiel_pkey');
+            await client.query('ALTER TABLE cd_tabl_fiel ADD PRIMARY KEY (k_fiel, k_tabl, k_seq)');
+        } catch(e) { /* constraint may already be correct */ }
+        
         let tableId = 1;
         let fieldId = 1;
         const tableResults = [];
@@ -449,11 +455,10 @@ app.post('/api/seed', async (req, res) => {
                     fieldId++;
                 }
                 
-                // Insert link: cd_tabl_fiel - needs unique k_fiel per row
-                const linkId = (tableId * 10000) + fieldSort;
+                // Insert link: cd_tabl_fiel (composite PK: k_fiel + k_tabl)
                 await client.query(
                     'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                    [linkId, tableId, fieldSort, fieldSort === 1]
+                    [currentFieldId, tableId, fieldSort, fieldSort === 1]
                 );
                 
                 fieldSort++;
