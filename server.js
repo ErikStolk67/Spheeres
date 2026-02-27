@@ -395,36 +395,46 @@ app.post('/api/seed-xsd', async (req, res) => {
     
     const client = await pool.connect();
     try {
+        // Step 1: Drop constraints OUTSIDE transaction (DDL)
+        const constraints = await client.query(`
+            SELECT tc.constraint_name, tc.table_name 
+            FROM information_schema.table_constraints tc
+            WHERE tc.table_schema = 'public' 
+            AND tc.table_name IN ('cd_tables','cd_fields','cd_tabl_fiel')
+            AND tc.constraint_type = 'PRIMARY KEY'
+        `);
+        for (const c of constraints.rows) {
+            await client.query(`ALTER TABLE ${c.table_name} DROP CONSTRAINT IF EXISTS "${c.constraint_name}"`);
+        }
+        
+        // Step 2: Truncate
+        await client.query('TRUNCATE cd_tabl_fiel');
+        await client.query('TRUNCATE cd_fields');
+        await client.query('TRUNCATE cd_tables');
+        
+        // Step 3: Insert in transaction
         await client.query('BEGIN');
-        
-        // Clear existing dictionary data
-        await client.query('TRUNCATE cd_tabl_fiel, cd_fields, cd_tables CASCADE');
-        
-        // Drop constraints for clean insert
-        try { await client.query('ALTER TABLE cd_tabl_fiel DROP CONSTRAINT IF EXISTS cd_tabl_fiel_pkey'); } catch(e) {}
-        try { await client.query('ALTER TABLE cd_fields DROP CONSTRAINT IF EXISTS cd_fields_pkey'); } catch(e) {}
-        try { await client.query('ALTER TABLE cd_tables DROP CONSTRAINT IF EXISTS cd_tables_pkey'); } catch(e) {}
         
         let tableId = 1;
         let fieldId = 1;
-        const results = { lookups: 0, entities: 0, subtables: 0, links: 0, system: 0 };
-        const typeNames = { 1: 'entities', 2: 'lookups', 3: 'links', 4: 'subtables', 5: 'system' };
+        let linkCount = 0;
+        const results = { lookups: 0, entities: 0, subtables: 0, links: 0 };
+        const typeNames = { 1: 'entities', 2: 'lookups', 3: 'links', 4: 'subtables' };
         
         for (const [tableName, info] of Object.entries(seedTables)) {
             const fType = info.fType || 1;
             
-            // Insert table record
+            // Insert into cd_tables
             await client.query(
                 'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
                 [tableId, tableName, fType, tableId]
             );
             results[typeNames[fType] || 'entities']++;
             
-            // Insert fields and links
+            // Insert fields and table-field links
             let fieldSort = 1;
             for (const field of info.fields) {
-                // Determine field kind: 1=integer, 2=string, 3=boolean, 4=datetime, 5=binary, 6=guid
-                let fFieldType = 2; // default string
+                let fFieldType = 2;
                 if (field.xsType === 'int') fFieldType = 1;
                 else if (field.xsType === 'boolean') fFieldType = 3;
                 else if (field.xsType === 'dateTime') fFieldType = 4;
@@ -432,40 +442,47 @@ app.post('/api/seed-xsd', async (req, res) => {
                 if (field.name === 'REPLICATIONID') fFieldType = 6;
                 
                 const isPk = field.name.startsWith('K_') && fieldSort <= 3;
-                const isFk = field.name.startsWith('F_');
                 
-                // Insert field
+                // Insert into cd_fields
                 await client.query(
                     'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
                     [fieldId, field.name, fFieldType, fieldSort]
                 );
                 
-                // Insert table-field link
+                // Insert into cd_tabl_fiel
                 await client.query(
                     'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
                     [fieldId, tableId, fieldSort, isPk]
                 );
                 
                 fieldId++;
+                linkCount++;
                 fieldSort++;
             }
             tableId++;
         }
         
         await client.query('COMMIT');
+        
+        // Step 4: Verify counts
+        const tCount = await client.query('SELECT count(*) FROM cd_tables');
+        const fCount = await client.query('SELECT count(*) FROM cd_fields');
+        const lCount = await client.query('SELECT count(*) FROM cd_tabl_fiel');
+        
         await client.query('ANALYZE cd_tables');
         await client.query('ANALYZE cd_fields');
         await client.query('ANALYZE cd_tabl_fiel');
         
         res.json({
             success: true,
-            tables: tableId - 1,
-            fields: fieldId - 1,
+            tables: parseInt(tCount.rows[0].count),
+            fields: parseInt(fCount.rows[0].count),
+            links: parseInt(lCount.rows[0].count),
             summary: results
         });
     } catch (err) {
-        await client.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
+        try { await client.query('ROLLBACK'); } catch(e) {}
+        res.status(500).json({ error: err.message, stack: err.stack?.split('\n')[0] });
     } finally {
         client.release();
     }
