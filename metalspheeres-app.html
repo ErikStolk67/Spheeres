@@ -272,15 +272,16 @@
         .matrix .cell-dash-lk { background: #E2E8F0; color: #64748B; font-size: 10px; }
 
         /* Toggle button */
-        .designer-toggle { display: flex; gap: 0; margin-bottom: 12px; }
+        .designer-toggle { display: flex; gap: 0; margin-bottom: 16px; }
         .toggle-btn {
-            padding: 7px 20px; border: 1px solid #D1D5DB; font-size: 13px; font-weight: 500;
-            cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #64748B;
+            padding: 10px 28px; border: 2px solid #D1D5DB; font-size: 14px; font-weight: 600;
+            cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #94A3B8;
             transition: all 0.15s;
         }
-        .toggle-btn:first-child { border-radius: 8px 0 0 8px; }
-        .toggle-btn:last-child { border-radius: 0 8px 8px 0; border-left: none; }
-        .toggle-btn.active { background: #0F172A; color: #fff; border-color: #0F172A; }
+        .toggle-btn:first-child { border-radius: 10px 0 0 10px; }
+        .toggle-btn:last-child { border-radius: 0 10px 10px 0; border-left: none; }
+        .toggle-btn.active-user { background: #64748B; color: #fff; border-color: #64748B; }
+        .toggle-btn.active-dict { background: #3B82F6; color: #fff; border-color: #3B82F6; }
 
         .matrix .corner { position: sticky; left: 0; top: 0; z-index: 5; background: #F8FAFC; min-width: 140px; }
         .matrix .meta-cols { font-size: 10px; color: #64748B; padding: 2px 4px; white-space: nowrap; }
@@ -1451,8 +1452,8 @@ function renderDbDesigner() {
 
     // Toggle button
     const toggleHtml = `<div class="designer-toggle">
-        <button class="toggle-btn ${!isDictMode ? 'active' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
-        <button class="toggle-btn ${isDictMode ? 'active' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
+        <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
+        <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
     </div>`;
 
     // Legend
