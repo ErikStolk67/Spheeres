@@ -355,6 +355,37 @@ app.post('/api/data/:table', async (req, res) => {
 });
 
 // ============================================================================
+// CLEAR DICTIONARY - Empty all CD_ tables
+// ============================================================================
+
+app.post('/api/clear-dictionary', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Get all cd_ tables
+        const { rows } = await client.query(`
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name LIKE 'cd_%'
+            ORDER BY table_name
+        `);
+        
+        // Disable triggers, truncate all, re-enable
+        for (const r of rows) {
+            await client.query(`TRUNCATE TABLE ${r.table_name} CASCADE`);
+        }
+        
+        await client.query('COMMIT');
+        res.json({ success: true, tables_cleared: rows.length });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// ============================================================================
 // SEED ENDPOINT - Load XSD metadata into dictionary tables
 // ============================================================================
 
