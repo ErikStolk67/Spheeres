@@ -1709,18 +1709,45 @@ function parseXsdFields(tableName) {
     const raw = xsdFieldData[tableName.toUpperCase()];
     if (!raw) return null;
     const seen = new Set();
-    return raw.split(',').filter(f => {
+    const allFields = raw.split(',').filter(f => {
         const n = f.split(':')[0]; 
-        if (seen.has(n)) return false; // deduplicate
+        if (seen.has(n)) return false;
         seen.add(n); return true;
-    }).map(f => {
+    });
+
+    // Header fields (system identifiers)
+    const headerNames = new Set(['REPLICATIONID','F_DICTIONARY']);
+    // Footer fields (audit trail)
+    const footerNames = new Set(['CREATEDBY','CREATEDATE','CHANGEDBY','CHANGEDATE','F_OWNER','F_OWNER_PROFILE','LASTSTATUSDATE','F_LIFESTATUS','ENABLED']);
+    // OH fields (entity identity: type, name, kind - always right after keys)
+    const ohNames = new Set(['F_TYPE','NAME','NAME_EN','NAME_NL','F_KIND']);
+
+    // Find SORT position - it separates custom from footer zone
+    let sortPos = -1;
+    for (let i = 0; i < allFields.length; i++) {
+        if (allFields[i].split(':')[0].toUpperCase() === 'SORT') { sortPos = i; break; }
+    }
+
+    return allFields.map((f, idx) => {
         const [name, t] = f.split(':');
         const n = name.toUpperCase();
-        let group = 'OH';
+        let group;
+
+        // Primary keys
         if (n.startsWith('K_') && n !== 'K_SEQ') group = 'H';
-        else if (n === 'REPLICATIONID' || n === 'F_DICTIONARY') group = 'H';
-        else if (['CREATEDBY','CREATEDATE','CHANGEDBY','CHANGEDATE','F_OWNER','F_OWNER_PROFILE','LASTSTATUSDATE','F_LIFESTATUS'].includes(n)) group = 'F';
+        // System header fields
+        else if (headerNames.has(n)) group = 'H';
+        // Memo fields → OF
         else if (n.startsWith('MEMO')) group = 'OF';
+        // Footer audit fields
+        else if (footerNames.has(n)) group = 'F';
+        // OH identity fields (type, name, kind)
+        else if (ohNames.has(n)) group = 'OH';
+        // SORT field itself → OH
+        else if (n === 'SORT') group = 'OH';
+        // Everything else between OH and SORT/MEMO = Custom
+        else group = 'C';
+
         return { name: n, group, type: typeMap[t]||'varchar(500)', pk: n.startsWith('K_')&&n!=='K_SEQ', fk: n.startsWith('F_'), req: n.startsWith('K_')&&n!=='K_SEQ' };
     });
 }
