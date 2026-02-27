@@ -1603,11 +1603,18 @@ function renderDbDesigner() {
     }
 
     // Toggle button + action buttons
+    let actionBtns = '';
+    if (isDictMode) {
+        actionBtns = '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear</button>' +
+        '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
+        '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML</button>' +
+        '<input type="file" id="xmlFileInput" accept=".xml,.xsd" style="display:none" onchange="importXmlFile(this)">';
+    }
     const toggleHtml = `<div class="designer-toggle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
         <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
         <span style="flex:1;"></span>
-        ${isDictMode ? '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear Dictionary</button><button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed Dictionary to DB</button><button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML</button><input type="file" id="xmlFileInput" accept=".xml" style="display:none" onchange="importXmlFile(this)">' : ''}
+        ${actionBtns}
         <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
     </div>`;
 
