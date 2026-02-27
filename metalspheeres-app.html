@@ -3639,7 +3639,8 @@ async function seedDictionary() {
         const result = await resp.json();
         hideLoading();
         if (result.success) {
-            alert('✓ Dictionary seeded!\n\nTables: ' + result.tables + '\nFields: ' + result.fields);
+            const s = result.summary || {};
+            alert('✓ Dictionary seeded!\n\nTotal tables: ' + result.tables + '\nTotal fields: ' + result.fields + '\n\nLookups: ' + (s.lookups||0) + '\nEntities: ' + (s.entities||0) + '\nSubtables: ' + (s.subtables||0) + '\nLinks: ' + (s.links||0));
             renderContent();
         } else {
             alert('Error: ' + result.error);

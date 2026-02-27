@@ -371,51 +371,73 @@ app.post('/api/seed', async (req, res) => {
         await client.query('DELETE FROM cd_fields');
         await client.query('DELETE FROM cd_tables');
         
-        // Fix primary key on cd_tabl_fiel to be composite (k_fiel, k_tabl, k_seq)
-        try {
-            await client.query('ALTER TABLE cd_tabl_fiel DROP CONSTRAINT IF EXISTS cd_tabl_fiel_pkey');
-            await client.query('ALTER TABLE cd_tabl_fiel ADD PRIMARY KEY (k_fiel, k_tabl, k_seq)');
-        } catch(e) { /* constraint may already be correct */ }
+        // Drop and recreate constraints for clean insert
+        try { await client.query('ALTER TABLE cd_tabl_fiel DROP CONSTRAINT IF EXISTS cd_tabl_fiel_pkey'); } catch(e) {}
+        try { await client.query('ALTER TABLE cd_fields DROP CONSTRAINT IF EXISTS cd_fields_pkey'); } catch(e) {}
+        
+        // Classify all tables into categories
+        const categories = { lookups: [], entities: [], subtables: [], links: [] };
+        const seenTables = new Set();
+        
+        for (const [tableName, fieldStr] of Object.entries(xsdData)) {
+            const upper = tableName.toUpperCase();
+            if (seenTables.has(upper)) continue;
+            seenTables.add(upper);
+            
+            const entry = { name: upper, fields: fieldStr };
+            
+            if (upper.startsWith('CD_LK_') || upper.startsWith('LK_')) {
+                categories.lookups.push(entry);
+            } else if (upper.match(/_SUBKEYS$/) || upper.match(/_USER$/) || upper.match(/_FILES$/) || 
+                       upper.match(/_GALLERY$/) || upper.match(/_IMAGES$/) || upper.match(/_TEMP$/) ||
+                       upper.match(/_LOGS$/) || upper.match(/_REMOTE$/) || upper.match(/_CHECKLIST$/) ||
+                       upper.match(/_EXECUTION_LOG$/) || upper.match(/_CLUSTERSETTINGS$/) ||
+                       upper.match(/_FIELDKEY$/) || upper.match(/_FIELDVALUE$/) || upper.match(/_KINDS$/) ||
+                       upper.match(/_LINKEDITORVISIBILITY$/) || upper.match(/_MATCH$/) ||
+                       upper.match(/_TABSETTINGS$/) || upper.match(/_FILTERINGSETTINGS$/) ||
+                       upper.match(/_RESTRICTIONS$/) || upper.match(/_ACTIONPARTIES$/) ||
+                       upper.match(/_COMPANYADDRESSES$/) || upper.match(/_FULLADDRESS$/) ||
+                       upper.match(/_POSTCODECHECK$/) || upper.match(/_SCALES$/) ||
+                       upper.match(/_INVOICING.*$/) || upper.match(/_DEPRECIATION$/) ||
+                       upper.match(/_SCHEDULEDDOWNTIME$/) || upper.match(/_CALIBRATIEDATA$/)) {
+                categories.subtables.push(entry);
+            } else {
+                // Check if it's a link table: pattern XXXX_YYYY (4-letter prefix _ 4-letter suffix)
+                const parts = upper.split('_');
+                if (parts.length === 2 && parts[0].length >= 3 && parts[0].length <= 5 && 
+                    parts[1].length >= 3 && parts[1].length <= 5 &&
+                    !upper.startsWith('CD_') && !upper.startsWith('SYS_') && !upper.startsWith('LK_') &&
+                    // Known entity names that look like links but aren't
+                    !['WORKORDER','DATAIMPORT','PURCHASEADVICES','INVOICESCHEDULE','PRODUCTIONPLANNING'].includes(upper)) {
+                    categories.links.push(entry);
+                } else {
+                    categories.entities.push(entry);
+                }
+            }
+        }
+        
+        // Insert in order: 1=lookups, 2=entities, 3=subtables, 4=links
+        const orderedTables = [
+            ...categories.lookups.map(t => ({ ...t, fType: 2 })),
+            ...categories.entities.map(t => ({ ...t, fType: t.name.startsWith('SYS_') ? 5 : 1 })),
+            ...categories.subtables.map(t => ({ ...t, fType: 4 })),
+            ...categories.links.map(t => ({ ...t, fType: 3 })),
+        ];
         
         let tableId = 1;
         let fieldId = 1;
+        let linkId = 1;
         const tableResults = [];
-        const seenTables = new Set();
-        const seenFieldNames = new Set(); // global dedup for cd_fields
         
-        // Type mapping from XSD shortcodes
-        const typeMap = { i: 'integer', s: 'varchar(100)', b: 'boolean', d: 'timestamptz', u: 'uuid', y: 'bytea' };
-        
-        for (const [tableName, fieldStr] of Object.entries(xsdData)) {
-            const upperName = tableName.toUpperCase();
-            
-            // Skip duplicates
-            if (seenTables.has(upperName)) continue;
-            seenTables.add(upperName);
-            
-            // Determine table category
-            const isCd = upperName.startsWith('CD_');
-            const isSys = upperName.startsWith('SYS_');
-            const isLookup = upperName.startsWith('CD_LK_') || upperName.startsWith('LK_');
-            const isLink = upperName.match(/^[A-Z]{4}_[A-Z]{4}$/) && !isLookup;
-            const isSub = upperName.includes('_SUBKEYS') || upperName.includes('_USER') || 
-                          upperName.match(/_(?:EXECUTION_LOG|LOGS|REMOTE|CHECKLIST|CLUSTERSETTINGS|FIELDKEY|FIELDVALUE|KINDS|LINKEDITORVISIBILITY|MATCH|TABSETTINGS|FILTERINGSETTINGS|RESTRICTIONS|FILES|GALLERY|IMAGES|TEMP)$/);
-            
-            // Determine f_type: 1=entity, 2=lookup, 3=link, 4=subtable, 5=system
-            let fType = 1; // entity
-            if (isLookup) fType = 2;
-            else if (isLink) fType = 3;
-            else if (isSub) fType = 4;
-            else if (isSys) fType = 5;
-            
+        for (const table of orderedTables) {
             // Insert into cd_tables
             await client.query(
                 'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                [tableId, upperName, fType, tableId]
+                [tableId, table.name, table.fType, tableId]
             );
             
             // Parse fields - deduplicate within table
-            const fieldDefs = fieldStr.split(',').map(f => f.trim());
+            const fieldDefs = table.fields.split(',').map(f => f.trim());
             const seenFieldsInTable = new Set();
             let fieldSort = 1;
             
@@ -428,43 +450,24 @@ app.post('/api/seed', async (req, res) => {
                 if (!fname || seenFieldsInTable.has(fname)) continue;
                 seenFieldsInTable.add(fname);
                 
-                // Check if this field name already exists in cd_fields (global)
-                const fieldKey = fname;
-                let currentFieldId;
-                
-                if (seenFieldNames.has(fieldKey)) {
-                    // Field already exists, find its id for the link
-                    const existing = await client.query('SELECT k_field FROM cd_fields WHERE name = $1 LIMIT 1', [fname]);
-                    if (existing.rows.length > 0) {
-                        currentFieldId = existing.rows[0].k_field;
-                    } else {
-                        currentFieldId = fieldId;
-                        await client.query(
-                            'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                            [fieldId, fname, ftype === 'i' ? 1 : (ftype === 's' ? 2 : (ftype === 'b' ? 3 : (ftype === 'd' ? 4 : 5))), fieldSort]
-                        );
-                        fieldId++;
-                    }
-                } else {
-                    seenFieldNames.add(fieldKey);
-                    currentFieldId = fieldId;
-                    await client.query(
-                        'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                        [fieldId, fname, ftype === 'i' ? 1 : (ftype === 's' ? 2 : (ftype === 'b' ? 3 : (ftype === 'd' ? 4 : 5))), fieldSort]
-                    );
-                    fieldId++;
-                }
-                
-                // Insert link: cd_tabl_fiel (composite PK: k_fiel + k_tabl)
+                // Every field gets a unique k_field (each table-field combo is unique)
                 await client.query(
-                    'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                    [currentFieldId, tableId, fieldSort, fieldSort === 1]
+                    'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, fname, ftype === 'i' ? 1 : (ftype === 's' ? 2 : (ftype === 'b' ? 3 : (ftype === 'd' ? 4 : 5))), fieldSort]
                 );
                 
+                // Insert link: cd_tabl_fiel
+                await client.query(
+                    'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, tableId, fieldSort, fieldSort === 1]
+                );
+                
+                fieldId++;
+                linkId++;
                 fieldSort++;
             }
             
-            tableResults.push({ table: upperName, fields: seenFieldsInTable.size, type: fType });
+            tableResults.push({ table: table.name, fields: seenFieldsInTable.size, type: table.fType });
             tableId++;
         }
         
@@ -475,10 +478,18 @@ app.post('/api/seed', async (req, res) => {
         await client.query('ANALYZE cd_fields');
         await client.query('ANALYZE cd_tabl_fiel');
         
+        const summary = {
+            lookups: categories.lookups.length,
+            entities: categories.entities.length,
+            subtables: categories.subtables.length,
+            links: categories.links.length,
+        };
+        
         res.json({ 
             success: true, 
             tables: tableResults.length, 
             fields: fieldId - 1,
+            summary,
             details: tableResults 
         });
     } catch (err) {
