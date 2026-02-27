@@ -1152,36 +1152,62 @@ function filterDictTable(btn, tableName) {
 let designerMode = 'user'; // 'user' or 'dictionary'
 
 // USER DATABASE tables (SYS + entity)
+// Sub-tables for user database
+const userSubTables = {
+    "SYS_USERS": ["SYS_USER_ROLE","SYS_USER_RIGHT","SYS_USER_SESSION","SYS_USER_PREFERENCE","SYS_USER_COMPETENCE","SYS_USER_PLANNING","SYS_USER_SECURITY","SYS_USER_LOCK","SYS_USER_COMMAND","SYS_USER_QUEUE","SYS_USER_OBJECT","SYS_USER_TRANSPORT","SYS_USER_HISTORY","SYS_USER_LOG","SYS_USER_HOOK","SYS_USER_GLOBAL","SYS_USER_THING","SYS_USER_THESAURI","SYS_USER_CONTACT","SYS_USER_ACTION"],
+    "SYS_QUEUES": ["SYS_QUEUE_ITEM","SYS_QUEUE_LOG"],
+    "SYS_THESAURI": ["SYS_THESAURUS_ITEM","SYS_THESAURUS_RELATION"],
+    "SYS_SESSIONS": ["SYS_SESSION_LOG"],
+    "SYS_COMMANDS": ["SYS_COMMAND_PARAM"],
+    "SYS_COMPETENCES": ["SYS_COMPETENCE_LEVEL","SYS_COMPETENCE_SKILL","SYS_COMPETENCE_CERT"],
+    "SYS_PLANNING": ["SYS_PLANNING_ITEM"],
+    "SYS_HOOK": ["SYS_HOOK_EVENT","SYS_HOOK_LOG","SYS_HOOK_CONFIG"],
+    "ACTIONS": ["ACTION_PARAM","ACTION_LOG","ACTION_SCHEDULE","ACTION_RESULT"],
+    "CONTACTS": ["CONTACT_ADDRESS","CONTACT_PHONE","CONTACT_EMAIL","CONTACT_NOTE"],
+    "COMPANIES": ["COMPANY_ADDRESS","COMPANY_CONTACT","COMPANY_NOTE"],
+    "PROJECTS": ["PROJECT_MEMBER","PROJECT_PHASE","PROJECT_TASK"],
+    "CASES": ["CASE_NOTE","CASE_ATTACHMENT","CASE_HISTORY"],
+    "OPPORTUNITIES": ["OPPORTUNITY_LINE","OPPORTUNITY_NOTE","OPPORTUNITY_CONTACT"],
+    "AGENDA": ["AGENDA_ATTENDEE","AGENDA_REMINDER"],
+    "DOCUMENTS": ["DOCUMENT_VERSION","DOCUMENT_TAG","DOCUMENT_SHARE"],
+};
+
 const dbTables = [
     // SYS tables (yellow)
-    { name: "SYS_LOGS",        type: "sys", icon: "scroll-text", cols: [4,"…",2] },
-    { name: "SYS_GLOBALS",     type: "sys", icon: "globe", cols: [9,"…",3] },
-    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: ["…","…",""] },
-    { name: "SYS_OBJECTS",     type: "sys", icon: "box", cols: [2,"…",""] },
-    { name: "SYS_QUEUES",      type: "sys", icon: "list-ordered", cols: [11,2,2] },
-    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: ["…","…",""] },
-    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: ["…","…",""] },
-    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: ["…",1,""] },
-    { name: "SYS_THINGS",      type: "sys", icon: "package", cols: [1,"…",2] },
-    { name: "SYS_THESAURI",    type: "sys", icon: "book-open", cols: [12,2,3] },
-    { name: "SYS_TRANSPORTS",  type: "sys", icon: "truck", cols: [2,"…",1] },
-    { name: "SYS_USERS",       type: "sys", icon: "users", cols: [6,20,3] },
-    { name: "SYS_COMMANDS",    type: "sys", icon: "terminal", cols: [9,1,2] },
-    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: ["…",3,3] },
-    { name: "SYS_PLANNING",    type: "sys", icon: "calendar", cols: [7,1,3] },
-    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: ["…",3,1] },
-    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: ["…","…",""] },
+    { name: "SYS_LOGS",        type: "sys", icon: "scroll-text", cols: [4,0,2] },
+    { name: "SYS_GLOBALS",     type: "sys", icon: "globe", cols: [9,0,3] },
+    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: [0,0,0] },
+    { name: "SYS_OBJECTS",     type: "sys", icon: "box", cols: [2,0,0] },
+    { name: "SYS_QUEUES",      type: "sys", icon: "list-ordered", cols: [11,0,2] },
+    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: [0,0,0] },
+    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: [0,0,0] },
+    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: [0,0,0] },
+    { name: "SYS_THINGS",      type: "sys", icon: "package", cols: [1,0,2] },
+    { name: "SYS_THESAURI",    type: "sys", icon: "book-open", cols: [12,0,3] },
+    { name: "SYS_TRANSPORTS",  type: "sys", icon: "truck", cols: [2,0,1] },
+    { name: "SYS_USERS",       type: "sys", icon: "users", cols: [6,0,3] },
+    { name: "SYS_COMMANDS",    type: "sys", icon: "terminal", cols: [9,0,2] },
+    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: [0,0,3] },
+    { name: "SYS_PLANNING",    type: "sys", icon: "calendar", cols: [7,0,3] },
+    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: [0,0,1] },
+    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: [0,0,0] },
     // User tables (grey)
-    { name: "ACTIONS",         type: "user", icon: "zap", cols: [3,4,4] },
-    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: ["","",""] },
-    { name: "CONTACTS",        type: "user", icon: "user", cols: ["","",""] },
-    { name: "COMPANIES",       type: "user", icon: "building-2", cols: ["","",""] },
-    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: ["","",""] },
-    { name: "CASES",           type: "user", icon: "briefcase", cols: ["","",""] },
-    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: ["","",""] },
-    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: ["","",""] },
-    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: ["","",""] },
+    { name: "ACTIONS",         type: "user", icon: "zap", cols: [3,0,4] },
+    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: [0,0,0] },
+    { name: "CONTACTS",        type: "user", icon: "user", cols: [0,0,0] },
+    { name: "COMPANIES",       type: "user", icon: "building-2", cols: [0,0,0] },
+    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: [0,0,0] },
+    { name: "CASES",           type: "user", icon: "briefcase", cols: [0,0,0] },
+    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: [0,0,0] },
+    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: [0,0,0] },
+    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: [0,0,0] },
 ];
+
+// Set sub counts from userSubTables
+dbTables.forEach(t => {
+    const subs = userSubTables[t.name] || [];
+    if (subs.length) t.cols[1] = subs.length;
+});
 
 // Relationship matrix: relations[rowIndex][colIndex] = "nn" | "n" | "—" | ""
 // Based on the user's architecture diagram
@@ -1424,13 +1450,17 @@ function renderDbDesigner() {
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             if (m === 0) {
-                const display = v === '…' ? '—' : (v || '—');
+                // Type column - always clickable
+                const display = v ? v : '—';
                 rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${display}</td>`;
-            } else if (m === 1 && v) {
-                // Sub column - clickable with dropdown
+            } else if (m === 1 && v && v !== 0) {
+                // Sub column - clickable with dropdown when subs exist
                 rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;text-decoration:underline;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
+            } else if (m === 2 && v && v !== 0) {
+                // Screens column - show count
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v}</td>`;
             } else {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v || ''}</td>`;
+                rows += `<td style="background:${rowBg};font-size:10px;color:#CBD5E1;">—</td>`;
             }
         }
 
@@ -1765,18 +1795,98 @@ function parseXsdFields(tableName) {
 function entityFields(name) {
     const xsd = parseXsdFields(name);
     if (xsd) return xsd;
-    // Fallback for non-CD tables
-    const k = 'K_' + name.toUpperCase();
+
+    // User/SYS table field templates with proper grouping
+    const userFieldTemplates = {
+        "SYS_USERS": [
+            {name:"K_USER",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"USERNAME",group:"C",type:"varchar(100)"},{name:"EMAIL",group:"C",type:"varchar(255)"},{name:"FIRSTNAME",group:"C",type:"varchar(100)"},{name:"LASTNAME",group:"C",type:"varchar(100)"},{name:"FULLNAME",group:"C",type:"varchar(255)"},{name:"INITIALS",group:"C",type:"varchar(10)"},{name:"PHONE",group:"C",type:"varchar(50)"},{name:"MOBILE",group:"C",type:"varchar(50)"},{name:"F_LANGUAGE",group:"C",type:"integer",fk:true},{name:"F_ROLE",group:"C",type:"integer",fk:true},{name:"IS_ACTIVE",group:"C",type:"boolean"},{name:"IS_ADMIN",group:"C",type:"boolean"},{name:"LAST_LOGIN",group:"C",type:"timestamptz"},{name:"PASSWORD_HASH",group:"C",type:"varchar(500)"},{name:"AVATAR",group:"C",type:"bytea"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "CONTACTS": [
+            {name:"K_CONTACT",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"FIRSTNAME",group:"C",type:"varchar(100)"},{name:"LASTNAME",group:"C",type:"varchar(100)"},{name:"EMAIL",group:"C",type:"varchar(255)"},{name:"PHONE",group:"C",type:"varchar(50)"},{name:"MOBILE",group:"C",type:"varchar(50)"},{name:"F_COMPANY",group:"C",type:"integer",fk:true},{name:"JOBTITLE",group:"C",type:"varchar(200)"},{name:"DEPARTMENT",group:"C",type:"varchar(200)"},{name:"ADDRESS",group:"C",type:"varchar(500)"},{name:"CITY",group:"C",type:"varchar(100)"},{name:"ZIPCODE",group:"C",type:"varchar(20)"},{name:"COUNTRY",group:"C",type:"varchar(100)"},{name:"LINKEDIN",group:"C",type:"varchar(500)"},{name:"PHOTO",group:"C",type:"bytea"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "COMPANIES": [
+            {name:"K_COMPANY",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"SHORTNAME",group:"C",type:"varchar(50)"},{name:"INDUSTRY",group:"C",type:"varchar(200)"},{name:"WEBSITE",group:"C",type:"varchar(500)"},{name:"PHONE",group:"C",type:"varchar(50)"},{name:"EMAIL",group:"C",type:"varchar(255)"},{name:"ADDRESS",group:"C",type:"varchar(500)"},{name:"CITY",group:"C",type:"varchar(100)"},{name:"ZIPCODE",group:"C",type:"varchar(20)"},{name:"COUNTRY",group:"C",type:"varchar(100)"},{name:"VAT_NUMBER",group:"C",type:"varchar(50)"},{name:"CHAMBER_OF_COMMERCE",group:"C",type:"varchar(50)"},{name:"EMPLOYEE_COUNT",group:"C",type:"integer"},{name:"ANNUAL_REVENUE",group:"C",type:"varchar(50)"},{name:"LOGO",group:"C",type:"bytea"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "PROJECTS": [
+            {name:"K_PROJECT",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"CODE",group:"C",type:"varchar(50)"},{name:"F_COMPANY",group:"C",type:"integer",fk:true},{name:"F_CONTACT",group:"C",type:"integer",fk:true},{name:"F_MANAGER",group:"C",type:"integer",fk:true},{name:"START_DATE",group:"C",type:"timestamptz"},{name:"END_DATE",group:"C",type:"timestamptz"},{name:"DEADLINE",group:"C",type:"timestamptz"},{name:"BUDGET",group:"C",type:"varchar(50)"},{name:"PRIORITY",group:"C",type:"integer"},{name:"PROGRESS",group:"C",type:"integer"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "CASES": [
+            {name:"K_CASE",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"CODE",group:"C",type:"varchar(50)"},{name:"F_COMPANY",group:"C",type:"integer",fk:true},{name:"F_CONTACT",group:"C",type:"integer",fk:true},{name:"F_ASSIGNED",group:"C",type:"integer",fk:true},{name:"PRIORITY",group:"C",type:"integer"},{name:"SEVERITY",group:"C",type:"integer"},{name:"DEADLINE",group:"C",type:"timestamptz"},{name:"RESOLUTION",group:"C",type:"varchar(500)"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "OPPORTUNITIES": [
+            {name:"K_OPPORTUNITY",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"F_COMPANY",group:"C",type:"integer",fk:true},{name:"F_CONTACT",group:"C",type:"integer",fk:true},{name:"F_ASSIGNED",group:"C",type:"integer",fk:true},{name:"AMOUNT",group:"C",type:"varchar(50)"},{name:"CURRENCY",group:"C",type:"varchar(10)"},{name:"PROBABILITY",group:"C",type:"integer"},{name:"EXPECTED_CLOSE",group:"C",type:"timestamptz"},{name:"STAGE",group:"C",type:"varchar(100)"},{name:"SOURCE",group:"C",type:"varchar(200)"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "ACTIONS": [
+            {name:"K_ACTION",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"F_ASSIGNED",group:"C",type:"integer",fk:true},{name:"F_CONTACT",group:"C",type:"integer",fk:true},{name:"F_COMPANY",group:"C",type:"integer",fk:true},{name:"F_PROJECT",group:"C",type:"integer",fk:true},{name:"F_CASE",group:"C",type:"integer",fk:true},{name:"PRIORITY",group:"C",type:"integer"},{name:"DUE_DATE",group:"C",type:"timestamptz"},{name:"COMPLETED_DATE",group:"C",type:"timestamptz"},{name:"DURATION",group:"C",type:"integer"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "AGENDA": [
+            {name:"K_AGENDA",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"START_DATE",group:"C",type:"timestamptz"},{name:"END_DATE",group:"C",type:"timestamptz"},{name:"ALL_DAY",group:"C",type:"boolean"},{name:"LOCATION",group:"C",type:"varchar(500)"},{name:"F_ORGANIZER",group:"C",type:"integer",fk:true},{name:"RECURRENCE",group:"C",type:"varchar(200)"},{name:"IS_PRIVATE",group:"C",type:"boolean"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+        "DOCUMENTS": [
+            {name:"K_DOCUMENT",group:"H",type:"uuid",pk:true,req:true},{name:"REPLICATIONID",group:"H",type:"uuid"},
+            {name:"F_TYPE",group:"OH",type:"integer",fk:true},{name:"NAME",group:"OH",type:"varchar(255)"},{name:"F_KIND",group:"OH",type:"integer",fk:true},{name:"SORT",group:"OH",type:"integer"},
+            {name:"FILENAME",group:"C",type:"varchar(500)"},{name:"FILE_DATA",group:"C",type:"bytea"},{name:"FILE_TYPE",group:"C",type:"varchar(100)"},{name:"FILE_SIZE",group:"C",type:"integer"},{name:"THUMBNAIL",group:"C",type:"bytea"},{name:"F_FOLDER",group:"C",type:"integer",fk:true},{name:"VERSION",group:"C",type:"integer"},{name:"IS_TEMPLATE",group:"C",type:"boolean"},{name:"PROPERTIES",group:"C",type:"varchar(500)"},
+            {name:"MEMO_PLAINTEXT",group:"OF",type:"varchar(500)"},{name:"MEMO",group:"OF",type:"bytea"},
+            {name:"F_LIFESTATUS",group:"F",type:"integer",fk:true},{name:"CREATEDBY",group:"F",type:"integer"},{name:"CREATEDATE",group:"F",type:"timestamptz"},{name:"CHANGEDBY",group:"F",type:"integer"},{name:"CHANGEDATE",group:"F",type:"timestamptz"},{name:"F_OWNER",group:"F",type:"integer",fk:true},{name:"LASTSTATUSDATE",group:"F",type:"timestamptz"},
+        ],
+    };
+
+    // Check user field templates
+    const tmpl = userFieldTemplates[name] || userFieldTemplates[name.replace('SYS_','')];
+    if (tmpl) return tmpl;
+
+    // Generic fallback for SYS_ tables and unknown tables
+    const k = 'K_' + name.replace('SYS_','').toUpperCase();
     return [
         { name: k, group: "H", type: "uuid", pk: true, req: true },
-        { name: "NAME", group: "OH", type: "varchar(255)", req: false },
-        { name: "MEMO", group: "OF", type: "text", req: false },
-        { name: "F_LIFESTATUS", group: "F", type: "uuid", fk: true, req: true },
-        { name: "F_OWNER", group: "F", type: "uuid", fk: true },
+        { name: "REPLICATIONID", group: "H", type: "uuid" },
+        { name: "F_TYPE", group: "OH", type: "integer", fk: true },
+        { name: "NAME", group: "OH", type: "varchar(255)" },
+        { name: "F_KIND", group: "OH", type: "integer", fk: true },
+        { name: "SORT", group: "OH", type: "integer" },
+        { name: "ALIAS", group: "C", type: "varchar(100)" },
+        { name: "PROPERTIES", group: "C", type: "varchar(500)" },
+        { name: "MEMO_PLAINTEXT", group: "OF", type: "varchar(500)" },
+        { name: "MEMO", group: "OF", type: "bytea" },
+        { name: "F_LIFESTATUS", group: "F", type: "integer", fk: true },
         { name: "CREATEDBY", group: "F", type: "integer" },
         { name: "CREATEDATE", group: "F", type: "timestamptz" },
         { name: "CHANGEDBY", group: "F", type: "integer" },
         { name: "CHANGEDATE", group: "F", type: "timestamptz" },
+        { name: "F_OWNER", group: "F", type: "integer", fk: true },
+        { name: "LASTSTATUSDATE", group: "F", type: "timestamptz" },
     ];
 }
 
@@ -1873,6 +1983,10 @@ function showTablePopup(tableName) {
         const isSub = Object.values(cdSubTables).flat().includes(tableName);
         const isLk = tableName.startsWith('CD_LK_');
         table = { name: tableName, type: isSub ? 'sub' : (isLk ? 'lk' : 'cd'), icon: 'table' };
+    }
+    // Check user sub-tables
+    if (!table && Object.values(userSubTables).flat().includes(tableName)) {
+        table = { name: tableName, type: 'sub', icon: 'table' };
     }
     if (!table) return;
 
@@ -2603,13 +2717,13 @@ function selectLookupTable(tableName) {
 // ============================================================================
 function openSubDropdown(event, tableName) {
     event.stopPropagation();
-    // Remove existing dropdown
     const old = document.getElementById('subDropdown');
     if (old) old.remove();
 
-    const subs = cdSubTables[tableName] || [];
+    const subs = cdSubTables[tableName] || userSubTables[tableName] || [];
     if (subs.length === 0) return;
 
+    const isCd = tableName.startsWith('CD_');
     const rect = event.target.getBoundingClientRect();
     const dd = document.createElement('div');
     dd.id = 'subDropdown';
@@ -2670,22 +2784,27 @@ function createNewSubTable(parentTable) {
     const name = document.getElementById('newSubName').value.trim();
     if (!name) return;
 
-    // Derive table name: parent prefix + name
-    const prefix = parentTable.replace('CD_','').substring(0,4).toLowerCase();
-    const subName = 'CD_' + prefix.toUpperCase() + '_' + name.toUpperCase().replace(/\s+/g,'_');
+    const isCd = parentTable.startsWith('CD_');
+    let subName;
+    if (isCd) {
+        const prefix = parentTable.replace('CD_','').substring(0,4).toUpperCase();
+        subName = 'CD_' + prefix + '_' + name.toUpperCase().replace(/\s+/g,'_');
+    } else {
+        const prefix = parentTable.replace('SYS_','');
+        subName = (parentTable.startsWith('SYS_') ? 'SYS_' : '') + prefix + '_' + name.toUpperCase().replace(/\s+/g,'_');
+    }
 
-    // Add to cdSubTables
-    if (!cdSubTables[parentTable]) cdSubTables[parentTable] = [];
-    cdSubTables[parentTable].push(subName);
+    // Add to appropriate sub-table map
+    const subMap = isCd ? cdSubTables : userSubTables;
+    if (!subMap[parentTable]) subMap[parentTable] = [];
+    subMap[parentTable].push(subName);
 
-    // Update sub count in cdTables
-    const tbl = cdTables.find(t => t.name === parentTable);
-    if (tbl) tbl.cols[1] = cdSubTables[parentTable].length;
+    // Update sub count
+    const tableArr = isCd ? cdTables : dbTables;
+    const tbl = tableArr.find(t => t.name === parentTable);
+    if (tbl) tbl.cols[1] = subMap[parentTable].length;
 
-    // Close dialog
     document.getElementById('newSubOverlay').remove();
-
-    // Re-render matrix and open new sub table popup
     renderContent();
     setTimeout(() => showTablePopup(subName), 100);
 }
