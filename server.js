@@ -724,6 +724,34 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             const dbCols = {};
             colInfo.rows.forEach(c => { dbCols[c.column_name] = c.data_type; });
             
+            // Auto-create missing columns based on first row's data
+            if (rows.length > 0) {
+                const sampleFields = new Set();
+                // Scan first 10 rows for all field names
+                for (const r of rows.slice(0, 10)) {
+                    for (const k of Object.keys(r)) {
+                        const colName = k === 'n' ? 'name' : k;
+                        sampleFields.add(colName);
+                    }
+                }
+                for (const fname of sampleFields) {
+                    if (!dbCols[fname]) {
+                        // Guess type from field name patterns
+                        let colType = 'text';
+                        if (fname.startsWith('k_') || fname.startsWith('f_') || fname === 'sort' || fname === 'createdby' || fname === 'changedby' || fname === 'storagesize' || fname === 'flags' || fname === 'labelpos') colType = 'integer';
+                        else if (fname.startsWith('is_') || fname === 'enabled' || fname === 'main' || fname === 'collapsible' || fname === 'executesync' || fname === 'allowcustomvalue' || fname === 'sort_description' || fname === 'filter_subtable' || fname === 'filter_subtable_k_seq' || fname === 'allowcreatingrecords' || fname === 'use_field_name' || fname === 'showpathrunner' || fname === 'linkrequired' || fname === 'zero_score' || fname === 'full_width' || fname === 'connected') colType = 'boolean';
+                        else if (fname === 'createdate' || fname === 'changedate' || fname === 'laststatusdate' || fname === 'lifedate') colType = 'timestamptz';
+                        else if (fname === 'replicationid') colType = 'uuid';
+                        else if (fname === 'graphical' || fname === 'memo' || fname === 'memo_en' || fname === 'memo_nl') colType = 'bytea';
+                        
+                        try {
+                            await client.query(`ALTER TABLE ${tableName} ADD COLUMN ${fname} ${colType}`);
+                            dbCols[fname] = colType;
+                        } catch(e) { /* column might already exist */ }
+                    }
+                }
+            }
+            
             await client.query(`TRUNCATE ${tableName} CASCADE`);
             
             // Widen all varchar columns to text to match XSD xs:string (unlimited)
