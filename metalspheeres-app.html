@@ -1332,34 +1332,40 @@ const controlTypes = [
 
 let addFieldContext = { tableName: '', tableId: '', typeBadge: '', color: '' };
 
-// API base URL - same origin
+// API connection
 const API = '/api';
-
-// Table name -> k_tables UUID mapping (loaded from API)
+let apiAvailable = false;
 let tableMap = {};
 
 async function loadTableMap() {
     try {
         const resp = await fetch(API + '/tables');
+        if (!resp.ok || !resp.headers.get('content-type')?.includes('json')) {
+            throw new Error('Not JSON');
+        }
         const tables = await resp.json();
+        apiAvailable = true;
         tableMap = {};
         for (const t of tables) {
             tableMap[t.name] = t.k_tables;
-            // Also map uppercase versions for SYS/user tables in the designer
             tableMap[t.name.toUpperCase()] = t.k_tables;
         }
-    } catch (e) { console.error('Failed to load tables:', e); }
+        console.log('API connected, ' + tables.length + ' tables loaded');
+    } catch (e) {
+        apiAvailable = false;
+        console.log('API not available, using local data');
+    }
 }
 
-// Load fields from API for a table
 async function loadFieldsFromDB(tableId) {
+    if (!apiAvailable) return null;
     try {
         const resp = await fetch(API + '/tables/' + tableId + '/fields');
+        if (!resp.ok) return null;
         return await resp.json();
-    } catch (e) { console.error('Failed to load fields:', e); return []; }
+    } catch (e) { return null; }
 }
 
-// Init: load table map
 loadTableMap();
 
 // ============================================================================
@@ -1373,25 +1379,31 @@ function showTablePopup(tableName) {
     const color = table.type === 'sys' ? '#F59E0B' : '#64748B';
     const typeBadge = table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity');
 
-    // Try to load from API if we have a table ID
+    // Try to find table ID for API lookup
     const tableId = tableMap[tableName] || tableMap[tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase()];
 
-    if (tableId) {
+    if (apiAvailable && tableId) {
         loadFieldsFromDB(tableId).then(dbFields => {
-            const fields = dbFields.map(f => ({
-                name: f.name,
-                group: f.field_group,
-                type: f.data_type + (f.max_length ? '(' + f.max_length + ')' : ''),
-                pk: f.is_primary_key,
-                fk: f.is_foreign_key,
-                req: f.is_required,
-                system: f.is_system,
-                id: f.k_fields,
-            }));
-            renderPopup(tableName, typeBadge, color, fields, null, tableId);
+            if (dbFields && dbFields.length > 0) {
+                const fields = dbFields.map(f => ({
+                    name: f.name,
+                    group: f.field_group,
+                    type: f.data_type + (f.max_length ? '(' + f.max_length + ')' : ''),
+                    pk: f.is_primary_key,
+                    fk: f.is_foreign_key,
+                    req: f.is_required,
+                    system: f.is_system,
+                    id: f.k_fields,
+                }));
+                renderPopup(tableName, typeBadge, color, fields, null, tableId);
+            } else {
+                // Fallback to template
+                const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
+                renderPopup(tableName, typeBadge, color, fields, null, tableId);
+            }
         });
     } else {
-        // Fallback to template for SYS tables not in dictionary
+        // No API - use templates
         const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
         renderPopup(tableName, typeBadge, color, fields, null, null);
     }
@@ -1614,6 +1626,12 @@ function validateAddForm() {
 function saveCustomField() {
     const tableId = addFieldContext.tableId;
     const tableName = addFieldContext.tableName;
+
+    if (!apiAvailable || !tableId) {
+        alert('Cannot save: API server is not running.\nStart the server with: node server.js');
+        return;
+    }
+
     const name = document.getElementById('cfName').value.trim();
     const ctId = document.getElementById('cfControlType').value;
     const required = document.getElementById('cfRequired').checked;
