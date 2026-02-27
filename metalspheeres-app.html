@@ -349,6 +349,77 @@
             margin-bottom: 16px; display: flex; align-items: center; gap: 12px;
         }
         .link-info-arrow { font-size: 20px; color: #94A3B8; }
+
+        /* ============ ADD FIELD POPUP ============ */
+        .add-field-popup {
+            background: #fff; border-radius: 14px; width: 420px; max-width: 90vw;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+            animation: popupIn 0.2s ease-out;
+        }
+        .add-field-header {
+            padding: 20px 24px 16px; border-bottom: 1px solid #E2E8F0;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .add-field-title { font-size: 16px; font-weight: 600; color: #0F172A; }
+        .add-field-body { padding: 20px 24px 24px; }
+
+        .form-field { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+        .form-input {
+            width: 100%; padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 8px;
+            font-size: 14px; font-family: 'DM Sans', sans-serif; color: #0F172A;
+            outline: none; transition: border-color 0.15s; box-sizing: border-box;
+        }
+        .form-input:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px #3B82F620; }
+        .form-input::placeholder { color: #CBD5E1; }
+
+        .control-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .control-type-option {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            border: 2px solid #E2E8F0; border-radius: 10px; cursor: pointer;
+            transition: all 0.15s; background: #fff;
+        }
+        .control-type-option:hover { border-color: #CBD5E1; background: #F8FAFC; }
+        .control-type-option.selected { border-color: #3B82F6; background: #EFF6FF; }
+        .control-type-icon {
+            width: 32px; height: 32px; border-radius: 8px; display: flex;
+            align-items: center; justify-content: center; font-size: 14px;
+            font-weight: 700; flex-shrink: 0;
+        }
+        .control-type-name { font-size: 13px; font-weight: 600; color: #0F172A; }
+        .control-type-desc { font-size: 11px; color: #94A3B8; }
+
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-field { flex: 1; }
+
+        .form-check {
+            display: flex; align-items: center; gap: 8px; cursor: pointer;
+            font-size: 13px; color: #334155; padding: 4px 0;
+        }
+        .form-check input { width: 16px; height: 16px; accent-color: #3B82F6; cursor: pointer; }
+
+        .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #F1F5F9; }
+        .btn-cancel {
+            padding: 8px 16px; border: 1px solid #E2E8F0; border-radius: 8px;
+            background: #fff; color: #64748B; font-size: 13px; font-weight: 500;
+            cursor: pointer; font-family: 'DM Sans', sans-serif;
+        }
+        .btn-cancel:hover { background: #F8FAFC; }
+        .btn-save {
+            padding: 8px 20px; border: none; border-radius: 8px;
+            background: #3B82F6; color: #fff; font-size: 13px; font-weight: 600;
+            cursor: pointer; font-family: 'DM Sans', sans-serif;
+        }
+        .btn-save:hover { background: #2563EB; }
+        .btn-save:disabled { background: #CBD5E1; cursor: not-allowed; }
+
+        .add-field-btn {
+            display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+            border: 1px dashed #22C55E; border-radius: 6px; background: #22C55E08;
+            color: #22C55E; font-size: 12px; font-weight: 600; cursor: pointer;
+            font-family: 'DM Sans', sans-serif; transition: all 0.15s; margin-top: 6px;
+        }
+        .add-field-btn:hover { background: #22C55E14; border-style: solid; }
     </style>
 </head>
 <body>
@@ -396,6 +467,8 @@
 
 <!-- Field Popup Overlay -->
 <div class="popup-overlay" id="fieldPopup"></div>
+<!-- Add Custom Field Popup Overlay -->
+<div class="popup-overlay" id="addFieldPopup"></div>
 
 <script>
 // ============================================================================
@@ -1243,6 +1316,23 @@ dbTables.forEach(t => {
 tableTypes["STATS"] = 'lookup';
 
 // ============================================================================
+// CUSTOM FIELDS STORAGE (in-memory per table)
+// ============================================================================
+const customFields = {};
+
+const controlTypes = [
+    { id: "text",     label: "Text",     desc: "Single-line text",    icon: "T",  color: "#3B82F6", dataType: "varchar",     hasLength: true },
+    { id: "integer",  label: "Integer",  desc: "Whole number",        icon: "1",  color: "#8B5CF6", dataType: "integer",     hasLength: false },
+    { id: "decimal",  label: "Decimal",  desc: "Decimal number",      icon: ".0", color: "#7C3AED", dataType: "numeric",     hasLength: false },
+    { id: "date",     label: "Date",     desc: "Date only",           icon: "D",  color: "#0EA5E9", dataType: "date",        hasLength: false },
+    { id: "datetime", label: "DateTime", desc: "Date and time",       icon: "DT", color: "#0284C7", dataType: "timestamptz", hasLength: false },
+    { id: "checkbox", label: "Checkbox", desc: "True / False",        icon: "\u2713", color: "#22C55E", dataType: "boolean", hasLength: false },
+    { id: "lookup",   label: "Lookup",   desc: "Dropdown selection",  icon: "\u25BE",  color: "#F59E0B", dataType: "uuid",   hasLength: false },
+];
+
+let addFieldContext = { tableName: '', typeBadge: '', color: '' };
+
+// ============================================================================
 // POPUP FUNCTIONS
 // ============================================================================
 function showTablePopup(tableName) {
@@ -1308,19 +1398,38 @@ function renderPopup(title, typeBadge, color, fields, linkInfo) {
 
     // Render groups
     for (const g of groupOrder) {
-        if (!groups[g]) {
-            if (g === 'C') {
-                // Show empty custom fields placeholder
-                bodyHtml += '<div class="field-group">' +
-                    '<div class="field-group-header">' +
-                        '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
-                        '<span class="field-group-label">' + groupMeta[g].label + '</span>' +
-                    '</div>' +
-                    '<div style="padding:8px 4px;font-size:12px;color:#CBD5E1;font-style:italic;">No custom fields defined</div>' +
-                '</div>';
-            }
+        if (!groups[g] && g !== 'C') {
             continue;
         }
+        if (g === 'C') {
+            // Custom fields group - always show with add button
+            const cFields = customFields[title] || [];
+            bodyHtml += '<div class="field-group">' +
+                '<div class="field-group-header">' +
+                    '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
+                    '<span class="field-group-label">' + groupMeta[g].label + ' (' + cFields.length + ')</span>' +
+                '</div>';
+
+            if (cFields.length === 0) {
+                bodyHtml += '<div style="padding:4px 4px 2px;font-size:12px;color:#CBD5E1;font-style:italic;">No custom fields defined</div>';
+            } else {
+                for (const f of cFields) {
+                    const ct = controlTypes.find(c => c.id === f.controlType) || controlTypes[0];
+                    bodyHtml += '<div class="field-row">' +
+                        '<span class="field-name">' + f.name + '</span>' +
+                        '<span class="field-type">' + f.dataType + (f.maxLength ? '(' + f.maxLength + ')' : '') + '</span>' +
+                        '<span><span class="field-badge" style="background:' + ct.color + '18;color:' + ct.color + ';">' + ct.label + '</span></span>' +
+                        '<span class="field-required">' + (f.required ? '*' : '') + '</span>' +
+                    '</div>';
+                }
+            }
+
+            bodyHtml += '<button class="add-field-btn" onclick="openAddFieldPopup(\'' + title + '\',\'' + typeBadge + '\',\'' + color + '\')">+ Add Custom Field</button>';
+            bodyHtml += '</div>';
+            continue;
+        }
+
+        if (!groups[g]) continue;
         bodyHtml += '<div class="field-group">' +
             '<div class="field-group-header">' +
                 '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
@@ -1362,13 +1471,136 @@ function closePopup() {
     document.getElementById('fieldPopup').classList.remove('open');
 }
 
+function openAddFieldPopup(tableName, typeBadge, color) {
+    addFieldContext = { tableName, typeBadge, color };
+
+    let typeOptions = '';
+    for (const ct of controlTypes) {
+        typeOptions += '<div class="control-type-option" data-ctid="' + ct.id + '" onclick="selectControlType(this, \'' + ct.id + '\')">' +
+            '<div class="control-type-icon" style="background:' + ct.color + '14;color:' + ct.color + ';">' + ct.icon + '</div>' +
+            '<div><div class="control-type-name">' + ct.label + '</div>' +
+            '<div class="control-type-desc">' + ct.desc + '</div></div>' +
+        '</div>';
+    }
+
+    const popup = document.getElementById('addFieldPopup');
+    popup.innerHTML = '<div class="add-field-popup">' +
+        '<div class="add-field-header">' +
+            '<div class="add-field-title">Add Custom Field to ' + tableName + '</div>' +
+            '<button class="popup-close" onclick="closeAddFieldPopup()">&times;</button>' +
+        '</div>' +
+        '<div class="add-field-body">' +
+            '<div class="form-field">' +
+                '<label class="form-label">Field Name</label>' +
+                '<input class="form-input" id="cfName" type="text" placeholder="e.g. phone_number, weight, delivery_date" oninput="validateFieldName(this)">' +
+            '</div>' +
+            '<div class="form-field">' +
+                '<label class="form-label">Control Type</label>' +
+                '<div class="control-type-grid">' + typeOptions + '</div>' +
+                '<input type="hidden" id="cfControlType" value="">' +
+            '</div>' +
+            '<div id="cfExtraFields"></div>' +
+            '<div class="form-field">' +
+                '<label class="form-check"><input type="checkbox" id="cfRequired"> Required field</label>' +
+            '</div>' +
+            '<div class="form-actions">' +
+                '<button class="btn-cancel" onclick="closeAddFieldPopup()">Cancel</button>' +
+                '<button class="btn-save" id="cfSaveBtn" onclick="saveCustomField()" disabled>Add Field</button>' +
+            '</div>' +
+        '</div>' +
+    '</div>';
+    popup.classList.add('open');
+}
+
+function selectControlType(el, ctId) {
+    document.querySelectorAll('.control-type-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('cfControlType').value = ctId;
+
+    const ct = controlTypes.find(c => c.id === ctId);
+    const extra = document.getElementById('cfExtraFields');
+    let extraHtml = '';
+
+    if (ct.hasLength) {
+        extraHtml = '<div class="form-field">' +
+            '<label class="form-label">Max Length</label>' +
+            '<input class="form-input" id="cfMaxLength" type="number" value="255" min="1" max="4000" placeholder="255">' +
+        '</div>';
+    }
+
+    if (ctId === 'lookup') {
+        let lookupOpts = '';
+        const userTables = dbTables.filter(t => t.type === 'user');
+        for (const t of userTables) {
+            lookupOpts += '<option value="' + t.name + '">' + t.name + '</option>';
+        }
+        extraHtml = '<div class="form-field">' +
+            '<label class="form-label">Lookup Table</label>' +
+            '<select class="form-input" id="cfLookupTable">' + lookupOpts + '</select>' +
+        '</div>';
+    }
+
+    extra.innerHTML = extraHtml;
+    validateAddForm();
+}
+
+function validateFieldName(input) {
+    // Auto-format: lowercase, underscores, no spaces
+    input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/__+/g, '_');
+    validateAddForm();
+}
+
+function validateAddForm() {
+    const name = document.getElementById('cfName').value.trim();
+    const ctType = document.getElementById('cfControlType').value;
+    const btn = document.getElementById('cfSaveBtn');
+    btn.disabled = !(name.length >= 2 && ctType);
+}
+
+function saveCustomField() {
+    const tableName = addFieldContext.tableName;
+    const name = document.getElementById('cfName').value.trim();
+    const ctId = document.getElementById('cfControlType').value;
+    const required = document.getElementById('cfRequired').checked;
+    const ct = controlTypes.find(c => c.id === ctId);
+    const maxLenEl = document.getElementById('cfMaxLength');
+    const lookupEl = document.getElementById('cfLookupTable');
+
+    const field = {
+        name: name,
+        controlType: ctId,
+        dataType: ct.dataType,
+        required: required,
+        maxLength: maxLenEl ? parseInt(maxLenEl.value) || 255 : null,
+        lookupTable: lookupEl ? lookupEl.value : null,
+    };
+
+    if (!customFields[tableName]) customFields[tableName] = [];
+    customFields[tableName].push(field);
+
+    // Close add-field popup and refresh the table popup
+    closeAddFieldPopup();
+    showTablePopup(tableName);
+}
+
+function closeAddFieldPopup() {
+    document.getElementById('addFieldPopup').classList.remove('open');
+}
+
 // Close on overlay click
 document.addEventListener('click', function(e) {
     if (e.target.id === 'fieldPopup') closePopup();
+    if (e.target.id === 'addFieldPopup') closeAddFieldPopup();
 });
 // Close on Escape
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closePopup();
+    if (e.key === 'Escape') {
+        if (document.getElementById('addFieldPopup').classList.contains('open')) {
+            closeAddFieldPopup();
+        } else {
+            closePopup();
+        }
+    }
 });
 
 // ============================================================================
