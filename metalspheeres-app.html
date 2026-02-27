@@ -1425,13 +1425,21 @@ function renderDbDesigner() {
         for (let j = 0; j < tables.length; j++) {
             const col = tables[j];
 
+            const isMainR = isDictMode ? (row.type === 'cd') : row.type === 'sys';
+            const isMainC = isDictMode ? (col.type === 'cd') : col.type === 'sys';
+            const isMainZone = isMainR && isMainC;
+
             if (row.name === col.name) {
-                rows += `<td class="cell-self"></td>`;
+                // Diagonal - check for self-referencing nn
+                const val = (rels[row.name] && rels[row.name][col.name]) || '';
+                if (val === 'nn') {
+                    const cellClass = isDictMode ? 'cell-nn-cd' : (isMainZone ? 'cell-nn' : 'cell-nn-user');
+                    rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name} (self)" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
+                } else {
+                    rows += `<td class="cell-self"></td>`;
+                }
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
-                const isMainR = isDictMode ? (row.type === 'cd') : row.type === 'sys';
-                const isMainC = isDictMode ? (col.type === 'cd') : col.type === 'sys';
-                const isMainZone = isMainR && isMainC;
 
                 let cellClass = 'cell-empty';
                 if (isDictMode) {
@@ -1806,7 +1814,7 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
     // Group fields
     const groups = {};
     const groupOrder = ['H', 'OH', 'C', 'OF', 'F'];
-    const groupNames = { H: 'Header', OH: 'Optional Header', C: 'Custom', OF: 'Optional Footer', F: 'Footer' };
+    const groupNames = { H: 'Header', OH: 'OH', C: 'Custom', OF: 'OF', F: 'Footer' };
     for (const f of fields) {
         if (!groups[f.group]) groups[f.group] = [];
         groups[f.group].push(f);
