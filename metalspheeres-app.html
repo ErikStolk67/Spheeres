@@ -350,6 +350,55 @@
         }
         .link-info-arrow { font-size: 20px; color: #94A3B8; }
 
+        /* ============ FIELD LIST POPUP (Spheeres style) ============ */
+        .fl-popup { width: 1100px; max-width: 96vw; max-height: 92vh; border-radius: 10px; }
+        .fl-toolbar {
+            display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+            border-bottom: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 10px 10px 0 0;
+        }
+        .fl-toolbar-search {
+            margin-left: auto; padding: 6px 14px; border: 1px solid #E2E8F0; border-radius: 6px;
+            font-size: 12px; color: #94A3B8; background: #fff; cursor: text;
+        }
+        .fl-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; border-bottom: 1px solid #F1F5F9;
+        }
+        .fl-header-left { display: flex; align-items: center; gap: 12px; }
+        .fl-header-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+        .fl-header-title { font-size: 18px; font-weight: 700; color: #0F172A; letter-spacing: -0.01em; }
+        .fl-header-sub { font-size: 12px; color: #94A3B8; margin-left: 6px; }
+        .fl-root-select { padding: 4px 10px; border: 1px solid #D1D5DB; border-radius: 5px; font-size: 12px; font-family: 'DM Sans', sans-serif; margin-left: 8px; }
+        .fl-header-right { display: flex; gap: 16px; }
+
+        .fl-table-wrap { overflow-y: auto; flex: 1; }
+        .fl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .fl-table thead th {
+            text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600;
+            color: #94A3B8; text-transform: uppercase; letter-spacing: 0.03em;
+            border-bottom: 2px solid #E2E8F0; background: #FAFBFC; position: sticky; top: 0; z-index: 1;
+        }
+        .fl-table tbody tr.fl-field-row { cursor: pointer; border-bottom: 1px solid #F1F5F9; }
+        .fl-table tbody tr.fl-field-row:hover { background: #F0F9FF; }
+        .fl-table tbody tr.fl-group-row td { border-top: 1px solid #E2E8F0; }
+
+        .fl-group-label {
+            writing-mode: vertical-lr; transform: rotate(180deg);
+            font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;
+            letter-spacing: 0.06em; padding: 10px 4px; text-align: center;
+            background: #F8FAFC; border-right: 2px solid #E2E8F0;
+            vertical-align: middle; width: 30px; min-width: 30px;
+        }
+        .fl-group-label span { white-space: nowrap; }
+
+        .fl-field-name { padding: 7px 12px; }
+        .fl-field-name strong { color: #0F172A; font-weight: 600; }
+        .fl-field-props { padding: 7px 12px; color: #64748B; font-size: 12px; }
+        .fl-field-flags { padding: 7px 12px; font-size: 14px; letter-spacing: 2px; }
+        .fl-field-settings { padding: 7px 8px; color: #CBD5E1; font-size: 16px; text-align: center; cursor: pointer; }
+        .fl-field-settings:hover { color: #64748B; }
+        .fl-toggle { color: #CBD5E1; font-size: 10px; margin-right: 4px; }
+
         /* ============ FIELD EDITOR POPUP ============ */
         .add-field-popup {
             background: #fff; border-radius: 14px; width: 960px; max-width: 95vw;
@@ -1436,17 +1485,96 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
     // Group fields
     const groups = {};
     const groupOrder = ['H', 'OH', 'C', 'OF', 'F'];
+    const groupNames = { H: 'Header', OH: 'Optional Header', C: 'Custom', OF: 'Optional Footer', F: 'Footer' };
     for (const f of fields) {
         if (!groups[f.group]) groups[f.group] = [];
         groups[f.group].push(f);
     }
 
-    let bodyHtml = '';
+    // Type icon map
+    function typeIcon(f) {
+        if (f.pk) return '<span style="color:#D97706;">&#128273;</span>';
+        if (f.fk || f.name.startsWith('f_') || f.name.startsWith('F_')) return '<span style="color:#2563EB;">&#128269;</span>';
+        const dt = (f.type || '').replace(/\(.*\)/,'').toLowerCase();
+        if (dt === 'varchar' || dt === 'text') return '<span style="color:#64748B;">T&#8593;</span>';
+        if (dt === 'integer' || dt === 'numeric') return '<span style="color:#8B5CF6;">#</span>';
+        if (dt === 'boolean') return '<span style="color:#22C55E;">&#9673;</span>';
+        if (dt === 'date') return '<span style="color:#0EA5E9;">&#128197;</span>';
+        if (dt === 'timestamptz') return '<span style="color:#0284C7;">&#128197;</span>';
+        if (dt === 'uuid') return '<span style="color:#94A3B8;">&#9670;</span>';
+        return '<span style="color:#94A3B8;">&#9679;</span>';
+    }
+
+    // Properties column: size + format
+    function propsCol(f) {
+        let parts = [];
+        const dt = (f.type || '').toLowerCase();
+        const sizeMatch = dt.match(/\((\d+)\)/);
+        if (sizeMatch) parts.push('<span style="color:#94A3B8;">&#9776;</span> ' + sizeMatch[1]);
+        return parts.join(' ') || '';
+    }
+
+    // Field flags icons
+    function flagsCol(f) {
+        let icons = [];
+        if (f.pk) icons.push('<span title="Primary Key" style="color:#D97706;">&#128273;</span>');
+        if (f.fk) icons.push('<span title="Foreign Key" style="color:#2563EB;">&#128279;</span>');
+        if (f.req) icons.push('<span title="Required" style="color:#3B82F6;">&#9432;</span>');
+        if (f.name.toLowerCase().includes('name') && !f.pk && !f.fk) icons.push('<span title="Search" style="color:#64748B;">&#128269;</span>');
+        return icons.join(' ');
+    }
+
+    // Build rows per group
+    let rowsHtml = '';
+    for (const g of groupOrder) {
+        const gFields = groups[g] || [];
+        if (g === 'C' && gFields.length === 0) {
+            // Show empty custom group
+            rowsHtml += '<tr class="fl-group-row"><td class="fl-group-label" rowspan="1"><span>' + groupNames[g] + '</span></td>' +
+                '<td colspan="4" style="padding:10px 12px;color:#CBD5E1;font-style:italic;font-size:12px;">No custom fields defined</td></tr>';
+            continue;
+        }
+        if (gFields.length === 0) continue;
+
+        for (let i = 0; i < gFields.length; i++) {
+            const f = gFields[i];
+            const isClickable = g === 'C' || true; // All fields clickable for viewing
+            const clickAttr = 'onclick="openFieldEditor(\'' + title + '\',\'' + (tableId||'') + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.group||g) + '\',\'' + (f.type||'').replace(/'/g,"\\'") + '\',' + (f.pk?'true':'false') + ',' + (f.fk?'true':'false') + ',' + (f.req?'true':'false') + ',' + (f.system !== false ? 'true' : 'false') + ')"';
+
+            rowsHtml += '<tr class="fl-field-row" ' + clickAttr + '>';
+
+            // Group label (only on first row of group)
+            if (i === 0) {
+                rowsHtml += '<td class="fl-group-label" rowspan="' + gFields.length + '"><span>' + groupNames[g] + '</span></td>';
+            }
+
+            // Toggle + type icon + field name
+            let nameHtml = '<span class="fl-toggle">&#9679;</span> ';
+            nameHtml += typeIcon(f) + ' ';
+            nameHtml += '<strong>' + f.name.toUpperCase() + '</strong>';
+            if (f.fk && f.ref) {
+                nameHtml += ' <span style="color:#2563EB;">&#8635;</span> <span style="color:#94A3B8;">' + f.ref + '.</span><strong>NAME</strong>';
+            }
+            rowsHtml += '<td class="fl-field-name">' + nameHtml + '</td>';
+
+            // Properties
+            rowsHtml += '<td class="fl-field-props">' + propsCol(f) + '</td>';
+
+            // Flags
+            rowsHtml += '<td class="fl-field-flags">' + flagsCol(f) + '</td>';
+
+            // Settings hamburger
+            rowsHtml += '<td class="fl-field-settings">&#9776;</td>';
+
+            rowsHtml += '</tr>';
+        }
+    }
 
     // Link info bar
+    let linkBar = '';
     if (linkInfo) {
         const typeLabel = linkInfo.type === 'nn' ? 'N : N' : linkInfo.type === 'n' ? '1 : N' : 'FK ref';
-        bodyHtml += '<div class="link-info">' +
+        linkBar = '<div class="link-info">' +
             '<span style="font-weight:600;color:#0F172A;">' + linkInfo.from + '</span>' +
             '<span class="link-info-arrow">&harr;</span>' +
             '<span style="font-weight:600;color:#0F172A;">' + linkInfo.to + '</span>' +
@@ -1454,83 +1582,80 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
         '</div>';
     }
 
-    // Field column header
-    bodyHtml += '<div class="field-row" style="font-size:11px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #E2E8F0;padding-bottom:6px;margin-bottom:4px;">' +
-        '<span style="padding-left:4px;">Field</span><span>Data Type</span><span>Badge</span><span style="text-align:center;">Req</span></div>';
-
-    // Render groups
-    for (const g of groupOrder) {
-        if (!groups[g] && g !== 'C') {
-            continue;
-        }
-        if (g === 'C') {
-            // Custom fields group - show fields from DB + add button
-            const cFields = groups['C'] || [];
-            bodyHtml += '<div class="field-group">' +
-                '<div class="field-group-header">' +
-                    '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
-                    '<span class="field-group-label">' + groupMeta[g].label + ' (' + cFields.length + ')</span>' +
-                '</div>';
-
-            if (cFields.length === 0) {
-                bodyHtml += '<div style="padding:4px 4px 2px;font-size:12px;color:#CBD5E1;font-style:italic;">No custom fields defined</div>';
-            } else {
-                for (const f of cFields) {
-                    // Find control type by dataType
-                    const ct = controlTypes.find(c => c.dataType === (f.type || '').replace(/\(\d+\)/,'')) || controlTypes[0];
-                    const deleteBtn = f.id ? ' <span style="cursor:pointer;color:#EF4444;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();deleteCustomField(\'' + f.id + '\',\'' + title + '\')" title="Delete field">&times;</span>' : '';
-                    bodyHtml += '<div class="field-row">' +
-                        '<span class="field-name">' + f.name + deleteBtn + '</span>' +
-                        '<span class="field-type">' + f.type + '</span>' +
-                        '<span><span class="field-badge" style="background:' + ct.color + '18;color:' + ct.color + ';">' + ct.label + '</span></span>' +
-                        '<span class="field-required">' + (f.req ? '*' : '') + '</span>' +
-                    '</div>';
-                }
-            }
-
-            if (tableId) {
-                bodyHtml += '<button class="add-field-btn" onclick="openAddFieldPopup(\'' + title + '\',\'' + tableId + '\',\'' + typeBadge + '\',\'' + color + '\')">+ Add Custom Field</button>';
-            }
-            bodyHtml += '</div>';
-            continue;
-        }
-
-        if (!groups[g]) continue;
-        bodyHtml += '<div class="field-group">' +
-            '<div class="field-group-header">' +
-                '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
-                '<span class="field-group-label">' + groupMeta[g].label + '</span>' +
-            '</div>';
-
-        for (const f of groups[g]) {
-            let nameClass = 'field-name';
-            let badge = '';
-            if (f.pk) { nameClass += ' pk'; badge = '<span class="field-badge" style="background:#FBBF2418;color:#D97706;">PK</span>'; }
-            else if (f.fk) { nameClass += ' fk'; badge = '<span class="field-badge" style="background:#3B82F618;color:#2563EB;">FK</span>'; }
-
-            bodyHtml += '<div class="field-row">' +
-                '<span class="' + nameClass + '">' + f.name + (f.ref ? ' <span style="font-size:10px;color:#94A3B8;">&rarr; ' + f.ref + '</span>' : '') + '</span>' +
-                '<span class="field-type">' + f.type + '</span>' +
-                '<span>' + badge + '</span>' +
-                '<span class="field-required">' + (f.req ? '*' : '') + '</span>' +
-            '</div>';
-        }
-        bodyHtml += '</div>';
-    }
-
     const popup = document.getElementById('fieldPopup');
-    popup.innerHTML = '<div class="popup">' +
-        '<div class="popup-header">' +
-            '<div class="popup-header-left">' +
-                '<div class="popup-header-icon" style="background:' + color + '18;color:' + color + ';">' + title.substring(0,2) + '</div>' +
-                '<div><div class="popup-title">' + title + '</div>' +
-                '<div class="popup-subtitle">' + typeBadge + ' &middot; ' + fields.length + ' fields</div></div>' +
-            '</div>' +
-            '<button class="popup-close" onclick="closePopup()">&times;</button>' +
+    popup.innerHTML = '<div class="popup fl-popup">' +
+        // Toolbar
+        '<div class="fl-toolbar">' +
+            '<button class="fe-btn fe-btn-ok" onclick="closePopup()">Ok</button>' +
+            (tableId ? '<button class="fe-btn" style="background:#0EA5E9;color:#fff;" onclick="closePopup();openAddFieldPopup(\'' + title + '\',\'' + tableId + '\',\'' + typeBadge + '\',\'' + color + '\')">+ New</button>' : '') +
+            '<button class="fe-btn fe-btn-cancel" onclick="closePopup()">Cancel</button>' +
+            '<span class="fl-toolbar-search"><span style="color:#94A3B8;">&#128269;</span> Search...</span>' +
         '</div>' +
-        '<div class="popup-body">' + bodyHtml + '</div>' +
+        // Header
+        '<div class="fl-header">' +
+            '<div class="fl-header-left">' +
+                '<div class="fl-header-icon" style="background:' + color + '18;color:' + color + ';">' + title.substring(0,2) + '</div>' +
+                '<div><span class="fl-header-title">' + title + '</span>' +
+                '<span class="fl-header-sub">' + typeBadge + '</span></div>' +
+                '<select class="fl-root-select"><option>Root</option></select>' +
+            '</div>' +
+            '<div class="fl-header-right">' +
+                '<label style="font-size:12px;color:#64748B;display:flex;align-items:center;gap:4px;">&#9673; Disable</label>' +
+                '<label style="font-size:12px;color:#64748B;display:flex;align-items:center;gap:4px;">&#9673; Merge view</label>' +
+            '</div>' +
+        '</div>' +
+        linkBar +
+        // Field list table
+        '<div class="fl-table-wrap">' +
+            '<table class="fl-table">' +
+                '<thead><tr><th style="width:30px;"></th><th>Field Name</th><th style="width:180px;">Properties</th><th style="width:120px;">Field Flags</th><th style="width:40px;"></th></tr></thead>' +
+                '<tbody>' + rowsHtml + '</tbody>' +
+            '</table>' +
+        '</div>' +
     '</div>';
     popup.classList.add('open');
+}
+
+function openFieldEditor(tableName, tableId, fieldName, group, dataType, isPk, isFk, isReq, isSystem) {
+    // Open the field editor popup pre-filled with existing field data
+    addFieldContext = { tableName, tableId, typeBadge: '', color: '' };
+
+    // Determine control type from dataType
+    const dt = dataType.replace(/\(.*\)/,'').toLowerCase();
+    let ctId = 'text';
+    if (isFk || fieldName.startsWith('F_') || fieldName.startsWith('f_')) ctId = 'lookup';
+    else if (dt === 'integer') ctId = 'integer';
+    else if (dt === 'numeric') ctId = 'decimal';
+    else if (dt === 'date') ctId = 'date';
+    else if (dt === 'timestamptz' && !fieldName.toLowerCase().includes('date')) ctId = 'datetime';
+    else if (dt === 'boolean') ctId = 'checkbox';
+    else if (dt === 'varchar' || dt === 'text') ctId = 'text';
+
+    openAddFieldPopup(tableName, tableId, '', '');
+
+    // Pre-fill values after popup is rendered
+    setTimeout(() => {
+        const typeSelect = document.getElementById('feFieldType');
+        if (typeSelect) {
+            typeSelect.value = ctId;
+            onFieldTypeChange();
+        }
+        const nameInput = document.getElementById('feName');
+        if (nameInput) {
+            let displayName = fieldName.toUpperCase();
+            if (ctId === 'lookup' && displayName.startsWith('F_')) displayName = displayName.substring(2);
+            nameInput.value = displayName;
+        }
+        const sizeInput = document.getElementById('feSize');
+        if (sizeInput) {
+            const sizeMatch = dataType.match(/\((\d+)\)/);
+            if (sizeMatch) sizeInput.value = sizeMatch[1];
+        }
+        const reqCheck = document.getElementById('feFlgRequired');
+        if (reqCheck) reqCheck.checked = isReq;
+        const sysCheck = document.getElementById('feFlgSystem');
+        if (sysCheck) sysCheck.checked = isSystem;
+    }, 50);
 }
 
 function closePopup() {
