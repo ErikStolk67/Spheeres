@@ -1330,7 +1330,37 @@ const controlTypes = [
     { id: "lookup",   label: "Lookup",   desc: "Dropdown selection",  icon: "\u25BE",  color: "#F59E0B", dataType: "uuid",   hasLength: false },
 ];
 
-let addFieldContext = { tableName: '', typeBadge: '', color: '' };
+let addFieldContext = { tableName: '', tableId: '', typeBadge: '', color: '' };
+
+// API base URL - same origin
+const API = '/api';
+
+// Table name -> k_tables UUID mapping (loaded from API)
+let tableMap = {};
+
+async function loadTableMap() {
+    try {
+        const resp = await fetch(API + '/tables');
+        const tables = await resp.json();
+        tableMap = {};
+        for (const t of tables) {
+            tableMap[t.name] = t.k_tables;
+            // Also map uppercase versions for SYS/user tables in the designer
+            tableMap[t.name.toUpperCase()] = t.k_tables;
+        }
+    } catch (e) { console.error('Failed to load tables:', e); }
+}
+
+// Load fields from API for a table
+async function loadFieldsFromDB(tableId) {
+    try {
+        const resp = await fetch(API + '/tables/' + tableId + '/fields');
+        return await resp.json();
+    } catch (e) { console.error('Failed to load fields:', e); return []; }
+}
+
+// Init: load table map
+loadTableMap();
 
 // ============================================================================
 // POPUP FUNCTIONS
@@ -1340,11 +1370,31 @@ function showTablePopup(tableName) {
     if (!table) return;
 
     const isLookup = tableTypes[tableName] === 'lookup';
-    const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
     const color = table.type === 'sys' ? '#F59E0B' : '#64748B';
     const typeBadge = table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity');
 
-    renderPopup(tableName, typeBadge, color, fields, null);
+    // Try to load from API if we have a table ID
+    const tableId = tableMap[tableName] || tableMap[tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase()];
+
+    if (tableId) {
+        loadFieldsFromDB(tableId).then(dbFields => {
+            const fields = dbFields.map(f => ({
+                name: f.name,
+                group: f.field_group,
+                type: f.data_type + (f.max_length ? '(' + f.max_length + ')' : ''),
+                pk: f.is_primary_key,
+                fk: f.is_foreign_key,
+                req: f.is_required,
+                system: f.is_system,
+                id: f.k_fields,
+            }));
+            renderPopup(tableName, typeBadge, color, fields, null, tableId);
+        });
+    } else {
+        // Fallback to template for SYS tables not in dictionary
+        const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
+        renderPopup(tableName, typeBadge, color, fields, null, null);
+    }
 }
 
 function showLinkPopup(rowName, colName, relType) {
@@ -1370,7 +1420,7 @@ function showLinkPopup(rowName, colName, relType) {
     renderPopup(linkName, typeBadge, color, fields, { from: rowName, to: colName, type: relType });
 }
 
-function renderPopup(title, typeBadge, color, fields, linkInfo) {
+function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
     // Group fields
     const groups = {};
     const groupOrder = ['H', 'OH', 'C', 'OF', 'F'];
@@ -1402,8 +1452,8 @@ function renderPopup(title, typeBadge, color, fields, linkInfo) {
             continue;
         }
         if (g === 'C') {
-            // Custom fields group - always show with add button
-            const cFields = customFields[title] || [];
+            // Custom fields group - show fields from DB + add button
+            const cFields = groups['C'] || [];
             bodyHtml += '<div class="field-group">' +
                 '<div class="field-group-header">' +
                     '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
@@ -1414,17 +1464,21 @@ function renderPopup(title, typeBadge, color, fields, linkInfo) {
                 bodyHtml += '<div style="padding:4px 4px 2px;font-size:12px;color:#CBD5E1;font-style:italic;">No custom fields defined</div>';
             } else {
                 for (const f of cFields) {
-                    const ct = controlTypes.find(c => c.id === f.controlType) || controlTypes[0];
+                    // Find control type by dataType
+                    const ct = controlTypes.find(c => c.dataType === (f.type || '').replace(/\(\d+\)/,'')) || controlTypes[0];
+                    const deleteBtn = f.id ? ' <span style="cursor:pointer;color:#EF4444;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();deleteCustomField(\'' + f.id + '\',\'' + title + '\')" title="Delete field">&times;</span>' : '';
                     bodyHtml += '<div class="field-row">' +
-                        '<span class="field-name">' + f.name + '</span>' +
-                        '<span class="field-type">' + f.dataType + (f.maxLength ? '(' + f.maxLength + ')' : '') + '</span>' +
+                        '<span class="field-name">' + f.name + deleteBtn + '</span>' +
+                        '<span class="field-type">' + f.type + '</span>' +
                         '<span><span class="field-badge" style="background:' + ct.color + '18;color:' + ct.color + ';">' + ct.label + '</span></span>' +
-                        '<span class="field-required">' + (f.required ? '*' : '') + '</span>' +
+                        '<span class="field-required">' + (f.req ? '*' : '') + '</span>' +
                     '</div>';
                 }
             }
 
-            bodyHtml += '<button class="add-field-btn" onclick="openAddFieldPopup(\'' + title + '\',\'' + typeBadge + '\',\'' + color + '\')">+ Add Custom Field</button>';
+            if (tableId) {
+                bodyHtml += '<button class="add-field-btn" onclick="openAddFieldPopup(\'' + title + '\',\'' + tableId + '\',\'' + typeBadge + '\',\'' + color + '\')">+ Add Custom Field</button>';
+            }
             bodyHtml += '</div>';
             continue;
         }
@@ -1471,8 +1525,8 @@ function closePopup() {
     document.getElementById('fieldPopup').classList.remove('open');
 }
 
-function openAddFieldPopup(tableName, typeBadge, color) {
-    addFieldContext = { tableName, typeBadge, color };
+function openAddFieldPopup(tableName, tableId, typeBadge, color) {
+    addFieldContext = { tableName, tableId, typeBadge, color };
 
     let typeOptions = '';
     for (const ct of controlTypes) {
@@ -1558,6 +1612,7 @@ function validateAddForm() {
 }
 
 function saveCustomField() {
+    const tableId = addFieldContext.tableId;
     const tableName = addFieldContext.tableName;
     const name = document.getElementById('cfName').value.trim();
     const ctId = document.getElementById('cfControlType').value;
@@ -1566,21 +1621,45 @@ function saveCustomField() {
     const maxLenEl = document.getElementById('cfMaxLength');
     const lookupEl = document.getElementById('cfLookupTable');
 
-    const field = {
-        name: name,
-        controlType: ctId,
-        dataType: ct.dataType,
-        required: required,
-        maxLength: maxLenEl ? parseInt(maxLenEl.value) || 255 : null,
-        lookupTable: lookupEl ? lookupEl.value : null,
-    };
+    const btn = document.getElementById('cfSaveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
 
-    if (!customFields[tableName]) customFields[tableName] = [];
-    customFields[tableName].push(field);
+    fetch(API + '/tables/' + tableId + '/fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: name,
+            data_type: ct.dataType,
+            max_length: maxLenEl ? parseInt(maxLenEl.value) || 255 : null,
+            is_required: required,
+            control_type: ctId,
+            lookup_table: lookupEl ? lookupEl.value : null,
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            btn.disabled = false;
+            btn.textContent = 'Add Field';
+            return;
+        }
+        closeAddFieldPopup();
+        showTablePopup(tableName);
+    })
+    .catch(err => {
+        alert('Error saving: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Add Field';
+    });
+}
 
-    // Close add-field popup and refresh the table popup
-    closeAddFieldPopup();
-    showTablePopup(tableName);
+function deleteCustomField(fieldId, tableName) {
+    if (!confirm('Delete this custom field?')) return;
+    fetch(API + '/fields/' + fieldId, { method: 'DELETE' })
+    .then(() => showTablePopup(tableName))
+    .catch(err => alert('Error: ' + err.message));
 }
 
 function closeAddFieldPopup() {

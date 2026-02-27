@@ -1,0 +1,26 @@
+{
+  "name": "spheeres",
+  "version": "1.0.0",
+  "description": "MetalSpheres is a production management SaaS for milling and manufacturing companies. The platform uses a **dictionary-driven (metadata-driven)** architecture where all database structures are self-describing.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ErikStolk67/Spheeres.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ErikStolk67/Spheeres/issues"
+  },
+  "homepage": "https://github.com/ErikStolk67/Spheeres#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "pg": "^8.19.0"
+  }
+}

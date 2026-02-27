@@ -1,0 +1,117 @@
+const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const path = require('path');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
+
+const pool = new Pool({
+    user: 'postgres',
+    password: 'metalspheres',
+    host: 'localhost',
+    database: 'metalspheres',
+    port: 5432,
+});
+
+// ============================================================================
+// DICTIONARY ENDPOINTS
+// ============================================================================
+
+app.get('/api/dictionaries', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_dictionaries ORDER BY name');
+    res.json(rows);
+});
+
+app.get('/api/databases', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_databases ORDER BY name');
+    res.json(rows);
+});
+
+app.get('/api/tables', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_tables ORDER BY sort_order');
+    res.json(rows);
+});
+
+app.get('/api/tables/:id/fields', async (req, res) => {
+    const { rows } = await pool.query(
+        'SELECT * FROM cd_fields WHERE k_tables = $1 ORDER BY sort_order', [req.params.id]
+    );
+    res.json(rows);
+});
+
+app.get('/api/fields', async (req, res) => {
+    const { rows } = await pool.query(`
+        SELECT f.*, t.name as table_name, t.table_type::text
+        FROM cd_fields f JOIN cd_tables t ON f.k_tables = t.k_tables
+        ORDER BY t.sort_order, f.sort_order
+    `);
+    res.json(rows);
+});
+
+app.post('/api/tables/:id/fields', async (req, res) => {
+    const { name, data_type, max_length, is_required, control_type, lookup_table } = req.body;
+    const k_tables = req.params.id;
+    try {
+        const sortRes = await pool.query(
+            "SELECT COALESCE(MAX(sort_order), 499) + 1 as next_sort FROM cd_fields WHERE k_tables = $1 AND field_group = 'C'",
+            [k_tables]
+        );
+        const { rows } = await pool.query(`
+            INSERT INTO cd_fields (k_fields, k_tables, name, alias, field_group, data_type,
+                max_length, is_required, is_system, is_primary_key, is_foreign_key, fk_table, sort_order)
+            VALUES (gen_random_uuid(), $1, $2, $2, 'C', $3, $4, $5, false, false, $6, $7, $8)
+            RETURNING *
+        `, [k_tables, name, data_type, max_length || null, is_required || false,
+            control_type === 'lookup', lookup_table || null, sortRes.rows[0].next_sort]);
+
+        const field = rows[0];
+        await pool.query(`
+            INSERT INTO cd_controls (k_controls, k_fields, control_type, label, is_visible, is_readonly, is_required, lookup_table, sort_order)
+            VALUES (gen_random_uuid(), $1, $2, $3, true, false, $4, $5, $6)
+        `, [field.k_fields, control_type, name, is_required || false, lookup_table || null, field.sort_order]);
+
+        res.json(field);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/fields/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM cd_controls WHERE k_fields = $1', [req.params.id]);
+        await pool.query('DELETE FROM cd_fields WHERE k_fields = $1 AND is_system = false', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/roles', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_roles ORDER BY name');
+    res.json(rows);
+});
+
+app.get('/api/lifestatuses', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_lifestatuses ORDER BY sort_order');
+    res.json(rows);
+});
+
+app.get('/api/folders', async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM cd_folders ORDER BY sort_order');
+    res.json(rows);
+});
+
+app.get('/api/controls', async (req, res) => {
+    const { rows } = await pool.query(`
+        SELECT c.*, f.name as field_name, t.name as table_name
+        FROM cd_controls c JOIN cd_fields f ON c.k_fields = f.k_fields
+        JOIN cd_tables t ON f.k_tables = t.k_tables ORDER BY c.sort_order
+    `);
+    res.json(rows);
+});
+
+const PORT = 3000;
+app.listen(PORT, () => console.log(`MetalSpheeres API running on http://localhost:${PORT}`));
