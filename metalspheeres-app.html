@@ -350,68 +350,68 @@
         }
         .link-info-arrow { font-size: 20px; color: #94A3B8; }
 
-        /* ============ ADD FIELD POPUP ============ */
+        /* ============ FIELD EDITOR POPUP ============ */
         .add-field-popup {
-            background: #fff; border-radius: 14px; width: 420px; max-width: 90vw;
-            box-shadow: 0 24px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+            background: #fff; border-radius: 14px; width: 960px; max-width: 95vw;
+            max-height: 90vh; display: flex; flex-direction: column;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05);
             animation: popupIn 0.2s ease-out;
         }
-        .add-field-header {
-            padding: 20px 24px 16px; border-bottom: 1px solid #E2E8F0;
-            display: flex; align-items: center; justify-content: space-between;
+        .fe-toolbar {
+            display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+            border-bottom: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 14px 14px 0 0;
         }
-        .add-field-title { font-size: 16px; font-weight: 600; color: #0F172A; }
-        .add-field-body { padding: 20px 24px 24px; }
+        .fe-btn { padding: 6px 16px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .fe-btn-ok { background: #22C55E; color: #fff; }
+        .fe-btn-ok:hover { background: #16A34A; }
+        .fe-btn-delete { background: #EF4444; color: #fff; }
+        .fe-btn-delete:hover { background: #DC2626; }
+        .fe-btn-cancel { background: #64748B; color: #fff; }
+        .fe-btn-cancel:hover { background: #475569; }
+        .fe-tablename { margin-left: 16px; font-size: 11px; color: #94A3B8; }
+        .fe-tablename strong { font-size: 16px; color: #0F172A; display: block; letter-spacing: -0.01em; }
+        .fe-disable { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748B; }
 
-        .form-field { margin-bottom: 16px; }
-        .form-label { display: block; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-        .form-input {
-            width: 100%; padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 8px;
-            font-size: 14px; font-family: 'DM Sans', sans-serif; color: #0F172A;
-            outline: none; transition: border-color 0.15s; box-sizing: border-box;
-        }
-        .form-input:focus { border-color: #3B82F6; box-shadow: 0 0 0 3px #3B82F620; }
-        .form-input::placeholder { color: #CBD5E1; }
+        .fe-body { padding: 16px; overflow-y: auto; flex: 1; }
 
-        .control-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .control-type-option {
-            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-            border: 2px solid #E2E8F0; border-radius: 10px; cursor: pointer;
-            transition: all 0.15s; background: #fff;
+        .fe-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+        .fe-field { display: flex; flex-direction: column; gap: 3px; }
+        .fe-field label { font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; }
+        .fe-field select, .fe-field input, .fe-field textarea {
+            padding: 7px 10px; border: 1px solid #D1D5DB; border-radius: 6px;
+            font-size: 13px; font-family: 'DM Sans', sans-serif; color: #0F172A;
+            outline: none; background: #fff;
         }
-        .control-type-option:hover { border-color: #CBD5E1; background: #F8FAFC; }
-        .control-type-option.selected { border-color: #3B82F6; background: #EFF6FF; }
-        .control-type-icon {
-            width: 32px; height: 32px; border-radius: 8px; display: flex;
-            align-items: center; justify-content: center; font-size: 14px;
-            font-weight: 700; flex-shrink: 0;
-        }
-        .control-type-name { font-size: 13px; font-weight: 600; color: #0F172A; }
-        .control-type-desc { font-size: 11px; color: #94A3B8; }
+        .fe-field select:focus, .fe-field input:focus, .fe-field textarea:focus { border-color: #3B82F6; box-shadow: 0 0 0 2px #3B82F614; }
+        .fe-field select { cursor: pointer; padding-right: 24px; }
+        .fe-field .fe-icon-prefix { display: flex; align-items: center; gap: 0; }
+        .fe-field .fe-icon-prefix span { padding: 7px 8px; background: #F1F5F9; border: 1px solid #D1D5DB; border-right: none; border-radius: 6px 0 0 6px; font-size: 12px; color: #64748B; }
+        .fe-field .fe-icon-prefix input { border-radius: 0 6px 6px 0; }
 
-        .form-row { display: flex; gap: 12px; }
-        .form-row .form-field { flex: 1; }
+        .fe-desc { width: 100%; }
+        .fe-desc textarea { width: 100%; min-height: 40px; resize: vertical; box-sizing: border-box; }
 
-        .form-check {
-            display: flex; align-items: center; gap: 8px; cursor: pointer;
-            font-size: 13px; color: #334155; padding: 4px 0;
+        .fe-panels { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-top: 14px; }
+        .fe-panel {
+            border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px; min-height: 180px;
         }
-        .form-check input { width: 16px; height: 16px; accent-color: #3B82F6; cursor: pointer; }
+        .fe-panel-title { font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .fe-panel-title input[type=checkbox] { width: 14px; height: 14px; accent-color: #3B82F6; }
 
-        .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #F1F5F9; }
-        .btn-cancel {
-            padding: 8px 16px; border: 1px solid #E2E8F0; border-radius: 8px;
-            background: #fff; color: #64748B; font-size: 13px; font-weight: 500;
-            cursor: pointer; font-family: 'DM Sans', sans-serif;
+        .fe-check { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; color: #334155; cursor: pointer; }
+        .fe-check input { width: 14px; height: 14px; accent-color: #3B82F6; cursor: pointer; }
+        .fe-check.checked { color: #0F172A; font-weight: 500; }
+
+        .fe-sub-label { font-size: 11px; color: #94A3B8; margin-top: 8px; margin-bottom: 3px; }
+        .fe-sub-select, .fe-sub-input {
+            width: 100%; padding: 5px 8px; border: 1px solid #D1D5DB; border-radius: 5px;
+            font-size: 12px; font-family: 'DM Sans', sans-serif; color: #0F172A; box-sizing: border-box;
         }
-        .btn-cancel:hover { background: #F8FAFC; }
-        .btn-save {
-            padding: 8px 20px; border: none; border-radius: 8px;
-            background: #3B82F6; color: #fff; font-size: 13px; font-weight: 600;
-            cursor: pointer; font-family: 'DM Sans', sans-serif;
-        }
-        .btn-save:hover { background: #2563EB; }
-        .btn-save:disabled { background: #CBD5E1; cursor: not-allowed; }
+        .fe-sub-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+        .fe-sub-row .fe-sub-select { flex: 1; }
+        .fe-icon-btn { width: 26px; height: 26px; border: 1px solid #D1D5DB; border-radius: 5px; background: #F8FAFC; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #64748B; }
+        .fe-icon-btn:hover { background: #E2E8F0; }
+        .fe-note { font-size: 11px; color: #94A3B8; font-style: italic; margin-top: 8px; padding: 6px 8px; background: #F8FAFC; border-radius: 4px; }
 
         .add-field-btn {
             display: flex; align-items: center; gap: 6px; padding: 6px 12px;
@@ -1540,137 +1540,247 @@ function closePopup() {
 function openAddFieldPopup(tableName, tableId, typeBadge, color) {
     addFieldContext = { tableName, tableId, typeBadge, color };
 
-    let typeOptions = '';
-    for (const ct of controlTypes) {
-        typeOptions += '<div class="control-type-option" data-ctid="' + ct.id + '" onclick="selectControlType(this, \'' + ct.id + '\')">' +
-            '<div class="control-type-icon" style="background:' + ct.color + '14;color:' + ct.color + ';">' + ct.icon + '</div>' +
-            '<div><div class="control-type-name">' + ct.label + '</div>' +
-            '<div class="control-type-desc">' + ct.desc + '</div></div>' +
-        '</div>';
+    const formats = {
+        text: ['None','Starts with capital','Lowercase','IP Address','Phone number','Uppercase','URL','Local URL','Mail','SKYPE','SQL','Linkedin'],
+        integer: ['None','Currency','Percentage','Number'],
+        decimal: ['None','Currency','Percentage','Number'],
+        date: ['None','dd-mm-yyyy','mm-dd-yyyy','yyyy-mm-dd'],
+        datetime: ['None','dd-mm-yyyy HH:mm','mm-dd-yyyy HH:mm','yyyy-mm-dd HH:mm'],
+        checkbox: ['None'],
+        lookup: ['None'],
+    };
+
+    // Build lookup table options
+    let lookupTableOpts = '<option value="">-- Select table --</option>';
+    for (const t of dbTables) {
+        lookupTableOpts += '<option value="' + t.name + '">' + t.name + '</option>';
     }
 
     const popup = document.getElementById('addFieldPopup');
     popup.innerHTML = '<div class="add-field-popup">' +
-        '<div class="add-field-header">' +
-            '<div class="add-field-title">Add Custom Field to ' + tableName + '</div>' +
-            '<button class="popup-close" onclick="closeAddFieldPopup()">&times;</button>' +
+        // Toolbar
+        '<div class="fe-toolbar">' +
+            '<button class="fe-btn fe-btn-ok" onclick="saveCustomField()">Ok</button>' +
+            '<button class="fe-btn fe-btn-delete" onclick="closeAddFieldPopup()" style="display:none;" id="feDeleteBtn">Delete</button>' +
+            '<button class="fe-btn fe-btn-cancel" onclick="closeAddFieldPopup()">Cancel</button>' +
+            '<div class="fe-tablename">Table name<strong>' + tableName + '</strong></div>' +
+            '<label class="fe-disable"><input type="checkbox" id="feDisable"> Disable</label>' +
         '</div>' +
-        '<div class="add-field-body">' +
-            '<div class="form-field">' +
-                '<label class="form-label">Field Name</label>' +
-                '<input class="form-input" id="cfName" type="text" placeholder="e.g. phone_number, weight, delivery_date" oninput="validateFieldName(this)">' +
+        // Body
+        '<div class="fe-body">' +
+            // Row 1: Field Type, Field Name, Size, Format
+            '<div class="fe-row">' +
+                '<div class="fe-field" style="width:160px;">' +
+                    '<label>Field Type</label>' +
+                    '<select id="feFieldType" onchange="onFieldTypeChange()">' +
+                        '<option value="">-- Select --</option>' +
+                        '<option value="text">Text</option>' +
+                        '<option value="integer">Integer</option>' +
+                        '<option value="decimal">Decimal</option>' +
+                        '<option value="date">Date</option>' +
+                        '<option value="datetime">DateTime</option>' +
+                        '<option value="checkbox">Checkbox</option>' +
+                        '<option value="lookup">Lookup</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div class="fe-field" style="flex:1;">' +
+                    '<label>Field Name</label>' +
+                    '<div class="fe-icon-prefix">' +
+                        '<span id="fePrefix" style="display:none;">F_</span>' +
+                        '<input type="text" id="feName" placeholder="FIELD_NAME" oninput="onFieldNameInput(this)" style="text-transform:uppercase;">' +
+                    '</div>' +
+                '</div>' +
+                '<div class="fe-field" style="width:70px;" id="feSizeWrap">' +
+                    '<label>Size</label>' +
+                    '<input type="number" id="feSize" value="80" min="1" max="4000">' +
+                '</div>' +
+                '<div class="fe-field" style="width:180px;">' +
+                    '<label>Format</label>' +
+                    '<select id="feFormat"><option value="">None</option></select>' +
+                '</div>' +
             '</div>' +
-            '<div class="form-field">' +
-                '<label class="form-label">Control Type</label>' +
-                '<div class="control-type-grid">' + typeOptions + '</div>' +
-                '<input type="hidden" id="cfControlType" value="">' +
+            // Description
+            '<div class="fe-desc">' +
+                '<div class="fe-field" style="width:100%;">' +
+                    '<label>Description</label>' +
+                    '<textarea id="feDescription" placeholder="Field description..." rows="2"></textarea>' +
+                '</div>' +
             '</div>' +
-            '<div id="cfExtraFields"></div>' +
-            '<div class="form-field">' +
-                '<label class="form-check"><input type="checkbox" id="cfRequired"> Required field</label>' +
-            '</div>' +
-            '<div class="form-actions">' +
-                '<button class="btn-cancel" onclick="closeAddFieldPopup()">Cancel</button>' +
-                '<button class="btn-save" id="cfSaveBtn" onclick="saveCustomField()" disabled>Add Field</button>' +
+            // 4 Panels
+            '<div class="fe-panels">' +
+                // Flags
+                '<div class="fe-panel">' +
+                    '<div class="fe-panel-title">Flags</div>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgSystem"> System</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgHidden"> Hidden</label>' +
+                    '<label class="fe-check checked"><input type="checkbox" id="feFlgRequired" checked> Required</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgReadonly"> Read only</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgSearch"> Search field</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgVirtual"> Virtual</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgTranslate"> Translate</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgClustered"> Clustered</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgUnique"> Unique</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgMultiLink"> Multi link editor</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFlgValidate"> Validate</label>' +
+                '</div>' +
+                // Default
+                '<div class="fe-panel">' +
+                    '<div class="fe-panel-title"><input type="checkbox" id="feDefEnable"> Default</div>' +
+                    '<div class="fe-sub-label">Value</div>' +
+                    '<input class="fe-sub-input" id="feDefValue" placeholder="">' +
+                    '<div class="fe-sub-label" style="margin-top:12px;">Depends On</div>' +
+                    '<div class="fe-sub-label">Table</div>' +
+                    '<select class="fe-sub-select" id="feDefTable"><option value=""></option>' + lookupTableOpts + '</select>' +
+                    '<div class="fe-sub-label">Field</div>' +
+                    '<select class="fe-sub-select" id="feDefField"><option value=""></option></select>' +
+                '</div>' +
+                // Validate
+                '<div class="fe-panel">' +
+                    '<div class="fe-panel-title">Validate</div>' +
+                    '<div class="fe-sub-label">Table</div>' +
+                    '<div class="fe-sub-row">' +
+                        '<select class="fe-sub-select" id="feValTable">' + lookupTableOpts + '</select>' +
+                        '<button class="fe-icon-btn" title="Add">+</button>' +
+                    '</div>' +
+                    '<div class="fe-sub-label">Type</div>' +
+                    '<input class="fe-sub-input" id="feValType" value="" readonly style="background:#F8FAFC;">' +
+                    '<div class="fe-sub-label">Field Name</div>' +
+                    '<select class="fe-sub-select" id="feValField"><option value="NAME">NAME</option></select>' +
+                    '<label class="fe-check" style="margin-top:6px;"><input type="checkbox" id="feValCustom"> Allow custom value</label>' +
+                    '<label class="fe-check"><input type="checkbox" id="feValCreate"> Allow creating records in Lookup table</label>' +
+                    '<div class="fe-note">Dropdown becomes SearchScreen if there is more than &lt;10&gt; record(s)</div>' +
+                '</div>' +
+                // Field matching
+                '<div class="fe-panel">' +
+                    '<div class="fe-panel-title"><input type="checkbox" id="feFmEnable"> Field matching</div>' +
+                    '<label class="fe-check"><input type="checkbox" id="feFmCurrent"> Current entity</label>' +
+                    '<div class="fe-sub-label">Mode</div>' +
+                    '<select class="fe-sub-select" id="feFmMode"><option>Full</option><option>Partial</option><option>Exact</option></select>' +
+                    '<div class="fe-sub-label">Value</div>' +
+                    '<input class="fe-sub-input" id="feFmValue" placeholder="">' +
+                    '<label class="fe-check" style="margin-top:6px;"><input type="checkbox" id="feFm0pct"> 0% score if no match</label>' +
+                    '<div class="fe-sub-label">Relative weight</div>' +
+                    '<input class="fe-sub-input" id="feFmWeight" type="number" value="1" min="0">' +
+                    '<label class="fe-check" style="margin-top:10px;"><input type="checkbox" id="feFmLinked"> Linked entity</label>' +
+                    '<div class="fe-note">Add matching fields to the link table between the current and linked entities</div>' +
+                '</div>' +
             '</div>' +
         '</div>' +
     '</div>';
     popup.classList.add('open');
+
+    // Set initial state
+    onFieldTypeChange();
 }
 
-function selectControlType(el, ctId) {
-    document.querySelectorAll('.control-type-option').forEach(o => o.classList.remove('selected'));
-    el.classList.add('selected');
-    document.getElementById('cfControlType').value = ctId;
+function onFieldTypeChange() {
+    const type = document.getElementById('feFieldType').value;
+    const sizeWrap = document.getElementById('feSizeWrap');
+    const sizeInput = document.getElementById('feSize');
+    const prefix = document.getElementById('fePrefix');
+    const formatSelect = document.getElementById('feFormat');
+    const valType = document.getElementById('feValType');
 
-    const ct = controlTypes.find(c => c.id === ctId);
-    const extra = document.getElementById('cfExtraFields');
-    let extraHtml = '';
-
-    if (ct.hasLength) {
-        extraHtml = '<div class="form-field">' +
-            '<label class="form-label">Max Length</label>' +
-            '<input class="form-input" id="cfMaxLength" type="number" value="255" min="1" max="4000" placeholder="255">' +
-        '</div>';
+    // Size: only for text and decimal
+    if (type === 'text') {
+        sizeWrap.style.display = ''; sizeInput.value = 80;
+    } else if (type === 'decimal') {
+        sizeWrap.style.display = ''; sizeInput.value = 16;
+    } else {
+        sizeWrap.style.display = 'none';
     }
 
-    if (ctId === 'lookup') {
-        let lookupOpts = '';
-        const userTables = dbTables.filter(t => t.type === 'user');
-        for (const t of userTables) {
-            lookupOpts += '<option value="' + t.name + '">' + t.name + '</option>';
-        }
-        extraHtml = '<div class="form-field">' +
-            '<label class="form-label">Lookup Table</label>' +
-            '<select class="form-input" id="cfLookupTable">' + lookupOpts + '</select>' +
-        '</div>';
+    // Prefix F_ for lookups
+    if (type === 'lookup') {
+        prefix.style.display = '';
+        document.getElementById('feName').style.borderRadius = '0 6px 6px 0';
+    } else {
+        prefix.style.display = 'none';
+        document.getElementById('feName').style.borderRadius = '6px';
     }
 
-    extra.innerHTML = extraHtml;
-    validateAddForm();
+    // Format options per type
+    const formats = {
+        text: ['None','Starts with capital','Lowercase','IP Address','Phone number','Uppercase','URL','Local URL','Mail','SKYPE','SQL','Linkedin'],
+        integer: ['None','Currency','Percentage','Number'],
+        decimal: ['None','Currency','Percentage','Number'],
+        date: ['None','dd-mm-yyyy','mm-dd-yyyy','yyyy-mm-dd'],
+        datetime: ['None','dd-mm-yyyy HH:mm','mm-dd-yyyy HH:mm','yyyy-mm-dd HH:mm'],
+        checkbox: ['None'],
+        lookup: ['None'],
+    };
+    const fmts = formats[type] || ['None'];
+    formatSelect.innerHTML = fmts.map(f => '<option value="' + f + '">' + f + '</option>').join('');
+
+    // Validate type label
+    valType.value = type ? (type.charAt(0).toUpperCase() + type.slice(1)) : '';
 }
 
-function validateFieldName(input) {
-    // Auto-format: lowercase, underscores, no spaces
-    input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/__+/g, '_');
-    validateAddForm();
+function onFieldNameInput(input) {
+    input.value = input.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/__+/g, '_');
 }
 
 function validateAddForm() {
-    const name = document.getElementById('cfName').value.trim();
-    const ctType = document.getElementById('cfControlType').value;
-    const btn = document.getElementById('cfSaveBtn');
-    btn.disabled = !(name.length >= 2 && ctType);
+    const name = document.getElementById('feName').value.trim();
+    const type = document.getElementById('feFieldType').value;
+    return name.length >= 2 && type;
 }
 
 function saveCustomField() {
     const tableId = addFieldContext.tableId;
     const tableName = addFieldContext.tableName;
+    const type = document.getElementById('feFieldType').value;
+    let name = document.getElementById('feName').value.trim().toUpperCase();
 
-    if (!apiAvailable || !tableId) {
-        alert('Cannot save: API server is not running.\nStart the server with: node server.js');
+    if (!type || name.length < 2) {
+        alert('Please select a Field Type and enter a Field Name.');
         return;
     }
 
-    const name = document.getElementById('cfName').value.trim();
-    const ctId = document.getElementById('cfControlType').value;
-    const required = document.getElementById('cfRequired').checked;
-    const ct = controlTypes.find(c => c.id === ctId);
-    const maxLenEl = document.getElementById('cfMaxLength');
-    const lookupEl = document.getElementById('cfLookupTable');
+    // Add F_ prefix for lookups
+    if (type === 'lookup' && !name.startsWith('F_')) {
+        name = 'F_' + name;
+    }
 
-    const btn = document.getElementById('cfSaveBtn');
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
+    const ct = controlTypes.find(c => c.id === type);
+    const sizeEl = document.getElementById('feSize');
+    const size = (type === 'text' || type === 'decimal') ? parseInt(sizeEl.value) || null : null;
+    const required = document.getElementById('feFlgRequired').checked;
+    const lookupTable = type === 'lookup' ? document.getElementById('feValTable').value : null;
 
-    fetch(API + '/tables/' + tableId + '/fields', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            name: name,
-            data_type: ct.dataType,
-            max_length: maxLenEl ? parseInt(maxLenEl.value) || 255 : null,
-            is_required: required,
-            control_type: ctId,
-            lookup_table: lookupEl ? lookupEl.value : null,
+    if (apiAvailable && tableId) {
+        fetch(API + '/tables/' + tableId + '/fields', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                data_type: ct.dataType,
+                max_length: size,
+                is_required: required,
+                control_type: type,
+                lookup_table: lookupTable,
+            })
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.error) {
-            alert('Error: ' + data.error);
-            btn.disabled = false;
-            btn.textContent = 'Add Field';
-            return;
-        }
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert('Error: ' + data.error); return; }
+            closeAddFieldPopup();
+            showTablePopup(tableName);
+        })
+        .catch(err => alert('Error saving: ' + err.message));
+    } else {
+        // In-memory fallback
+        if (!customFields[tableName]) customFields[tableName] = [];
+        customFields[tableName].push({
+            name: name,
+            controlType: type,
+            dataType: ct.dataType,
+            required: required,
+            maxLength: size,
+        });
         closeAddFieldPopup();
         showTablePopup(tableName);
-    })
-    .catch(err => {
-        alert('Error saving: ' + err.message);
-        btn.disabled = false;
-        btn.textContent = 'Add Field';
-    });
+    }
 }
 
 function deleteCustomField(fieldId, tableName) {
