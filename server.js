@@ -8,12 +8,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+// Use Railway DATABASE_URL or fallback to local
 const pool = new Pool({
-    user: 'postgres',
-    password: 'metalspheres',
-    host: 'localhost',
-    database: 'metalspheres',
-    port: 5432,
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:metalspheres@localhost:5432/metalspheres',
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
 // ============================================================================
@@ -164,5 +162,38 @@ app.delete('/api/types/:id', async (req, res) => {
     }
 });
 
-const PORT = 3000;
-app.listen(PORT, () => console.log(`MetalSpheeres API running on http://localhost:${PORT}`));
+// ============================================================================
+// STATISTICS ENDPOINTS
+// ============================================================================
+
+app.get('/api/stats/counts', async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT schemaname, relname as table_name, n_live_tup as count
+            FROM pg_stat_user_tables
+            WHERE schemaname = 'public'
+            ORDER BY relname
+        `);
+        const counts = {};
+        rows.forEach(r => { counts[r.table_name] = parseInt(r.count); });
+        res.json(counts);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/raw/:table', async (req, res) => {
+    const table = req.params.table.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!table.startsWith('cd_')) {
+        return res.status(403).json({ error: 'Only CD_ tables allowed' });
+    }
+    try {
+        const { rows } = await pool.query(`SELECT * FROM "${table}" LIMIT 100`);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
