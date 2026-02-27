@@ -640,57 +640,64 @@ app.post('/api/seed', async (req, res) => {
 // IMPORT XML - Large file upload & parse into CD_ tables
 // ============================================================================
 
-// Multipart file upload (no external dependency - use raw body)
+// ============================================================================
+// IMPORT XML - Large file upload & parse into CD_ tables
+// Format: <CD_Verspaning><CD_TABLENAME><field>val</field>...</CD_TABLENAME>...</CD_Verspaning>
+// ============================================================================
+
 app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
     const client = await pool.connect();
     try {
-        const xml = req.body.toString('utf-8');
-        
-        // Parse XML: find all table elements with their row data
-        // XML structure: <CD_Verspaning><CD_TABLES><K_TABLE>1</K_TABLE><NAME>foo</NAME>...</CD_TABLES>...
-        const tableDataRegex = /<(CD_[A-Z_]+?)>([\s\S]*?)<\/\1>/g;
-        const fieldRegex = /<([A-Z_]+?)>([\s\S]*?)<\/\1>/g;
+        const raw = req.body.toString('utf-8');
         
         // Collect all rows per table
         const tableRows = {};
+        
+        // Match record elements: <CD_LK_FORMATS>..fields..</CD_LK_FORMATS>
+        // Strip dataset wrapper(s) like <CD_Verspaning>
+        const stripped = raw.replace(/<\/?CD_[Vv]erspaning[^>]*>/g, '').trim();
+        
+        const recordRegex = /<(CD_[A-Za-z_]+)>([\s\S]*?)<\/\1>/g;
         let match;
         
-        // First strip the outer dataset wrapper
-        const innerXml = xml.replace(/^[\s\S]*?<CD_[^>]+>/, '').replace(/<\/CD_[^>]+>\s*$/, '');
-        
-        while ((match = tableDataRegex.exec(xml)) !== null) {
-            const tableName = match[1].toLowerCase();
-            if (tableName === 'cd_verspaning') continue; // skip dataset root
+        while ((match = recordRegex.exec(stripped)) !== null) {
+            const tagName = match[1];
             
+            const tableName = tagName.toLowerCase();
             if (!tableRows[tableName]) tableRows[tableName] = [];
             
-            // Parse fields from this row
             const rowXml = match[2];
             const row = {};
+            const fieldRegex = /<([A-Za-z_0-9]+?)>([\s\S]*?)<\/\1>/g;
             let fMatch;
-            const localFieldRegex = /<([A-Za-z_]+?)>([\s\S]*?)<\/\1>/g;
-            while ((fMatch = localFieldRegex.exec(rowXml)) !== null) {
-                const fname = fMatch[1].toLowerCase();
+            
+            while ((fMatch = fieldRegex.exec(rowXml)) !== null) {
+                let fname = fMatch[1].toLowerCase();
+                if (fname === 'n') fname = 'name';
                 const fval = fMatch[2].trim();
                 if (fval !== '') row[fname] = fval;
             }
+            
             if (Object.keys(row).length > 0) {
                 tableRows[tableName].push(row);
             }
         }
         
-        // Get existing table columns from DB for type mapping
         const tableNames = Object.keys(tableRows);
+        if (tableNames.length === 0) {
+            return res.json({ success: false, error: 'No CD_ records found in file' });
+        }
+        
         const importResults = [];
         let totalRows = 0;
         
-        // Import in order: lookups first, then entities, subs, links
+        // Sort: lookups(1) > entities(2) > subs(3) > links(4)
         const ordered = tableNames.sort((a, b) => {
-            const order = (n) => {
-                if (n.startsWith('cd_lk_')) return 1;
-                if (n.match(/^cd_[a-z]+_[a-z]+$/)) return 4; // link
-                if (n.match(/_(?:execution_log|logs|remote|checklist|clustersettings|fieldkey|fieldvalue|kinds|linkeditorvisibility|match|tabsettings|filteringsettings|restrictions)$/)) return 3;
-                return 2; // entity
+            const order = (nm) => {
+                if (nm.startsWith('cd_lk_')) return 1;
+                if (nm.match(/_(?:execution_log|logs|remote|checklist|clustersettings|fieldkey|fieldvalue|kinds|linkeditorvisibility|match|tabsettings|filteringsettings|restrictions)$/)) return 3;
+                if (nm.match(/^cd_[a-z]{3,5}_[a-z]{3,5}$/) && !nm.startsWith('cd_lk_')) return 4;
+                return 2;
             };
             return order(a) - order(b);
         });
@@ -701,17 +708,15 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             const rows = tableRows[tableName];
             if (!rows || rows.length === 0) continue;
             
-            // Check if table exists
             const exists = await client.query(
                 "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1",
                 [tableName]
             );
             if (exists.rows.length === 0) {
-                importResults.push({ table: tableName, rows: 0, error: 'table not found' });
+                importResults.push({ table: tableName, rows: 0, total: rows.length, error: 'not in DB' });
                 continue;
             }
             
-            // Get column info
             const colInfo = await client.query(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",
                 [tableName]
@@ -719,69 +724,47 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             const dbCols = {};
             colInfo.rows.forEach(c => { dbCols[c.column_name] = c.data_type; });
             
-            // Clear existing data
             await client.query(`TRUNCATE ${tableName} CASCADE`);
             
-            // Insert rows in batches
-            let inserted = 0;
+            let inserted = 0, errors = 0;
+            
             for (const row of rows) {
-                // Filter to existing columns only, convert values
-                const cols = [];
-                const vals = [];
-                const placeholders = [];
+                const cols = [], vals = [], ph = [];
                 let pi = 1;
                 
                 for (const [col, val] of Object.entries(row)) {
-                    if (!dbCols[col]) continue; // skip unknown columns
-                    
+                    if (!dbCols[col]) continue;
                     const dtype = dbCols[col];
                     let pgVal = val;
                     
-                    // Type conversions
                     if (dtype === 'integer' || dtype === 'bigint') {
-                        pgVal = parseInt(val);
-                        if (isNaN(pgVal)) continue;
+                        pgVal = parseInt(val); if (isNaN(pgVal)) continue;
                     } else if (dtype === 'boolean') {
                         pgVal = val === 'true' || val === '1';
-                    } else if (dtype === 'timestamp with time zone' || dtype === 'timestamp without time zone') {
-                        pgVal = val; // postgres can parse ISO dates
                     } else if (dtype === 'bytea') {
                         pgVal = Buffer.from(val, 'base64');
-                    } else if (dtype === 'uuid') {
-                        pgVal = val;
                     }
                     
-                    cols.push(col);
-                    vals.push(pgVal);
-                    placeholders.push(`$${pi}`);
-                    pi++;
+                    cols.push(col); vals.push(pgVal); ph.push(`$${pi}`); pi++;
                 }
                 
                 if (cols.length === 0) continue;
-                
                 try {
-                    await client.query(
-                        `INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${placeholders.join(',')})`,
-                        vals
-                    );
+                    await client.query(`INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
                     inserted++;
-                } catch (e) {
-                    // Skip individual row errors, continue with next
-                }
+                } catch (e) { errors++; }
             }
             
             totalRows += inserted;
-            importResults.push({ table: tableName, rows: inserted, total: rows.length });
+            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors });
         }
         
         await client.query('COMMIT');
+        for (const r of importResults) {
+            if (r.rows > 0) try { await client.query(`ANALYZE ${r.table}`); } catch(e) {}
+        }
         
-        res.json({
-            success: true,
-            tablesProcessed: importResults.length,
-            totalRows,
-            details: importResults
-        });
+        res.json({ success: true, tablesProcessed: importResults.length, totalRows, details: importResults });
     } catch (err) {
         try { await client.query('ROLLBACK'); } catch(e) {}
         res.status(500).json({ error: err.message });
