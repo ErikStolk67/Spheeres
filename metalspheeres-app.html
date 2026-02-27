@@ -759,7 +759,6 @@ const menuGroups = [
             { id: "sys_competences", label: "Competences", icon: "gauge" },
             { id: "sys_history", label: "History", icon: "history" },
             { id: "sys_locks", label: "Locks", icon: "lock" },
-            { id: "db_statistics", label: "Statistics", icon: "bar-chart-3" },
         ]
     },
     {
@@ -781,6 +780,7 @@ const menuGroups = [
             { id: "cd_functions", label: "Functions", icon: "workflow" },
             { id: "cd_translations", label: "Translations", icon: "languages" },
             { id: "cd_components", label: "Components", icon: "boxes" },
+            { id: "db_statistics", label: "Database Statistics", icon: "bar-chart-3" },
         ]
     },
     {
@@ -4006,7 +4006,8 @@ function renderDbStatistics() {
             let listHtml = sorted.map(t => 
                 `<div class="ds-table-row" onclick="openStatsTable('${t}')" title="${t}">
                     <span class="ds-table-name" style="color:${cardColor};">${t}</span>
-                    <span class="ds-table-count">${fieldCount(t)}</span>
+                    <span class="ds-table-count" data-records="${t}" style="min-width:50px;text-align:right;">—</span>
+                    <span class="ds-table-count" style="min-width:35px;text-align:right;">${fieldCount(t)}</span>
                 </div>`
             ).join('');
             
@@ -4019,7 +4020,11 @@ function renderDbStatistics() {
                 <div class="ds-card-sub">${count} tabellen</div>
                 <div class="ds-card-divider"></div>
                 <div class="ds-table-header">
-                    <span>Tabel</span><span>Fields</span>
+                    <span>Tabel</span>
+                    <span style="display:flex;gap:0;">
+                        <span style="min-width:50px;text-align:right;">Records</span>
+                        <span style="min-width:35px;text-align:right;">Fields</span>
+                    </span>
                 </div>
                 <div class="ds-card-list">
                     ${listHtml}
@@ -4057,6 +4062,45 @@ function initDbStatistics() {
     const pop = document.getElementById('statsTablePopup');
     if (pop) pop.addEventListener('click', function(e) {
         if (e.target === pop) pop.classList.remove('open');
+    });
+
+    // Load record counts from API for CD_ tables
+    if (apiAvailable) {
+        fetch(API + '/stats/counts')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data) return;
+            // data = { "cd_tables": 700, "cd_fields": 16488, ... }
+            for (const [table, count] of Object.entries(data)) {
+                const els = document.querySelectorAll(`[data-records="${table.toUpperCase()}"]`);
+                els.forEach(el => {
+                    el.textContent = count.toLocaleString();
+                    el.style.color = count > 0 ? '#0F172A' : '#CBD5E1';
+                });
+            }
+            // Update section totals
+            updateSectionTotals(data);
+        })
+        .catch(() => {});
+    }
+}
+
+function updateSectionTotals(countData) {
+    // Sum record counts per section and update the section number displays
+    const cards = document.querySelectorAll('.ds-card');
+    cards.forEach(card => {
+        const rows = card.querySelectorAll('[data-records]');
+        let total = 0;
+        rows.forEach(r => {
+            const val = parseInt(r.textContent.replace(/\./g,'').replace(/,/g,''));
+            if (!isNaN(val)) total += val;
+        });
+        const numEl = card.querySelector('.ds-card-number');
+        if (numEl && total > 0) {
+            numEl.textContent = total.toLocaleString();
+            const subEl = card.querySelector('.ds-card-sub');
+            if (subEl) subEl.textContent = rows.length + ' tabellen';
+        }
     });
 }
 
