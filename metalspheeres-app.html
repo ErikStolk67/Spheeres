@@ -262,6 +262,25 @@
         .matrix .cell-n-user { background: #CBD5E1; color: #334155; font-weight: 600; font-size: 10px; }
         .matrix .cell-dash-user { background: #E2E8F0; color: #64748B; font-size: 10px; }
 
+        /* Blue CD dictionary cells */
+        .matrix .cell-nn-cd { background: #3B82F6; color: #fff; font-weight: 700; font-size: 10px; }
+        .matrix .cell-n-cd { background: #93C5FD; color: #1E3A5F; font-weight: 600; font-size: 10px; }
+        .matrix .cell-dash-cd { background: #DBEAFE; color: #1D4ED8; font-size: 10px; }
+        .matrix .cell-nn-lk { background: #94A3B8; color: #fff; font-weight: 700; font-size: 10px; }
+        .matrix .cell-n-lk { background: #CBD5E1; color: #334155; font-weight: 600; font-size: 10px; }
+        .matrix .cell-dash-lk { background: #E2E8F0; color: #64748B; font-size: 10px; }
+
+        /* Toggle button */
+        .designer-toggle { display: flex; gap: 0; margin-bottom: 12px; }
+        .toggle-btn {
+            padding: 7px 20px; border: 1px solid #D1D5DB; font-size: 13px; font-weight: 500;
+            cursor: pointer; font-family: 'DM Sans', sans-serif; background: #fff; color: #64748B;
+            transition: all 0.15s;
+        }
+        .toggle-btn:first-child { border-radius: 8px 0 0 8px; }
+        .toggle-btn:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+        .toggle-btn.active { background: #0F172A; color: #fff; border-color: #0F172A; }
+
         .matrix .corner { position: sticky; left: 0; top: 0; z-index: 5; background: #F8FAFC; min-width: 140px; }
         .matrix .meta-cols { font-size: 10px; color: #64748B; padding: 2px 4px; white-space: nowrap; }
 
@@ -1060,6 +1079,9 @@ function filterDictTable(btn, tableName) {
 // ============================================================================
 // DATABASE DESIGNER - Relationship Matrix
 // ============================================================================
+let designerMode = 'user'; // 'user' or 'dictionary'
+
+// USER DATABASE tables (SYS + entity)
 const dbTables = [
     // SYS tables (yellow)
     { name: "SYS_LOGS",        type: "sys", icon: "i", cols: [4,"…",2] },
@@ -1166,8 +1188,105 @@ R("ACTIONS","OPPORTUNITIES","n");
 R("ACTIONS","AGENDA","n");
 R("ACTIONS","DOCUMENTS","n");
 
+// ============================================================================
+// DICTIONARY (CD_) tables for blue matrix
+// ============================================================================
+const cdTables = [
+    { name: "CD_DICTIONARIES", type: "cd", icon: "Di", cols: [0,"",""] },
+    { name: "CD_DATABASES",    type: "cd", icon: "Db", cols: [0,"",""] },
+    { name: "CD_TABLES",       type: "cd", icon: "Tb", cols: [0,9,""] },
+    { name: "CD_FIELDS",       type: "cd", icon: "Fl", cols: [0,"",""] },
+    { name: "CD_CONTROLS",     type: "cd", icon: "Ct", cols: [0,"",""] },
+    { name: "CD_TYPES",        type: "cd", icon: "Ty", cols: [0,"",""] },
+    { name: "CD_LIFESTATUSES", type: "cd", icon: "Ls", cols: [0,"",""] },
+    { name: "CD_FORMS",        type: "cd", icon: "Fm", cols: [0,"",""] },
+    { name: "CD_ROLES",        type: "cd", icon: "Rl", cols: [0,"",""] },
+    { name: "CD_FOLDERS",      type: "cd", icon: "Fo", cols: [0,"",""] },
+    { name: "CD_FUNCTIONS",    type: "cd", icon: "Fn", cols: [0,"",""] },
+    { name: "CD_CANVASES",     type: "cd", icon: "Cv", cols: [0,"",""] },
+    { name: "CD_LICENSES",     type: "cd", icon: "Li", cols: [0,"",""] },
+    { name: "CD_TRANSLATIONS", type: "cd", icon: "Tr", cols: [0,"",""] },
+    // Lookup tables
+    { name: "CD_LK_FORMATS",   type: "lk", icon: "Lf", cols: ["","",""] },
+    { name: "CD_LK_ICONS",     type: "lk", icon: "Li", cols: ["","",""] },
+    { name: "CD_LK_KINDS",     type: "lk", icon: "Lk", cols: ["","",""] },
+    { name: "CD_LK_LANGUAGES", type: "lk", icon: "Ll", cols: ["","",""] },
+    { name: "CD_LK_FIELDFLAGS",type: "lk", icon: "Lf", cols: ["","",""] },
+    { name: "CD_LK_TEMPLATES", type: "lk", icon: "Lt", cols: ["","",""] },
+];
+
+// CD relations
+const cdRelations = {};
+function CR(row, col, val) {
+    if (!cdRelations[row]) cdRelations[row] = {};
+    cdRelations[row][col] = val;
+}
+
+// CD_DICTIONARIES
+CR("CD_DICTIONARIES","CD_DATABASES","n");
+CR("CD_DICTIONARIES","CD_TABLES","n");
+
+// CD_DATABASES
+CR("CD_DATABASES","CD_TABLES","nn");
+
+// CD_TABLES
+CR("CD_TABLES","CD_FIELDS","n");
+CR("CD_TABLES","CD_TYPES","n");
+CR("CD_TABLES","CD_FORMS","n");
+CR("CD_TABLES","CD_LIFESTATUSES","n");
+CR("CD_TABLES","CD_ROLES","n");
+CR("CD_TABLES","CD_FUNCTIONS","n");
+CR("CD_TABLES","CD_CANVASES","n");
+
+// CD_FIELDS
+CR("CD_FIELDS","CD_CONTROLS","n");
+CR("CD_FIELDS","CD_LK_FORMATS","—");
+CR("CD_FIELDS","CD_LK_FIELDFLAGS","—");
+CR("CD_FIELDS","CD_LK_KINDS","—");
+
+// CD_CONTROLS
+CR("CD_CONTROLS","CD_LK_FORMATS","—");
+CR("CD_CONTROLS","CD_LK_ICONS","—");
+CR("CD_CONTROLS","CD_CANVASES","nn");
+
+// CD_TYPES
+CR("CD_TYPES","CD_TYPES","nn");
+CR("CD_TYPES","CD_LIFESTATUSES","nn");
+CR("CD_TYPES","CD_LK_KINDS","—");
+CR("CD_TYPES","CD_LK_ICONS","—");
+
+// CD_LIFESTATUSES
+CR("CD_LIFESTATUSES","CD_LIFESTATUSES","nn");
+CR("CD_LIFESTATUSES","CD_CANVASES","nn");
+
+// CD_FORMS
+CR("CD_FORMS","CD_CONTROLS","nn");
+CR("CD_FORMS","CD_FORMS","nn");
+CR("CD_FORMS","CD_LK_TEMPLATES","—");
+
+// CD_ROLES
+CR("CD_ROLES","CD_LIFESTATUSES","nn");
+
+// CD_FUNCTIONS
+CR("CD_FUNCTIONS","CD_FUNCTIONS","nn");
+
+// CD_CANVASES
+CR("CD_CANVASES","CD_FUNCTIONS","nn");
+CR("CD_CANVASES","CD_CANVASES","nn");
+
+// CD_TRANSLATIONS
+CR("CD_TRANSLATIONS","CD_LK_LANGUAGES","—");
+
 function renderDbDesigner() {
-    const tables = dbTables;
+    const isDictMode = designerMode === 'dictionary';
+    const tables = isDictMode ? cdTables : dbTables;
+    const rels = isDictMode ? cdRelations : relations;
+
+    // Colors per mode
+    const mainBg = isDictMode ? '#DBEAFE' : '#FEF9C3';      // blue vs yellow headers
+    const mainRowBg = isDictMode ? '#F0F7FF' : '#FFFEF5';
+    const secBg = isDictMode ? '#F1F5F9' : '#F1F5F9';       // lookup/user tables
+    const secRowBg = isDictMode ? '#FAFBFC' : '#FAFBFC';
 
     // Column headers
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
@@ -1176,7 +1295,8 @@ function renderDbDesigner() {
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
 
     for (const t of tables) {
-        const bg = t.type === 'sys' ? '#FEF9C3' : '#F1F5F9';
+        const isMain = isDictMode ? t.type === 'cd' : t.type === 'sys';
+        const bg = isMain ? mainBg : secBg;
         colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1184,7 +1304,8 @@ function renderDbDesigner() {
     let rows = '';
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
-        const rowBg = row.type === 'sys' ? '#FFFEF5' : '#FAFBFC';
+        const isMainRow = isDictMode ? row.type === 'cd' : row.type === 'sys';
+        const rowBg = isMainRow ? mainRowBg : secRowBg;
 
         rows += `<tr>`;
         rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
@@ -1193,7 +1314,6 @@ function renderDbDesigner() {
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             if (m === 0) {
-                // Type column - clickable
                 const display = v === '…' ? '—' : (v || '—');
                 rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${display}</td>`;
             } else {
@@ -1206,18 +1326,23 @@ function renderDbDesigner() {
             const col = tables[j];
 
             if (row.name === col.name) {
-                // Diagonal - self
                 rows += `<td class="cell-self"></td>`;
             } else {
-                const val = (relations[row.name] && relations[row.name][col.name]) || '';
-                const isSysRow = row.type === 'sys';
-                const isSysCol = col.type === 'sys';
-                const isSysZone = isSysRow && isSysCol;
+                const val = (rels[row.name] && rels[row.name][col.name]) || '';
+                const isMainR = isDictMode ? row.type === 'cd' : row.type === 'sys';
+                const isMainC = isDictMode ? col.type === 'cd' : col.type === 'sys';
+                const isMainZone = isMainR && isMainC;
 
                 let cellClass = 'cell-empty';
-                if (val === 'nn') cellClass = isSysZone ? 'cell-nn' : 'cell-nn-user';
-                else if (val === 'n') cellClass = isSysZone ? 'cell-n' : 'cell-n-user';
-                else if (val === '—') cellClass = isSysZone ? 'cell-dash' : 'cell-dash-user';
+                if (isDictMode) {
+                    if (val === 'nn') cellClass = isMainZone ? 'cell-nn-cd' : 'cell-nn-lk';
+                    else if (val === 'n') cellClass = isMainZone ? 'cell-n-cd' : 'cell-n-lk';
+                    else if (val === '—') cellClass = isMainZone ? 'cell-dash-cd' : 'cell-dash-lk';
+                } else {
+                    if (val === 'nn') cellClass = isMainZone ? 'cell-nn' : 'cell-nn-user';
+                    else if (val === 'n') cellClass = isMainZone ? 'cell-n' : 'cell-n-user';
+                    else if (val === '—') cellClass = isMainZone ? 'cell-dash' : 'cell-dash-user';
+                }
 
                 rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" ${val ? 'style="cursor:pointer;" onclick="showLinkPopup(\'' + row.name + '\',\'' + col.name + '\',\'' + val + '\')"' : ''}>${val}</td>`;
             }
@@ -1225,19 +1350,40 @@ function renderDbDesigner() {
         rows += `</tr>`;
     }
 
+    // Toggle button
+    const toggleHtml = `<div class="designer-toggle">
+        <button class="toggle-btn ${!isDictMode ? 'active' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
+        <button class="toggle-btn ${isDictMode ? 'active' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
+    </div>`;
+
+    // Legend
+    const legendItems = isDictMode ? `
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#3B82F6;"></div> nn = N:N (link table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#93C5FD;"></div> n = 1:N (sub table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#DBEAFE;"></div> — = reference</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#DBEAFE;border:1px solid #93C5FD;"></div> CD_ tables</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> Lookup tables</div>
+    ` : `
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> nn = N:N (link table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> n = 1:N (sub table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF3C7;"></div> — = reference</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF9C3;border:1px solid #E5E7EB;"></div> SYS_ tables</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
+    `;
+
     return `<div class="designer">
         <h1>Database Designer</h1>
-        <p>Relationship matrix — Entity and system table connections</p>
+        ${toggleHtml}
+        <p>${isDictMode ? 'Dictionary (CD_) table relationships' : 'User database — Entity and system table connections'}</p>
 
         <div class="designer-legend">
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> nn = N:N (link table)</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> n = 1:N (sub table)</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF3C7;"></div> — = reference</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (user)</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (user)</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (user)</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF9C3;border:1px solid #E5E7EB;"></div> SYS_ tables</div>
-            <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
+            ${legendItems}
         </div>
 
         <div class="matrix-wrapper">
