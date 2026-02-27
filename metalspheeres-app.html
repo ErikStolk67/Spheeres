@@ -432,7 +432,9 @@
         .fl-field-flags { padding: 7px 12px; font-size: 14px; letter-spacing: 2px; }
         .fl-field-settings { padding: 7px 8px; color: #CBD5E1; font-size: 16px; text-align: center; cursor: pointer; }
         .fl-field-settings:hover { color: #64748B; }
-        .fl-toggle { color: #CBD5E1; font-size: 10px; margin-right: 4px; }
+        .fl-toggle { color: #CBD5E1; font-size: 10px; margin-right: 4px; cursor: grab; letter-spacing: -2px; }
+        .fl-field-row[draggable="true"]:active .fl-toggle { cursor: grabbing; }
+        .fl-field-row[draggable="true"] { user-select: none; }
 
         /* ============ TYPES EDITOR ============ */
         .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
@@ -2118,6 +2120,15 @@ function showLinkPopup(rowName, colName, relType) {
 }
 
 function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
+    // Apply any saved group moves
+    if (window._fieldGroupMoves) {
+        for (const f of fields) {
+            if (window._fieldGroupMoves[f.name]) {
+                f.group = window._fieldGroupMoves[f.name];
+            }
+        }
+    }
+
     // Group fields
     const groups = {};
     const groupOrder = ['H', 'OH', 'C', 'OF', 'F'];
@@ -2160,32 +2171,44 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
         return icons.join(' ');
     }
 
-    // Build rows per group
+    // Build rows per group - always show ALL 5 groups
     let rowsHtml = '';
     for (const g of groupOrder) {
         const gFields = groups[g] || [];
-        if (g === 'C' && gFields.length === 0) {
-            // Show empty custom group
-            rowsHtml += '<tr class="fl-group-row"><td class="fl-group-label glbl-' + g + '" rowspan="1"><span>' + groupNames[g] + '</span></td>' +
-                '<td colspan="4" style="padding:10px 12px;color:#CBD5E1;font-style:italic;font-size:12px;">No custom fields defined</td></tr>';
+
+        if (gFields.length === 0) {
+            // Empty group - show one reserved line as drop target
+            rowsHtml += '<tr class="fl-field-row grp-' + g + '" data-group="' + g + '" ' +
+                'ondragover="event.preventDefault();this.style.background=\'#E0F2FE\'" ' +
+                'ondragleave="this.style.background=\'\'" ' +
+                'ondrop="dropField(event,\'' + g + '\')">' +
+                '<td class="fl-group-label glbl-' + g + '" rowspan="1"><span>' + groupNames[g] + '</span></td>' +
+                '<td colspan="4" style="padding:8px 12px;color:#CBD5E1;font-style:italic;font-size:11px;min-height:28px;">' +
+                (g === 'C' ? 'drag fields here' : '—') + '</td></tr>';
             continue;
         }
-        if (gFields.length === 0) continue;
 
         for (let i = 0; i < gFields.length; i++) {
             const f = gFields[i];
-            const isClickable = g === 'C' || true; // All fields clickable for viewing
             const clickAttr = 'onclick="openFieldEditor(\'' + title + '\',\'' + (tableId||'') + '\',\'' + f.name.replace(/'/g,"\\'") + '\',\'' + (f.group||g) + '\',\'' + (f.type||'').replace(/'/g,"\\'") + '\',' + (f.pk?'true':'false') + ',' + (f.fk?'true':'false') + ',' + (f.req?'true':'false') + ',' + (f.system !== false ? 'true' : 'false') + ')"';
 
-            rowsHtml += '<tr class="fl-field-row grp-' + g + '" ' + clickAttr + '>';
+            rowsHtml += '<tr class="fl-field-row grp-' + g + '" draggable="true" data-group="' + g + '" data-field="' + f.name + '" ' +
+                'ondragstart="dragField(event,\'' + f.name + '\',\'' + g + '\')" ' +
+                'ondragover="event.preventDefault();this.style.borderBottom=\'2px solid #3B82F6\'" ' +
+                'ondragleave="this.style.borderBottom=\'\'" ' +
+                'ondrop="dropField(event,\'' + g + '\',\'' + f.name + '\');this.style.borderBottom=\'\'" ' +
+                clickAttr + '>';
 
             // Group label (only on first row of group)
             if (i === 0) {
-                rowsHtml += '<td class="fl-group-label glbl-' + g + '" rowspan="' + gFields.length + '"><span>' + groupNames[g] + '</span></td>';
+                rowsHtml += '<td class="fl-group-label glbl-' + g + '" rowspan="' + gFields.length + '" ' +
+                    'ondragover="event.preventDefault()" ' +
+                    'ondrop="dropField(event,\'' + g + '\')">' +
+                    '<span>' + groupNames[g] + '</span></td>';
             }
 
             // Toggle + type icon + field name
-            let nameHtml = '<span class="fl-toggle">&#9679;</span> ';
+            let nameHtml = '<span class="fl-toggle" style="cursor:grab;">&#8942;&#8942;</span> ';
             nameHtml += typeIcon(f) + ' ';
             nameHtml += '<strong>' + f.name.toUpperCase() + '</strong>';
             if (f.fk && f.ref) {
@@ -2250,6 +2273,60 @@ function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
         '</div>' +
     '</div>';
     popup.classList.add('open');
+}
+
+// Drag-and-drop state
+let dragState = { fieldName: null, fromGroup: null };
+
+function dragField(event, fieldName, fromGroup) {
+    dragState = { fieldName, fromGroup };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', fieldName);
+    // Semi-transparent drag effect
+    event.target.style.opacity = '0.5';
+    setTimeout(() => { event.target.style.opacity = ''; }, 0);
+}
+
+function dropField(event, toGroup, beforeField) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!dragState.fieldName || dragState.fromGroup === toGroup) return;
+
+    // Find the popup's current field data and move the field
+    const popup = document.getElementById('fieldPopup');
+    if (!popup) return;
+
+    // Update the field's group in the current popup data
+    const fieldName = dragState.fieldName;
+    const rows = popup.querySelectorAll('tr[data-field]');
+    let movedRow = null;
+    rows.forEach(r => {
+        if (r.getAttribute('data-field') === fieldName) movedRow = r;
+    });
+
+    if (movedRow) {
+        // Visual feedback: flash the target group
+        const targetRows = popup.querySelectorAll('tr[data-group="' + toGroup + '"]');
+        targetRows.forEach(r => {
+            r.style.transition = 'background 0.3s';
+            r.style.background = '#DBEAFE';
+            setTimeout(() => r.style.background = '', 500);
+        });
+
+        // Store the move for when we re-render
+        if (!window._fieldGroupMoves) window._fieldGroupMoves = {};
+        window._fieldGroupMoves[fieldName] = toGroup;
+
+        // Re-render the popup with updated groups
+        // Trigger a click on the table name to refresh
+        const titleEl = popup.querySelector('.popup-header span') || popup.querySelector('.te-title strong');
+        const tableName = titleEl ? titleEl.textContent : '';
+        if (tableName) {
+            setTimeout(() => showTablePopup(tableName), 50);
+        }
+    }
+
+    dragState = { fieldName: null, fromGroup: null };
 }
 
 function openFieldEditor(tableName, tableId, fieldName, group, dataType, isPk, isFk, isReq, isSystem) {
