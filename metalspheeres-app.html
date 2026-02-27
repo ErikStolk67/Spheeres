@@ -3650,13 +3650,16 @@ async function importXmlFile(input) {
         const result = await resp.json();
         
         if (result.success) {
-            // Build summary for spinner
-            let details = '';
-            for (const d of (result.details || [])) {
-                if (d.rows > 0) details += d.table + ': ' + d.rows + ' records\n';
+            let details = result.totalRows + ' records in ' + result.tablesProcessed + ' tables';
+            const errs = (result.details || []).filter(d => d.errors > 0);
+            if (errs.length > 0) {
+                details += '\n\nErrors:';
+                for (const e of errs) {
+                    details += '\n' + e.table + ': ' + e.errors + ' failed' + (e.lastError ? ' (' + e.lastError.substring(0,60) + ')' : '');
+                }
             }
-            const msg = '✓ Import complete — ' + result.totalRows + ' records in ' + result.tablesProcessed + ' tables';
-            document.getElementById('loadingText').textContent = msg;
+            document.getElementById('loadingText').style.whiteSpace = 'pre-wrap';
+            document.getElementById('loadingText').textContent = '✓ Import complete\n' + details;
             document.querySelector('.loading-spinner').style.display = 'none';
             // Auto-hide after 3 seconds
             setTimeout(() => {

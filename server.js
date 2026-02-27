@@ -726,7 +726,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             
             await client.query(`TRUNCATE ${tableName} CASCADE`);
             
-            let inserted = 0, errors = 0;
+            let inserted = 0, errors = 0, lastError = '';
             
             for (const row of rows) {
                 const cols = [], vals = [], ph = [];
@@ -750,13 +750,19 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 
                 if (cols.length === 0) continue;
                 try {
+                    await client.query('SAVEPOINT sp');
                     await client.query(`INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                    await client.query('RELEASE SAVEPOINT sp');
                     inserted++;
-                } catch (e) { errors++; }
+                } catch (e) {
+                    await client.query('ROLLBACK TO SAVEPOINT sp');
+                    errors++;
+                    if (errors <= 3) lastError = e.message;
+                }
             }
             
             totalRows += inserted;
-            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors });
+            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
         }
         
         await client.query('COMMIT');
