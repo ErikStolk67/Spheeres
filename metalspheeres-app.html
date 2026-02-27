@@ -3592,7 +3592,7 @@ async function createNewTable(tableName, columns) {
 
 // Seed all XSD dictionary data into Neon cloud database
 async function seedDictionary() {
-    if (!confirm('This will load all ' + Object.keys(xsdFieldData).length + ' CD_ table definitions into the Neon database.\n\nExisting dictionary data (cd_tables, cd_fields, cd_tabl_fiel) will be replaced.\n\nContinue?')) return;
+    if (!confirm('This will load all ' + Object.keys(xsdFieldData).length + ' table definitions (CD_, SYS_, User) into the Neon database.\n\nExisting dictionary data (cd_tables, cd_fields, cd_tabl_fiel) will be replaced.\n\nContinue?')) return;
     
     const btn = event.target;
     btn.textContent = '⏳ Seeding...';
