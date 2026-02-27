@@ -1581,10 +1581,13 @@ function renderDbDesigner() {
         rows += `</tr>`;
     }
 
-    // Toggle button
-    const toggleHtml = `<div class="designer-toggle">
+    // Toggle button + action buttons
+    const toggleHtml = `<div class="designer-toggle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
         <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
+        <span style="flex:1;"></span>
+        ${isDictMode ? '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed Dictionary to DB</button>' : ''}
+        <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
     </div>`;
 
     // Legend
@@ -3584,6 +3587,137 @@ async function createNewTable(tableName, columns) {
         return result;
     } catch (err) {
         return { error: err.message };
+    }
+}
+
+// Seed all XSD dictionary data into Neon cloud database
+async function seedDictionary() {
+    if (!confirm('This will load all ' + Object.keys(xsdFieldData).length + ' CD_ table definitions into the Neon database.\n\nExisting dictionary data (cd_tables, cd_fields, cd_tabl_fiel) will be replaced.\n\nContinue?')) return;
+    
+    const btn = event.target;
+    btn.textContent = '⏳ Seeding...';
+    btn.disabled = true;
+    
+    try {
+        const resp = await fetch(API + '/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ xsdData: xsdFieldData })
+        });
+        const result = await resp.json();
+        if (result.success) {
+            alert('✓ Dictionary seeded!\n\nTables: ' + result.tables + '\nFields: ' + result.fields + '\nLinks: ' + result.links);
+            renderContent();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.textContent = '☁ Seed Dictionary to DB';
+        btn.disabled = false;
+    }
+}
+
+// Open dialog to create a new table
+function openNewTableDialog() {
+    const popup = document.getElementById('addFieldPopup');
+    popup.innerHTML = '<div class="add-field-popup">' +
+        '<div class="fe-toolbar">' +
+            '<button class="fe-btn fe-btn-ok" onclick="saveNewTable()">Create Table</button>' +
+            '<button class="fe-btn fe-btn-cancel" onclick="closeAddFieldPopup()">Cancel</button>' +
+        '</div>' +
+        '<div style="padding:20px;">' +
+            '<h3 style="margin:0 0 16px 0;font-size:16px;color:#0F172A;">Create New Table</h3>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+                '<div>' +
+                    '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Table Name</label>' +
+                    '<input id="newTableName" type="text" placeholder="e.g. CD_PRODUCTS or PRODUCTS" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;" />' +
+                '</div>' +
+                '<div>' +
+                    '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Table Type</label>' +
+                    '<select id="newTableType" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;">' +
+                        '<option value="entity">Entity</option>' +
+                        '<option value="lookup">Lookup</option>' +
+                        '<option value="link">Link (N:N)</option>' +
+                        '<option value="sub">Subtable (1:N)</option>' +
+                    '</select>' +
+                '</div>' +
+            '</div>' +
+            '<div style="margin-top:16px;">' +
+                '<label style="font-size:12px;color:#64748B;display:block;margin-bottom:4px;">Initial Fields (comma-separated, e.g. "status, priority, description")</label>' +
+                '<input id="newTableFields" type="text" placeholder="Optional extra fields" style="width:100%;padding:8px;border:1px solid #E2E8F0;border-radius:6px;font-size:14px;" />' +
+            '</div>' +
+            '<p style="margin-top:12px;font-size:12px;color:#94A3B8;">Standard fields (k_key, name, createdby, createdate, changedby, changedate) are added automatically.</p>' +
+        '</div>' +
+    '</div>';
+    popup.classList.add('open');
+}
+
+async function saveNewTable() {
+    const name = document.getElementById('newTableName').value.trim();
+    const type = document.getElementById('newTableType').value;
+    const extraFields = document.getElementById('newTableFields').value.trim();
+    
+    if (!name) { alert('Table name is required'); return; }
+    
+    const tableName = name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const keyName = 'k_' + tableName.replace(/^cd_/, '').replace(/^sys_/, '');
+    
+    // Build columns
+    const columns = [
+        { name: keyName, type: 'SERIAL', pk: true },
+        { name: 'name', type: 'varchar(100)' }
+    ];
+    
+    // Add extra fields
+    if (extraFields) {
+        for (const f of extraFields.split(',')) {
+            const fn = f.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+            if (fn) columns.push({ name: fn, type: 'varchar(100)' });
+        }
+    }
+    
+    // Standard footer fields
+    columns.push(
+        { name: 'createdby', type: 'integer' },
+        { name: 'createdate', type: 'timestamptz', default: 'now()' },
+        { name: 'changedby', type: 'integer' },
+        { name: 'changedate', type: 'timestamptz', default: 'now()' }
+    );
+    
+    try {
+        // Create physical table in Neon
+        const resp = await fetch(API + '/schema/tables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: tableName, columns })
+        });
+        const result = await resp.json();
+        
+        if (result.success) {
+            // Also register in cd_tables if it's a CD_ table
+            if (tableName.startsWith('cd_')) {
+                await fetch(API + '/data/cd_tables', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        k_table: Math.floor(Math.random() * 90000) + 10000,
+                        name: name.toUpperCase(), 
+                        f_type: type === 'entity' ? 1 : (type === 'lookup' ? 2 : (type === 'link' ? 3 : 4)),
+                        sort: 999
+                    })
+                });
+            }
+            
+            closeAddFieldPopup();
+            alert('✓ Table "' + tableName + '" created with ' + columns.length + ' columns!');
+            renderContent();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
     }
 }
 

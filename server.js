@@ -354,5 +354,111 @@ app.post('/api/data/:table', async (req, res) => {
     }
 });
 
+// ============================================================================
+// SEED ENDPOINT - Load XSD metadata into dictionary tables
+// ============================================================================
+
+app.post('/api/seed', async (req, res) => {
+    const { xsdData } = req.body;
+    if (!xsdData) return res.status(400).json({ error: 'No xsdData provided' });
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Clear existing dictionary data
+        await client.query('DELETE FROM cd_tabl_fiel');
+        await client.query('DELETE FROM cd_fields');
+        await client.query('DELETE FROM cd_tables');
+        
+        let tableId = 1;
+        let fieldId = 1;
+        let tablFieldId = 1;
+        const tableResults = [];
+        
+        // Type mapping from XSD shortcodes
+        const typeMap = { i: 'integer', s: 'varchar(100)', b: 'boolean', d: 'timestamptz', u: 'uuid', y: 'bytea' };
+        
+        for (const [tableName, fieldStr] of Object.entries(xsdData)) {
+            // Determine table category
+            const isLink = tableName.match(/^CD_[A-Z]+_[A-Z]+$/) && !tableName.startsWith('CD_LK_') && !tableName.includes('FIEL_') && !tableName.includes('CANV_') && !tableName.includes('FORM_') && !tableName.includes('TABL_');
+            const isLookup = tableName.startsWith('CD_LK_');
+            const isSub = tableName.includes('$') || tableName.match(/^CD_[A-Z]+_(EXECUTION_LOG|LOGS|REMOTE|CHECKLIST|CLUSTERSETTINGS|FIELDKEY|FIELDVALUE|KINDS|LINKEDITORVISIBILITY|MATCH|TABSETTINGS|FILTERINGSETTINGS|RESTRICTIONS)$/);
+            
+            // Determine table type/kind
+            let tableType = 1; // entity
+            if (isLookup) tableType = 2;
+            else if (isLink || tableName.match(/^CD_[A-Z]{4}_[A-Z]{4}$/)) tableType = 3;
+            else if (isSub) tableType = 4;
+            
+            // Insert into cd_tables
+            await client.query(
+                'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                [tableId, tableName, tableType, tableId]
+            );
+            
+            // Parse fields
+            const fieldDefs = fieldStr.split(',').map(f => f.trim());
+            const seenFields = new Set();
+            let fieldSort = 1;
+            
+            for (const fdef of fieldDefs) {
+                const [fname, ftype] = fdef.split(':');
+                if (!fname || seenFields.has(fname.toUpperCase())) continue;
+                seenFields.add(fname.toUpperCase());
+                
+                const dataType = typeMap[ftype] || 'varchar(100)';
+                const isPk = fname.toUpperCase().startsWith('K_') && fieldSort <= 2;
+                const isFk = fname.toUpperCase().startsWith('F_');
+                
+                // Determine field group
+                let group = 'C'; // Custom
+                if (isPk || fname.toUpperCase() === 'NAME' || fname.toUpperCase() === 'NAME_EN' || fname.toUpperCase() === 'NAME_NL') group = 'H';
+                else if (fname.toUpperCase().startsWith('F_TYPE') || fname.toUpperCase().startsWith('F_KIND') || fname.toUpperCase().startsWith('F_ICON')) group = 'OH';
+                else if (['CREATEDBY','CREATEDATE','CHANGEDBY','CHANGEDATE','REPLICATIONID','F_DICTIONARY','F_LIFESTATUS','F_OWNER','F_OWNER_PROFILE','LASTSTATUSDATE'].includes(fname.toUpperCase())) group = 'F';
+                else if (['MEMO','MEMO_PLAINTEXT','MEMO_EN','MEMO_NL','MEMO_EN_PLAINTEXT','MEMO_NL_PLAINTEXT'].includes(fname.toUpperCase())) group = 'OF';
+                
+                // Insert into cd_fields
+                await client.query(
+                    'INSERT INTO cd_fields (k_field, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, fname.toUpperCase(), ftype === 'i' ? 1 : (ftype === 's' ? 2 : (ftype === 'b' ? 3 : (ftype === 'd' ? 4 : 5))), fieldSort]
+                );
+                
+                // Insert into cd_tabl_fiel (link table to field)
+                await client.query(
+                    'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
+                    [fieldId, tableId, fieldSort, isPk]
+                );
+                
+                fieldId++;
+                fieldSort++;
+            }
+            
+            tableResults.push({ table: tableName, fields: seenFields.size, type: tableType });
+            tableId++;
+        }
+        
+        await client.query('COMMIT');
+        
+        // Update stats
+        await client.query('ANALYZE cd_tables');
+        await client.query('ANALYZE cd_fields');
+        await client.query('ANALYZE cd_tabl_fiel');
+        
+        res.json({ 
+            success: true, 
+            tables: tableResults.length, 
+            fields: fieldId - 1,
+            links: fieldId - 1,
+            details: tableResults 
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
