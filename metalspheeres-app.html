@@ -399,6 +399,67 @@
         .fl-field-settings:hover { color: #64748B; }
         .fl-toggle { color: #CBD5E1; font-size: 10px; margin-right: 4px; }
 
+        /* ============ TYPES EDITOR ============ */
+        .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 10px; display: flex; flex-direction: column; }
+        .te-title { font-size: 14px; color: #64748B; padding: 10px 16px; border-bottom: 1px solid #F1F5F9; }
+        .te-title strong { color: #0F172A; }
+        .te-toolbar {
+            display: flex; align-items: center; gap: 6px; padding: 8px 16px;
+            border-bottom: 1px solid #E2E8F0; background: #F8FAFC;
+        }
+        .te-body { display: flex; flex: 1; overflow: hidden; }
+        .te-tree {
+            width: 220px; min-width: 220px; border-right: 1px solid #E2E8F0;
+            padding: 12px; overflow-y: auto; background: #FAFBFC;
+        }
+        .te-tree-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+        .te-tree-filter { flex: 1; padding: 4px 8px; border: 1px solid #D1D5DB; border-radius: 4px; font-size: 11px; }
+        .te-tree-sort { width: 26px; height: 26px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #64748B; }
+        .te-tree-item {
+            padding: 6px 10px; margin: 2px 0; border-radius: 6px; font-size: 13px;
+            cursor: pointer; color: #334155; transition: background 0.1s;
+        }
+        .te-tree-item:hover { background: #E2E8F0; }
+        .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; }
+        .te-tree-item.child { margin-left: 16px; font-size: 12px; }
+        .te-tree-item.default-type { color: #94A3B8; font-style: italic; }
+
+        .te-props { flex: 1; padding: 0; overflow-y: auto; }
+        .te-tabs {
+            display: flex; gap: 0; border-bottom: 1px solid #E2E8F0; padding: 0 16px; background: #fff;
+        }
+        .te-tab {
+            padding: 10px 16px; font-size: 12px; color: #94A3B8; cursor: pointer;
+            border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap;
+        }
+        .te-tab:hover { color: #64748B; }
+        .te-tab.active { color: #0EA5E9; border-bottom-color: #0EA5E9; font-weight: 600; }
+        .te-form { padding: 20px 24px; }
+        .te-form-row { display: flex; align-items: flex-start; margin-bottom: 16px; }
+        .te-form-label { width: 120px; min-width: 120px; font-size: 13px; color: #334155; padding-top: 7px; }
+        .te-form-value { flex: 1; }
+        .te-form-input {
+            width: 100%; padding: 7px 10px; border: 1px solid #D1D5DB; border-radius: 6px;
+            font-size: 13px; font-family: 'DM Sans', sans-serif; color: #0F172A;
+            outline: none; box-sizing: border-box;
+        }
+        .te-form-input:focus { border-color: #0EA5E9; box-shadow: 0 0 0 2px #0EA5E914; }
+        .te-form-select { composes: te-form-input; cursor: pointer; padding-right: 24px; }
+        .te-icon-select {
+            width: 60px; height: 50px; border: 1px solid #D1D5DB; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; color: #94A3B8; cursor: pointer; background: #fff;
+        }
+        .te-icon-select:hover { border-color: #0EA5E9; }
+        .te-form-textarea {
+            width: 100%; min-height: 70px; padding: 7px 10px; border: 1px solid #D1D5DB;
+            border-radius: 6px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+            resize: vertical; outline: none; box-sizing: border-box;
+        }
+        .te-form-textarea:focus { border-color: #0EA5E9; }
+        .te-form-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #334155; }
+        .te-form-check input { width: 15px; height: 15px; accent-color: #0EA5E9; }
+
         /* ============ FIELD EDITOR POPUP ============ */
         .add-field-popup {
             background: #fff; border-radius: 14px; width: 960px; max-width: 95vw;
@@ -518,6 +579,8 @@
 <div class="popup-overlay" id="fieldPopup"></div>
 <!-- Add Custom Field Popup Overlay -->
 <div class="popup-overlay" id="addFieldPopup"></div>
+<!-- Types Editor Popup Overlay -->
+<div class="popup-overlay" id="typesEditorPopup"></div>
 
 <script>
 // ============================================================================
@@ -1129,7 +1192,13 @@ function renderDbDesigner() {
         // Meta columns (Type, Sub, Screens)
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
-            rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v || ''}</td>`;
+            if (m === 0) {
+                // Type column - clickable
+                const display = v === '…' ? '—' : (v || '—');
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${display}</td>`;
+            } else {
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v || ''}</td>`;
+            }
         }
 
         // Relationship cells
@@ -1923,17 +1992,199 @@ function closeAddFieldPopup() {
 document.addEventListener('click', function(e) {
     if (e.target.id === 'fieldPopup') closePopup();
     if (e.target.id === 'addFieldPopup') closeAddFieldPopup();
+    if (e.target.id === 'typesEditorPopup') closeTypesEditor();
 });
 // Close on Escape
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         if (document.getElementById('addFieldPopup').classList.contains('open')) {
             closeAddFieldPopup();
+        } else if (document.getElementById('typesEditorPopup').classList.contains('open')) {
+            closeTypesEditor();
         } else {
             closePopup();
         }
     }
 });
+
+// ============================================================================
+// TYPES EDITOR
+// ============================================================================
+let typesEditorState = {
+    tableName: '',
+    types: [],       // { id, name, parentId, isCopy, children: [] }
+    selectedId: null,
+};
+
+function openTypesEditor(tableName) {
+    typesEditorState.tableName = tableName;
+
+    // Try to load from API
+    const tableId = tableMap[tableName];
+    if (apiAvailable && tableId) {
+        fetch(API + '/tables/' + tableId + '/types')
+        .then(r => r.ok ? r.json() : [])
+        .then(types => {
+            typesEditorState.types = types;
+            typesEditorState.selectedId = types.length > 0 ? types[0].k_types : null;
+            renderTypesEditor();
+        })
+        .catch(() => {
+            typesEditorState.types = [];
+            typesEditorState.selectedId = null;
+            renderTypesEditor();
+        });
+    } else {
+        typesEditorState.types = [];
+        typesEditorState.selectedId = null;
+        renderTypesEditor();
+    }
+}
+
+function renderTypesEditor() {
+    const st = typesEditorState;
+    const types = st.types;
+    const sel = types.find(t => t.k_types === st.selectedId) || null;
+
+    // Tree items
+    let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
+
+    // Build hierarchy: root types first, then children
+    const roots = types.filter(t => !t.f_parent);
+    const children = types.filter(t => t.f_parent);
+
+    for (const t of roots) {
+        treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_types ? ' active' : '') + '" onclick="selectType(\'' + t.k_types + '\')">' + escHtml(t.name) + '</div>';
+        // Find children
+        for (const c of children.filter(ch => ch.f_parent === t.k_types)) {
+            treeHtml += '<div class="te-tree-item child' + (st.selectedId === c.k_types ? ' active' : '') + '" onclick="selectType(\'' + c.k_types + '\')">' + escHtml(c.name) + '</div>';
+        }
+    }
+
+    // General tab form
+    let formHtml = '';
+    if (sel) {
+        formHtml = '<div class="te-form">' +
+            '<div class="te-form-row"><div class="te-form-label">Name</div><div class="te-form-value"><input class="te-form-input" id="teName" value="' + escAttr(sel.name) + '"></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Type</div><div class="te-form-value"><select class="te-form-input" id="teType"><option selected>Entity type</option></select></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Kind</div><div class="te-form-value"><select class="te-form-input" id="teKind"><option value=""></option></select></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Icon</div><div class="te-form-value"><div class="te-icon-select">Select icon</div></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Flow folder</div><div class="te-form-value"><label class="te-form-check"><input type="checkbox" id="teFlowFolder" ' + (sel.flow_folder ? 'checked' : '') + '></label></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Status</div><div class="te-form-value"><select class="te-form-input" id="teStatus"><option>Enable</option><option>Disable</option></select></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Description</div><div class="te-form-value"><textarea class="te-form-textarea" id="teDesc">' + escHtml(sel.memo || '') + '</textarea></div></div>' +
+        '</div>';
+    } else {
+        formHtml = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Default type — no properties to edit</div></div>';
+    }
+
+    const popup = document.getElementById('typesEditorPopup');
+    popup.innerHTML = '<div class="popup te-popup">' +
+        '<div class="te-title">Types of <strong>' + st.tableName + '</strong></div>' +
+        '<div class="te-toolbar">' +
+            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;font-size:16px;padding:4px 10px;" onclick="addType()" title="Add new type">+</button>' +
+            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;padding:4px 10px;" onclick="copyType()" title="Copy type">&#9744;</button>' +
+            '<button class="fe-btn fe-btn-ok" onclick="saveType()">Save</button>' +
+            '<button class="fe-btn fe-btn-cancel" onclick="closeTypesEditor()">Cancel</button>' +
+        '</div>' +
+        '<div class="te-body">' +
+            '<div class="te-tree">' +
+                '<div class="te-tree-header">' +
+                    '<input class="te-tree-filter" placeholder="—" />' +
+                    '<button class="te-tree-sort" title="Sort">&#8693;</button>' +
+                '</div>' +
+                treeHtml +
+            '</div>' +
+            '<div class="te-props">' +
+                '<div class="te-tabs">' +
+                    '<div class="te-tab active">General</div>' +
+                    '<div class="te-tab">Status designer</div>' +
+                    '<div class="te-tab">Business Roles</div>' +
+                    '<div class="te-tab">Kinds</div>' +
+                    '<div class="te-tab">Business Roles\'s Type Security</div>' +
+                '</div>' +
+                formHtml +
+            '</div>' +
+        '</div>' +
+    '</div>';
+    popup.classList.add('open');
+}
+
+function selectType(id) {
+    typesEditorState.selectedId = id;
+    renderTypesEditor();
+}
+
+function addType() {
+    const st = typesEditorState;
+    const tableId = tableMap[st.tableName];
+
+    if (apiAvailable && tableId) {
+        fetch(API + '/tables/' + tableId + '/types', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'New Type' })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.k_types) {
+                st.types.push(data);
+                st.selectedId = data.k_types;
+                renderTypesEditor();
+            }
+        })
+        .catch(err => alert('Error: ' + err.message));
+    } else {
+        // In-memory
+        const newType = { k_types: 'temp_' + Date.now(), name: 'New Type', memo: '', flow_folder: false, f_parent: null };
+        st.types.push(newType);
+        st.selectedId = newType.k_types;
+        renderTypesEditor();
+    }
+}
+
+function copyType() {
+    // Copy makes an image in the tree, not a new record
+    const st = typesEditorState;
+    if (!st.selectedId) return;
+    const sel = st.types.find(t => t.k_types === st.selectedId);
+    if (!sel) return;
+    alert('Copy creates a tree image reference of "' + sel.name + '" (not a new record). This feature will be connected to cd_type_type.');
+}
+
+function saveType() {
+    const st = typesEditorState;
+    if (!st.selectedId) { closeTypesEditor(); return; }
+
+    const nameEl = document.getElementById('teName');
+    const descEl = document.getElementById('teDesc');
+    const flowEl = document.getElementById('teFlowFolder');
+    if (!nameEl) { closeTypesEditor(); return; }
+
+    const sel = st.types.find(t => t.k_types === st.selectedId);
+    if (sel) {
+        sel.name = nameEl.value;
+        sel.memo = descEl ? descEl.value : '';
+        sel.flow_folder = flowEl ? flowEl.checked : false;
+    }
+
+    // Save to API if available
+    if (apiAvailable && sel && !sel.k_types.startsWith('temp_')) {
+        fetch(API + '/types/' + sel.k_types, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: sel.name, memo: sel.memo, flow_folder: sel.flow_folder })
+        }).catch(() => {});
+    }
+
+    closeTypesEditor();
+}
+
+function closeTypesEditor() {
+    document.getElementById('typesEditorPopup').classList.remove('open');
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ============================================================================
 // INIT

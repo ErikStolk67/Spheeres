@@ -113,5 +113,56 @@ app.get('/api/controls', async (req, res) => {
     res.json(rows);
 });
 
+// ============================================================================
+// TYPES ENDPOINTS
+// ============================================================================
+
+app.get('/api/tables/:id/types', async (req, res) => {
+    const { rows } = await pool.query(
+        'SELECT * FROM cd_types WHERE k_tables = $1 ORDER BY sort_order, name', [req.params.id]
+    );
+    res.json(rows);
+});
+
+app.post('/api/tables/:id/types', async (req, res) => {
+    const { name } = req.body;
+    try {
+        const sortRes = await pool.query(
+            'SELECT COALESCE(MAX(sort_order), 0) + 1 as next FROM cd_types WHERE k_tables = $1', [req.params.id]
+        );
+        const { rows } = await pool.query(`
+            INSERT INTO cd_types (k_types, k_tables, name, alias, sort_order)
+            VALUES (gen_random_uuid(), $1, $2, $2, $3)
+            RETURNING *
+        `, [req.params.id, name || 'New Type', sortRes.rows[0].next]);
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/types/:id', async (req, res) => {
+    const { name, memo, flow_folder, kind, icon } = req.body;
+    try {
+        const { rows } = await pool.query(`
+            UPDATE cd_types SET name=$2, memo=$3, flow_folder=$4, kind=$5, icon=$6, changedate=NOW()
+            WHERE k_types=$1 RETURNING *
+        `, [req.params.id, name, memo || null, flow_folder || false, kind || null, icon || null]);
+        res.json(rows[0] || { error: 'Not found' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/types/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM cd_type_type WHERE k_type_parent=$1 OR k_type_child=$1', [req.params.id]);
+        await pool.query('DELETE FROM cd_types WHERE k_types = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const PORT = 3000;
 app.listen(PORT, () => console.log(`MetalSpheeres API running on http://localhost:${PORT}`));
