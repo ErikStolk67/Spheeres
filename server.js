@@ -449,10 +449,11 @@ app.post('/api/seed', async (req, res) => {
                     fieldId++;
                 }
                 
-                // Insert link: cd_tabl_fiel
+                // Insert link: cd_tabl_fiel - needs unique k_fiel per row
+                const linkId = (tableId * 10000) + fieldSort;
                 await client.query(
                     'INSERT INTO cd_tabl_fiel (k_fiel, k_tabl, k_seq, main, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now())',
-                    [currentFieldId, tableId, fieldSort, fieldSort === 1]
+                    [linkId, tableId, fieldSort, fieldSort === 1]
                 );
                 
                 fieldSort++;
