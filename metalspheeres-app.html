@@ -245,7 +245,8 @@
 
         .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 120px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; vertical-align: bottom; }
         .matrix .row-header { padding: 4px 10px; min-width: 140px; font-size: 11px; }
-        .matrix .row-header .row-icon { display: inline-block; margin-right: 6px; width: 14px; text-align: center; }
+        .matrix .row-header .row-icon { display: inline-flex; align-items: center; justify-content: center; margin-right: 6px; width: 18px; height: 18px; vertical-align: middle; }
+        .matrix .row-header .row-icon svg { width: 14px; height: 14px; }
 
         .matrix td { width: 32px; height: 28px; min-width: 32px; cursor: default; transition: background 0.1s; }
         .matrix td:hover { filter: brightness(0.95); }
@@ -1142,33 +1143,33 @@ let designerMode = 'user'; // 'user' or 'dictionary'
 // USER DATABASE tables (SYS + entity)
 const dbTables = [
     // SYS tables (yellow)
-    { name: "SYS_LOGS",        type: "sys", icon: "i", cols: [4,"…",2] },
-    { name: "SYS_GLOBALS",     type: "sys", icon: "G", cols: [9,"…",3] },
-    { name: "SYS_LOCKS",       type: "sys", icon: "L", cols: ["…","…",""] },
-    { name: "SYS_OBJECTS",     type: "sys", icon: "O", cols: [2,"…",""] },
-    { name: "SYS_QUEUES",      type: "sys", icon: "Q", cols: [11,2,2] },
-    { name: "SYS_RIGHTS",      type: "sys", icon: "R", cols: ["…","…",""] },
-    { name: "SYS_SECURITY",    type: "sys", icon: "S", cols: ["…","…",""] },
-    { name: "SYS_SESSIONS",    type: "sys", icon: "X", cols: ["…",1,""] },
-    { name: "SYS_THINGS",      type: "sys", icon: "T", cols: [1,"…",2] },
-    { name: "SYS_THESAURI",    type: "sys", icon: "Th", cols: [12,2,3] },
-    { name: "SYS_TRANSPORTS",  type: "sys", icon: "Tr", cols: [2,"…",1] },
-    { name: "SYS_USERS",       type: "sys", icon: "U", cols: [6,20,3] },
-    { name: "SYS_COMMANDS",    type: "sys", icon: "C", cols: [9,1,2] },
-    { name: "SYS_COMPETENCES", type: "sys", icon: "Co", cols: ["…",3,3] },
-    { name: "SYS_PLANNING",    type: "sys", icon: "P", cols: [7,1,3] },
-    { name: "SYS_HOOK",        type: "sys", icon: "H", cols: ["…",3,1] },
-    { name: "SYS_HISTORY",     type: "sys", icon: "Hi", cols: ["…","…",""] },
+    { name: "SYS_LOGS",        type: "sys", icon: "scroll-text", cols: [4,"…",2] },
+    { name: "SYS_GLOBALS",     type: "sys", icon: "globe", cols: [9,"…",3] },
+    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: ["…","…",""] },
+    { name: "SYS_OBJECTS",     type: "sys", icon: "box", cols: [2,"…",""] },
+    { name: "SYS_QUEUES",      type: "sys", icon: "list-ordered", cols: [11,2,2] },
+    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: ["…","…",""] },
+    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: ["…","…",""] },
+    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: ["…",1,""] },
+    { name: "SYS_THINGS",      type: "sys", icon: "package", cols: [1,"…",2] },
+    { name: "SYS_THESAURI",    type: "sys", icon: "book-open", cols: [12,2,3] },
+    { name: "SYS_TRANSPORTS",  type: "sys", icon: "truck", cols: [2,"…",1] },
+    { name: "SYS_USERS",       type: "sys", icon: "users", cols: [6,20,3] },
+    { name: "SYS_COMMANDS",    type: "sys", icon: "terminal", cols: [9,1,2] },
+    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: ["…",3,3] },
+    { name: "SYS_PLANNING",    type: "sys", icon: "calendar", cols: [7,1,3] },
+    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: ["…",3,1] },
+    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: ["…","…",""] },
     // User tables (grey)
-    { name: "ACTIONS",         type: "user", icon: "A", cols: [3,4,4] },
-    { name: "STATS",           type: "user", icon: "St", cols: ["","",""] },
-    { name: "CONTACTS",        type: "user", icon: "Ct", cols: ["","",""] },
-    { name: "COMPANIES",       type: "user", icon: "Cm", cols: ["","",""] },
-    { name: "PROJECTS",        type: "user", icon: "Pr", cols: ["","",""] },
-    { name: "CASES",           type: "user", icon: "Ca", cols: ["","",""] },
-    { name: "OPPORTUNITIES",   type: "user", icon: "Op", cols: ["","",""] },
-    { name: "AGENDA",          type: "user", icon: "Ag", cols: ["","",""] },
-    { name: "DOCUMENTS",       type: "user", icon: "Do", cols: ["","",""] },
+    { name: "ACTIONS",         type: "user", icon: "zap", cols: [3,4,4] },
+    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: ["","",""] },
+    { name: "CONTACTS",        type: "user", icon: "user", cols: ["","",""] },
+    { name: "COMPANIES",       type: "user", icon: "building-2", cols: ["","",""] },
+    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: ["","",""] },
+    { name: "CASES",           type: "user", icon: "briefcase", cols: ["","",""] },
+    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: ["","",""] },
+    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: ["","",""] },
+    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: ["","",""] },
 ];
 
 // Relationship matrix: relations[rowIndex][colIndex] = "nn" | "n" | "—" | ""
@@ -1252,22 +1253,22 @@ R("ACTIONS","DOCUMENTS","n");
 
 // Main CD_ tables (entities)
 const cdMainTables = [
-    { name: "CD_DICTIONARIES",           type: "cd", icon: "Di" },
-    { name: "CD_DATABASES",              type: "cd", icon: "Db" },
-    { name: "CD_TABLES",                 type: "cd", icon: "Tb" },
-    { name: "CD_FIELDS",                 type: "cd", icon: "Fl" },
-    { name: "CD_CONTROLS",              type: "cd", icon: "Ct" },
-    { name: "CD_TYPES",                  type: "cd", icon: "Ty" },
-    { name: "CD_LIFESTATUSES",           type: "cd", icon: "Ls" },
-    { name: "CD_FORMS",                  type: "cd", icon: "Fm" },
-    { name: "CD_ROLES",                  type: "cd", icon: "Rl" },
-    { name: "CD_FOLDERS",                type: "cd", icon: "Fo" },
-    { name: "CD_FUNCTIONS",              type: "cd", icon: "Fn" },
-    { name: "CD_CANVASES",              type: "cd", icon: "Cv" },
-    { name: "CD_LICENSES",              type: "cd", icon: "Li" },
-    { name: "CD_TRANSLATIONS",           type: "cd", icon: "Tr" },
-    { name: "CD_DICTIONARYCOMPONENTS",   type: "cd", icon: "Dc" },
-    { name: "CD_DICTIONARYCOMPARISONS",  type: "cd", icon: "Dp" },
+    { name: "CD_DICTIONARIES",           type: "cd", icon: "book" },
+    { name: "CD_DATABASES",              type: "cd", icon: "database" },
+    { name: "CD_TABLES",                 type: "cd", icon: "table" },
+    { name: "CD_FIELDS",                 type: "cd", icon: "columns" },
+    { name: "CD_CONTROLS",              type: "cd", icon: "settings" },
+    { name: "CD_TYPES",                  type: "cd", icon: "layers" },
+    { name: "CD_LIFESTATUSES",           type: "cd", icon: "activity" },
+    { name: "CD_FORMS",                  type: "cd", icon: "layout" },
+    { name: "CD_ROLES",                  type: "cd", icon: "shield" },
+    { name: "CD_FOLDERS",                type: "cd", icon: "folder" },
+    { name: "CD_FUNCTIONS",              type: "cd", icon: "code" },
+    { name: "CD_CANVASES",              type: "cd", icon: "pen-tool" },
+    { name: "CD_LICENSES",              type: "cd", icon: "key" },
+    { name: "CD_TRANSLATIONS",           type: "cd", icon: "languages" },
+    { name: "CD_DICTIONARYCOMPONENTS",   type: "cd", icon: "puzzle" },
+    { name: "CD_DICTIONARYCOMPARISONS",  type: "cd", icon: "git-compare" },
 ];
 
 // Lookup tables
@@ -1395,7 +1396,7 @@ function renderDbDesigner() {
     for (const t of tables) {
         const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
         const bg = isMain ? mainBg : secBg;
-        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
+        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')"><i data-lucide="${t.icon}" style="width:12px;height:12px;display:block;margin:0 auto 3px;"></i>${t.name}</th>`;
     }
 
     // Rows
@@ -1406,7 +1407,7 @@ function renderDbDesigner() {
         const rowBg = isMainRow ? mainRowBg : secRowBg;
 
         rows += `<tr>`;
-        rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
+        rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
         // Meta columns (Type, Sub, Screens)
         for (let m = 0; m < 3; m++) {
