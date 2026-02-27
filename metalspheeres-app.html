@@ -264,6 +264,29 @@
 
         .matrix .corner { position: sticky; left: 0; top: 0; z-index: 5; background: #F8FAFC; min-width: 140px; }
         .matrix .meta-cols { font-size: 10px; color: #64748B; padding: 2px 4px; white-space: nowrap; }
+
+        /* ============ DICTIONARY TABLE ============ */
+        .dict-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .dict-table th {
+            text-align: left; padding: 10px 16px; background: #F8FAFC;
+            border-bottom: 2px solid #E2E8F0; font-size: 11px; font-weight: 600;
+            color: #64748B; text-transform: uppercase; letter-spacing: 0.04em;
+            white-space: nowrap; position: sticky; top: 0;
+        }
+        .dict-table td {
+            padding: 8px 16px; border-bottom: 1px solid #F1F5F9;
+            color: #334155; white-space: nowrap;
+        }
+        .dict-table tbody tr:hover { background: #F8FAFC; }
+        .dict-table tbody tr:hover td { color: #0F172A; }
+
+        .dict-filter-btn {
+            padding: 4px 12px; border: 1px solid #E2E8F0; border-radius: 6px;
+            background: #fff; color: #64748B; font-size: 12px; font-weight: 500;
+            cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+        }
+        .dict-filter-btn:hover { background: #F1F5F9; }
+        .dict-filter-btn.active { background: #3B82F6; color: #fff; border-color: #3B82F6; }
     </style>
 </head>
 <body>
@@ -472,6 +495,13 @@ function renderContent() {
             <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
             <span class="breadcrumb-item">${item.label}</span>`;
         content.innerHTML = renderDbDesigner();
+    } else if (activeItem && activeItem.startsWith('cd_')) {
+        const { item, group } = findContext();
+        breadcrumb.innerHTML = `
+            <span class="breadcrumb-group">${group.label}</span>
+            <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
+            <span class="breadcrumb-item">${item.label}</span>`;
+        content.innerHTML = renderDictionaryScreen(item, group);
     } else {
         const { item, group } = findContext();
         breadcrumb.innerHTML = `
@@ -481,6 +511,300 @@ function renderContent() {
         content.innerHTML = renderEntityScreen(item, group);
     }
     lucide.createIcons();
+}
+
+// ============================================================================
+// DICTIONARY DATA (from PostgreSQL cd_ tables)
+// ============================================================================
+const dictData = {
+    cd_dictionaries: {
+        columns: ["Name", "Alias", "Status", "Created"],
+        rows: [
+            ["MetalSpheeres Default", "default", "active", "2026-02-27"]
+        ]
+    },
+    cd_databases: {
+        columns: ["Name", "Alias", "Status", "Created"],
+        rows: [
+            ["Primary Database", "primary", "active", "2026-02-27"]
+        ]
+    },
+    cd_tables: {
+        columns: ["Name", "Type", "Prefix", "Status", "Created"],
+        rows: [
+            ["Contacts", "entity", "CONT", "active", "2026-02-27"],
+            ["Companies", "entity", "COMP", "active", "2026-02-27"],
+            ["Projects", "entity", "PROJ", "active", "2026-02-27"],
+            ["Cases", "entity", "CASE", "active", "2026-02-27"],
+            ["Opportunities", "entity", "OPPO", "active", "2026-02-27"],
+            ["Agenda", "entity", "AGEN", "active", "2026-02-27"],
+            ["Documents", "entity", "DOCU", "active", "2026-02-27"],
+            ["Actions", "entity", "ACTI", "active", "2026-02-27"],
+            ["Stats", "lookup", "STAT", "active", "2026-02-27"],
+        ]
+    },
+    cd_fields: {
+        columns: ["Field", "Group", "Data Type", "System", "PK", "Table"],
+        rows: [
+            ["k_contacts","H","uuid","Yes","Yes","Contacts"],
+            ["alias","H","varchar","Yes","","Contacts"],
+            ["name","OH","varchar","Yes","","Contacts"],
+            ["memo","OF","text","Yes","","Contacts"],
+            ["f_lifestatus","F","uuid","Yes","","Contacts"],
+            ["f_owner","F","uuid","Yes","","Contacts"],
+            ["f_createdby","F","uuid","Yes","","Contacts"],
+            ["createdate","F","timestamptz","Yes","","Contacts"],
+            ["f_changedby","F","uuid","Yes","","Contacts"],
+            ["changedate","F","timestamptz","Yes","","Contacts"],
+            ["k_companies","H","uuid","Yes","Yes","Companies"],
+            ["alias","H","varchar","Yes","","Companies"],
+            ["name","OH","varchar","Yes","","Companies"],
+            ["memo","OF","text","Yes","","Companies"],
+            ["f_lifestatus","F","uuid","Yes","","Companies"],
+            ["f_owner","F","uuid","Yes","","Companies"],
+            ["f_createdby","F","uuid","Yes","","Companies"],
+            ["createdate","F","timestamptz","Yes","","Companies"],
+            ["f_changedby","F","uuid","Yes","","Companies"],
+            ["changedate","F","timestamptz","Yes","","Companies"],
+            ["k_projects","H","uuid","Yes","Yes","Projects"],
+            ["alias","H","varchar","Yes","","Projects"],
+            ["name","OH","varchar","Yes","","Projects"],
+            ["memo","OF","text","Yes","","Projects"],
+            ["f_lifestatus","F","uuid","Yes","","Projects"],
+            ["f_owner","F","uuid","Yes","","Projects"],
+            ["f_createdby","F","uuid","Yes","","Projects"],
+            ["createdate","F","timestamptz","Yes","","Projects"],
+            ["f_changedby","F","uuid","Yes","","Projects"],
+            ["changedate","F","timestamptz","Yes","","Projects"],
+            ["k_cases","H","uuid","Yes","Yes","Cases"],
+            ["alias","H","varchar","Yes","","Cases"],
+            ["name","OH","varchar","Yes","","Cases"],
+            ["memo","OF","text","Yes","","Cases"],
+            ["f_lifestatus","F","uuid","Yes","","Cases"],
+            ["f_owner","F","uuid","Yes","","Cases"],
+            ["f_createdby","F","uuid","Yes","","Cases"],
+            ["createdate","F","timestamptz","Yes","","Cases"],
+            ["f_changedby","F","uuid","Yes","","Cases"],
+            ["changedate","F","timestamptz","Yes","","Cases"],
+            ["k_opportunities","H","uuid","Yes","Yes","Opportunities"],
+            ["alias","H","varchar","Yes","","Opportunities"],
+            ["name","OH","varchar","Yes","","Opportunities"],
+            ["memo","OF","text","Yes","","Opportunities"],
+            ["f_lifestatus","F","uuid","Yes","","Opportunities"],
+            ["f_owner","F","uuid","Yes","","Opportunities"],
+            ["f_createdby","F","uuid","Yes","","Opportunities"],
+            ["createdate","F","timestamptz","Yes","","Opportunities"],
+            ["f_changedby","F","uuid","Yes","","Opportunities"],
+            ["changedate","F","timestamptz","Yes","","Opportunities"],
+            ["k_agenda","H","uuid","Yes","Yes","Agenda"],
+            ["alias","H","varchar","Yes","","Agenda"],
+            ["name","OH","varchar","Yes","","Agenda"],
+            ["memo","OF","text","Yes","","Agenda"],
+            ["f_lifestatus","F","uuid","Yes","","Agenda"],
+            ["f_owner","F","uuid","Yes","","Agenda"],
+            ["f_createdby","F","uuid","Yes","","Agenda"],
+            ["createdate","F","timestamptz","Yes","","Agenda"],
+            ["f_changedby","F","uuid","Yes","","Agenda"],
+            ["changedate","F","timestamptz","Yes","","Agenda"],
+            ["k_documents","H","uuid","Yes","Yes","Documents"],
+            ["alias","H","varchar","Yes","","Documents"],
+            ["name","OH","varchar","Yes","","Documents"],
+            ["memo","OF","text","Yes","","Documents"],
+            ["f_lifestatus","F","uuid","Yes","","Documents"],
+            ["f_owner","F","uuid","Yes","","Documents"],
+            ["f_createdby","F","uuid","Yes","","Documents"],
+            ["createdate","F","timestamptz","Yes","","Documents"],
+            ["f_changedby","F","uuid","Yes","","Documents"],
+            ["changedate","F","timestamptz","Yes","","Documents"],
+            ["k_actions","H","uuid","Yes","Yes","Actions"],
+            ["alias","H","varchar","Yes","","Actions"],
+            ["name","OH","varchar","Yes","","Actions"],
+            ["memo","OF","text","Yes","","Actions"],
+            ["f_lifestatus","F","uuid","Yes","","Actions"],
+            ["f_owner","F","uuid","Yes","","Actions"],
+            ["f_createdby","F","uuid","Yes","","Actions"],
+            ["createdate","F","timestamptz","Yes","","Actions"],
+            ["f_changedby","F","uuid","Yes","","Actions"],
+            ["changedate","F","timestamptz","Yes","","Actions"],
+            ["k_stats","H","uuid","Yes","Yes","Stats"],
+            ["k_seq","H","uuid","Yes","","Stats"],
+            ["name","OH","varchar","Yes","","Stats"],
+            ["f_createdby","F","uuid","Yes","","Stats"],
+            ["createdate","F","timestamptz","Yes","","Stats"],
+            ["f_changedby","F","uuid","Yes","","Stats"],
+            ["changedate","F","timestamptz","Yes","","Stats"],
+        ]
+    },
+    cd_controls: {
+        columns: ["Name", "Control Type", "Field", "Visible"],
+        rows: []
+    },
+    cd_forms: {
+        columns: ["Name", "Form Type", "Table", "Status"],
+        rows: []
+    },
+    cd_types: {
+        columns: ["Name", "Table", "Status"],
+        rows: []
+    },
+    cd_folders: {
+        columns: ["Name", "Alias", "Icon", "Sort Order", "Created"],
+        rows: [
+            ["CRM", "crm", "users", "1", "2026-02-27"],
+            ["Production", "production", "factory", "2", "2026-02-27"],
+            ["Planning", "planning", "calendar", "3", "2026-02-27"],
+            ["Documents", "documents", "file-text", "4", "2026-02-27"],
+            ["Settings", "settings", "settings", "5", "2026-02-27"],
+        ]
+    },
+    cd_lifestatuses: {
+        columns: ["Name", "Alias", "Color", "Default", "Final", "Created"],
+        rows: [
+            ["Active", "active", "#22C55E", "Yes", "", "2026-02-27"],
+            ["Inactive", "inactive", "#F59E0B", "", "", "2026-02-27"],
+            ["Archived", "archived", "#6B7280", "", "Yes", "2026-02-27"],
+            ["Deleted", "deleted", "#EF4444", "", "Yes", "2026-02-27"],
+        ]
+    },
+    cd_licenses: {
+        columns: ["Name", "Max Users", "Max Tables", "Status"],
+        rows: []
+    },
+    cd_canvases: {
+        columns: ["Name", "Canvas Type", "Status"],
+        rows: []
+    },
+    cd_roles: {
+        columns: ["Name", "Alias", "System", "Status", "Created"],
+        rows: [
+            ["Administrator", "admin", "Yes", "active", "2026-02-27"],
+            ["Manager", "manager", "Yes", "active", "2026-02-27"],
+            ["User", "user", "Yes", "active", "2026-02-27"],
+            ["Viewer", "viewer", "Yes", "active", "2026-02-27"],
+        ]
+    },
+    cd_functions: {
+        columns: ["Name", "Function Type", "Status"],
+        rows: []
+    },
+    cd_translations: {
+        columns: ["Language", "Key", "Value"],
+        rows: []
+    },
+    cd_components: {
+        columns: ["Name", "Component Type", "Status"],
+        rows: []
+    },
+};
+
+// ============================================================================
+// RENDER DICTIONARY SCREEN
+// ============================================================================
+function renderDictionaryScreen(item, group) {
+    const data = dictData[item.id] || { columns: ["Name"], rows: [] };
+    const color = group.color;
+    const count = data.rows.length;
+
+    // Build filter bar for fields
+    let filterBar = '';
+    if (item.id === 'cd_fields') {
+        const tables = [...new Set(data.rows.map(r => r[5]))];
+        filterBar = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">';
+        filterBar += '<button class="dict-filter-btn active" onclick="filterDictTable(this, \'all\')">All (' + data.rows.length + ')</button>';
+        for (const t of tables) {
+            const c = data.rows.filter(r => r[5] === t).length;
+            filterBar += '<button class="dict-filter-btn" onclick="filterDictTable(this, \'' + t + '\')">' + t + ' (' + c + ')</button>';
+        }
+        filterBar += '</div>';
+    }
+
+    // Table header
+    let thCells = data.columns.map(c => '<th>' + c + '</th>').join('');
+
+    // Table rows
+    let trRows = '';
+    if (count === 0) {
+        trRows = '<tr><td colspan="' + data.columns.length + '" style="text-align:center;padding:40px;color:#94A3B8;font-style:italic;">No records yet</td></tr>';
+    } else {
+        for (const row of data.rows) {
+            let cells = '';
+            for (let i = 0; i < row.length; i++) {
+                let val = row[i];
+                // Color badge for status/lifestatus
+                if (data.columns[i] === 'Status' && val) {
+                    const sc = val === 'active' ? '#22C55E' : val === 'inactive' ? '#F59E0B' : '#6B7280';
+                    val = '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:' + sc + ';"></span>' + val + '</span>';
+                }
+                // Color swatch for color column
+                if (data.columns[i] === 'Color' && val && val.startsWith('#')) {
+                    val = '<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:3px;background:' + val + ';border:1px solid #E2E8F0;"></span>' + val + '</span>';
+                }
+                // Group badge
+                if (data.columns[i] === 'Group') {
+                    const gc = {H:'#8B5CF6',OH:'#3B82F6',C:'#22C55E',OF:'#F59E0B',F:'#64748B'}[val] || '#94A3B8';
+                    val = '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:' + gc + '18;color:' + gc + ';">' + val + '</span>';
+                }
+                // Type badge
+                if (data.columns[i] === 'Type' && (val === 'entity' || val === 'lookup' || val === 'link' || val === 'sub')) {
+                    const tc = {entity:'#3B82F6',lookup:'#8B5CF6',link:'#F59E0B',sub:'#22C55E'}[val] || '#94A3B8';
+                    val = '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:' + tc + '18;color:' + tc + ';">' + val + '</span>';
+                }
+                // PK badge
+                if (data.columns[i] === 'PK' && val === 'Yes') {
+                    val = '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;background:#FBBF2418;color:#D97706;">PK</span>';
+                }
+                // Boolean Yes
+                if (val === 'Yes' && data.columns[i] !== 'PK') {
+                    val = '<span style="color:#22C55E;">&#10003;</span>';
+                }
+                cells += '<td data-table="' + (row[5] || '') + '">' + (val || '') + '</td>';
+            }
+            trRows += '<tr data-table="' + (row[5] || '') + '">' + cells + '</tr>';
+        }
+    }
+
+    return '<div class="entity-screen">' +
+        '<div class="entity-header">' +
+            '<div class="entity-icon" style="background:' + color + '18;">' +
+                '<i data-lucide="' + item.icon + '" style="width:24px;height:24px;color:' + color + ';stroke-width:1.5;"></i>' +
+            '</div>' +
+            '<div>' +
+                '<div class="entity-title">' + item.label + '</div>' +
+                '<span class="entity-group" style="color:' + color + ';">' + group.label + ' &middot; ' + count + ' records</span>' +
+            '</div>' +
+        '</div>' +
+        filterBar +
+        '<div class="entity-table" style="margin-top:24px;">' +
+            '<div class="entity-toolbar">' +
+                '<div class="toolbar-btns">' +
+                    '<button class="toolbar-btn">+ New</button>' +
+                    '<button class="toolbar-btn ghost">Export</button>' +
+                '</div>' +
+                '<div class="toolbar-search">' +
+                    '<i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>' +
+                    '<span>Search ' + item.label.toLowerCase() + '...</span>' +
+                '</div>' +
+            '</div>' +
+            '<div style="overflow-x:auto;">' +
+                '<table class="dict-table">' +
+                    '<thead><tr>' + thCells + '</tr></thead>' +
+                    '<tbody id="dictTableBody">' + trRows + '</tbody>' +
+                '</table>' +
+            '</div>' +
+        '</div>' +
+    '</div>';
+}
+
+function filterDictTable(btn, tableName) {
+    document.querySelectorAll('.dict-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('#dictTableBody tr').forEach(tr => {
+        if (tableName === 'all' || tr.getAttribute('data-table') === tableName) {
+            tr.style.display = '';
+        } else {
+            tr.style.display = 'none';
+        }
+    });
 }
 
 // ============================================================================
