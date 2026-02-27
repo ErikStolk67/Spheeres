@@ -465,7 +465,14 @@
         }
         .ds-table-row:hover { background: #F0F9FF; }
         .ds-table-name { font-size: 12px; font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-        .ds-table-count { font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums; }
+        .ds-table-count { font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+        .ds-card-list { flex: 1; overflow-y: auto; max-height: 300px; }
+        .stats-tab {
+            padding: 10px 16px; font-size: 12px; color: #94A3B8; cursor: pointer;
+            border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap;
+        }
+        .stats-tab:hover { color: #64748B; }
+        .stats-tab.active { color: #3B82F6; border-bottom-color: #3B82F6; font-weight: 600; }
 
         /* ============ TYPES EDITOR ============ */
         .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
@@ -3995,8 +4002,8 @@ function renderDbStatistics() {
         
         function cardHtml(type, items, cardIcon, cardColor) {
             const count = items.length;
-            const topItems = items.slice(0,6).sort((a,b) => fieldCount(b) - fieldCount(a));
-            let listHtml = topItems.map(t => 
+            const sorted = [...items].sort((a,b) => fieldCount(b) - fieldCount(a));
+            let listHtml = sorted.map(t => 
                 `<div class="ds-table-row" onclick="openStatsTable('${t}')" title="${t}">
                     <span class="ds-table-name" style="color:${cardColor};">${t}</span>
                     <span class="ds-table-count">${fieldCount(t)}</span>
@@ -4014,7 +4021,9 @@ function renderDbStatistics() {
                 <div class="ds-table-header">
                     <span>Tabel</span><span>Fields</span>
                 </div>
-                ${listHtml}
+                <div class="ds-card-list">
+                    ${listHtml}
+                </div>
             </div>`;
         }
         
@@ -4060,24 +4069,109 @@ function openStatsTable(tableName) {
         const typeMap = {i:'integer',s:'varchar',b:'boolean',d:'timestamptz',u:'uuid',y:'bytea'};
         return { name, type: typeMap[typeCode] || typeCode };
     });
-    
-    let rowsHtml = fields.map((f, idx) => {
-        const typeColor = {integer:'#8B5CF6',varchar:'#0F172A',boolean:'#22C55E',timestamptz:'#0EA5E9',uuid:'#94A3B8',bytea:'#D97706'}[f.type] || '#64748B';
-        const isKey = f.name.startsWith('K_');
-        const isFk = f.name.startsWith('F_');
-        let icon = '';
-        if (isKey) icon = '<span style="color:#D97706;">&#128273;</span> ';
-        else if (isFk) icon = '<span style="color:#2563EB;">&#128279;</span> ';
-        return `<tr style="border-bottom:1px solid #F1F5F9;">
-            <td style="padding:6px 12px;font-size:12px;color:#94A3B8;width:40px;">${idx}</td>
-            <td style="padding:6px 12px;font-size:12px;font-weight:${isKey?700:400};color:#0F172A;">${icon}${f.name}</td>
-            <td style="padding:6px 12px;font-size:12px;color:${typeColor};">${f.type}</td>
-        </tr>`;
-    }).join('');
-    
+
     const popup = document.getElementById('statsTablePopup');
-    popup.innerHTML = `<div class="popup" style="width:600px;max-height:80vh;">
-        <div class="popup-header">
+
+    function renderMetaTab() {
+        let rowsHtml = fields.map((f, idx) => {
+            const typeColor = {integer:'#8B5CF6',varchar:'#0F172A',boolean:'#22C55E',timestamptz:'#0EA5E9',uuid:'#94A3B8',bytea:'#D97706'}[f.type] || '#64748B';
+            const isKey = f.name.startsWith('K_');
+            const isFk = f.name.startsWith('F_');
+            let icon = '';
+            if (isKey) icon = '<span style="color:#D97706;">&#128273;</span> ';
+            else if (isFk) icon = '<span style="color:#2563EB;">&#128279;</span> ';
+            return `<tr style="border-bottom:1px solid #F1F5F9;">
+                <td style="padding:6px 12px;font-size:12px;color:#94A3B8;width:40px;">${idx}</td>
+                <td style="padding:6px 12px;font-size:12px;font-weight:${isKey?700:400};color:#0F172A;">${icon}${f.name}</td>
+                <td style="padding:6px 12px;font-size:12px;color:${typeColor};">${f.type}</td>
+            </tr>`;
+        }).join('');
+        return `<table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="background:#F8FAFC;border-bottom:2px solid #E2E8F0;position:sticky;top:0;">
+                <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">#</th>
+                <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Veld</th>
+                <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Type</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>`;
+    }
+
+    function renderDataTab() {
+        // Try API first, else show message
+        const tableKey = tableName.toLowerCase();
+        const tableId = tableMap[tableName];
+        
+        if (apiAvailable && tableId) {
+            // Load from API
+            const body = document.getElementById('statsDataBody');
+            if (body) body.innerHTML = '<div style="padding:20px;color:#94A3B8;font-style:italic;">Laden...</div>';
+            fetch(API + '/query', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({sql: 'SELECT * FROM "' + tableName + '" LIMIT 100'})
+            })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data && data.rows && data.rows.length > 0) {
+                    renderDataRows(data.fields || Object.keys(data.rows[0]), data.rows);
+                } else {
+                    document.getElementById('statsDataBody').innerHTML =
+                        '<div style="padding:20px;color:#94A3B8;font-style:italic;">Geen records gevonden</div>';
+                }
+            })
+            .catch(() => {
+                document.getElementById('statsDataBody').innerHTML =
+                    '<div style="padding:20px;color:#94A3B8;font-style:italic;">Kan data niet laden</div>';
+            });
+        }
+
+        // Column headers from field definitions
+        const colHeaders = fields.map(f =>
+            `<th style="padding:8px 10px;font-size:10px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;white-space:nowrap;border-bottom:2px solid #E2E8F0;background:#F8FAFC;position:sticky;top:0;">${f.name}</th>`
+        ).join('');
+
+        const isCd = tableName.startsWith('CD_');
+        const emptyMsg = isCd && apiAvailable
+            ? '<div style="padding:20px;color:#94A3B8;font-style:italic;">Laden...</div>'
+            : `<div style="padding:20px;color:#94A3B8;font-style:italic;">${isCd ? 'Geen records' : 'Alleen CD_ tabellen hebben data (via API)'}</div>`;
+
+        return `<div style="overflow:auto;flex:1;" id="statsDataBody">
+            <table style="width:max-content;min-width:100%;border-collapse:collapse;" id="statsDataTable">
+                <thead><tr>${colHeaders}</tr></thead>
+                <tbody></tbody>
+            </table>
+            ${emptyMsg}
+        </div>
+        <div style="padding:8px 16px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;" id="statsDataCount">${fields.length} kolommen</div>`;
+    }
+
+    function renderDataRows(colNames, rows) {
+        const body = document.getElementById('statsDataBody');
+        if (!body) return;
+        const cols = typeof colNames[0] === 'string' ? colNames : colNames.map(c => c.name || c);
+        let thead = cols.map(c =>
+            `<th style="padding:8px 10px;font-size:10px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;white-space:nowrap;border-bottom:2px solid #E2E8F0;background:#F8FAFC;position:sticky;top:0;">${c}</th>`
+        ).join('');
+        let tbody = rows.map(row => {
+            const cells = Array.isArray(row) ? row : cols.map(c => row[c]);
+            return '<tr style="border-bottom:1px solid #F1F5F9;">' + cells.map(v => {
+                let val = v === null || v === undefined ? '—' : String(v);
+                if (val.length > 40) val = val.substring(0,37) + '...';
+                const color = v === null || v === undefined ? '#CBD5E1' : '#0F172A';
+                return `<td style="padding:6px 10px;font-size:11px;color:${color};white-space:nowrap;font-family:monospace;">${escHtml(val)}</td>`;
+            }).join('') + '</tr>';
+        }).join('');
+        body.innerHTML = `<table style="width:max-content;min-width:100%;border-collapse:collapse;">
+            <thead><tr>${thead}</tr></thead>
+            <tbody>${tbody}</tbody>
+        </table>`;
+        const countEl = document.getElementById('statsDataCount');
+        if (countEl) countEl.textContent = rows.length + ' records (max 100 getoond) · ' + cols.length + ' kolommen';
+    }
+    
+    // Render popup with tabs
+    popup.innerHTML = `<div class="popup" style="width:90vw;max-width:1200px;max-height:85vh;">
+        <div class="popup-header" style="flex-shrink:0;">
             <div>
                 <span style="font-size:16px;font-weight:700;color:#0F172A;">${tableName}</span>
                 <span style="font-size:12px;color:#94A3B8;margin-left:8px;">${fields.length} velden</span>
@@ -4085,20 +4179,40 @@ function openStatsTable(tableName) {
             <button onclick="document.getElementById('statsTablePopup').classList.remove('open')" 
                 style="border:none;background:none;cursor:pointer;font-size:20px;color:#94A3B8;">&#10005;</button>
         </div>
-        <div style="overflow-y:auto;flex:1;">
-            <table style="width:100%;border-collapse:collapse;">
-                <thead>
-                    <tr style="background:#F8FAFC;border-bottom:2px solid #E2E8F0;position:sticky;top:0;">
-                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">#</th>
-                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Veld</th>
-                        <th style="padding:8px 12px;font-size:11px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;">Type</th>
-                    </tr>
-                </thead>
-                <tbody>${rowsHtml}</tbody>
-            </table>
+        <div style="display:flex;gap:0;border-bottom:1px solid #E2E8F0;padding:0 16px;background:#fff;flex-shrink:0;">
+            <div class="stats-tab active" onclick="switchStatsTab(this,'meta')">Metadata</div>
+            <div class="stats-tab" onclick="switchStatsTab(this,'data')">Data</div>
+        </div>
+        <div id="statsTabMeta" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;">
+            ${renderMetaTab()}
+        </div>
+        <div id="statsTabData" style="overflow:auto;flex:1;display:none;flex-direction:column;">
+            ${renderDataTab()}
         </div>
     </div>`;
     popup.classList.add('open');
+
+    // If CD_ table with API, auto-load data
+    if (apiAvailable && tableName.startsWith('CD_')) {
+        const lower = tableName.toLowerCase();
+        fetch(API + '/raw/' + lower)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data && data.length > 0) {
+                const cols = Object.keys(data[0]);
+                renderDataRows(cols, data.slice(0, 100));
+            }
+        })
+        .catch(() => {});
+    }
+}
+
+function switchStatsTab(el, tab) {
+    const parent = el.parentElement;
+    parent.querySelectorAll('.stats-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('statsTabMeta').style.display = tab === 'meta' ? 'flex' : 'none';
+    document.getElementById('statsTabData').style.display = tab === 'data' ? 'flex' : 'none';
 }
 
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
