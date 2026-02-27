@@ -7,6 +7,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
+    <script>
+    // Fallback: if lucide didn't load, create a stub that renders text icons
+    if (typeof lucide === 'undefined') {
+        window.lucide = {
+            createIcons: function() {
+                document.querySelectorAll('[data-lucide]').forEach(function(el) {
+                    if (el.dataset.rendered) return;
+                    el.dataset.rendered = '1';
+                    const name = el.getAttribute('data-lucide');
+                    const size = parseInt(el.style.width) || 16;
+                    const color = el.style.color || '#64748B';
+                    // Create simple SVG placeholder with first letter(s)
+                    const label = name.split('-').map(w => w[0]).join('').toUpperCase().slice(0,2);
+                    el.outerHTML = '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" opacity="0.2"/><text x="12" y="16" text-anchor="middle" fill="'+color+'" stroke="none" font-size="10" font-family="DM Sans,sans-serif">'+label+'</text></svg>';
+                });
+            }
+        };
+    }
+    </script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: #F8FAFC; height: 100vh; overflow: hidden; }
