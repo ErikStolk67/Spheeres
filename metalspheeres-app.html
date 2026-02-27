@@ -1210,19 +1210,6 @@ const cdMainTables = [
     { name: "CD_TRANSLATIONS",           type: "cd", icon: "Tr" },
     { name: "CD_DICTIONARYCOMPONENTS",   type: "cd", icon: "Dc" },
     { name: "CD_DICTIONARYCOMPARISONS",  type: "cd", icon: "Dp" },
-    // Sub-entity tables (children of main tables but have own records)
-    { name: "CD_FIEL_MATCH",             type: "sub", icon: "Fm" },
-    { name: "CD_FIEL_CLUSTERSETTINGS",   type: "sub", icon: "Fc" },
-    { name: "CD_FIEL_FIELDKEY",          type: "sub", icon: "Fk" },
-    { name: "CD_FIEL_FIELDVALUE",        type: "sub", icon: "Fv" },
-    { name: "CD_FIEL_LINKEDITORVISIBILITY", type: "sub", icon: "Fl" },
-    { name: "CD_LIFE_CHECKLIST",         type: "sub", icon: "Lc" },
-    { name: "CD_CANV_EXECUTION_LOG",     type: "sub", icon: "Ce" },
-    { name: "CD_CANV_LOGS",             type: "sub", icon: "Cl" },
-    { name: "CD_DBAS_REMOTE",           type: "sub", icon: "Dr" },
-    { name: "CD_TABL_TABSETTINGS",       type: "sub", icon: "Ts" },
-    { name: "CD_TYPE_FILTERINGSETTINGS", type: "sub", icon: "Tf" },
-    { name: "CD_TYPE_RESTRICTIONS",      type: "sub", icon: "Tr" },
 ];
 
 // Lookup tables
@@ -1259,8 +1246,21 @@ const cdLookupTables = [
     { name: "CD_LK_TRIGGERSUBJECTS",     type: "lk", icon: "Lt" },
 ];
 
-// Combine all CD tables (add cols property)
-const cdTables = [...cdMainTables, ...cdLookupTables].map(t => ({...t, cols: ["","",""]}));
+// Sub-tables (not shown in matrix, counted in Sub column)
+const cdSubTables = {
+    'CD_FIELDS': ['CD_FIEL_MATCH','CD_FIEL_CLUSTERSETTINGS','CD_FIEL_FIELDKEY','CD_FIEL_FIELDVALUE','CD_FIEL_LINKEDITORVISIBILITY'],
+    'CD_LIFESTATUSES': ['CD_LIFE_CHECKLIST'],
+    'CD_CANVASES': ['CD_CANV_EXECUTION_LOG','CD_CANV_LOGS'],
+    'CD_DATABASES': ['CD_DBAS_REMOTE'],
+    'CD_TABLES': ['CD_TABL_TABSETTINGS'],
+    'CD_TYPES': ['CD_TYPE_FILTERINGSETTINGS','CD_TYPE_RESTRICTIONS'],
+};
+
+// Combine all CD tables for matrix (main + lookup, NO sub)
+const cdTables = [...cdMainTables, ...cdLookupTables].map(t => {
+    const subs = cdSubTables[t.name] || [];
+    return {...t, cols: ["", subs.length || "", ""]};
+});
 
 // CD relations - derived from link table names
 const cdRelations = {};
@@ -1283,36 +1283,23 @@ CR("CD_TYPES","CD_TYPES","nn");             // cd_type_type
 
 // n relations (different prefixes = parent has child)
 CR("CD_CANVASES","CD_FUNCTIONS","n");       // cd_canv_func
-CR("CD_CANVASES","CD_CANV_LOGS","n");       // cd_canv_logs
 CR("CD_CANVASES","CD_TABLES","n");          // cd_canv_tabl
 CR("CD_CONTROLS","CD_CANVASES","n");        // cd_cntr_canv
-CR("CD_DATABASES","CD_DBAS_REMOTE","n");    // cd_dbas_remote
 CR("CD_DATABASES","CD_TABLES","n");         // cd_dbas_tabl
 CR("CD_DICTIONARIES","CD_DICTIONARYCOMPONENTS","n"); // cd_dict_comp
 CR("CD_DICTIONARIES","CD_DATABASES","n");   // cd_dict_data + cd_dict_dbas
 CR("CD_FIELDS","CD_CONTROLS","n");          // cd_fiel_cntr + cd_fiel_cont
 CR("CD_FIELDS","CD_LK_KINDS","—");          // cd_fiel_kinds (ref to lookup)
-CR("CD_FIELDS","CD_FIEL_MATCH","n");        // cd_fiel_match
-CR("CD_FIELDS","CD_FIEL_CLUSTERSETTINGS","n");
-CR("CD_FIELDS","CD_FIEL_FIELDKEY","n");
-CR("CD_FIELDS","CD_FIEL_FIELDVALUE","n");
-CR("CD_FIELDS","CD_FIEL_LINKEDITORVISIBILITY","n");
 CR("CD_FORMS","CD_CONTROLS","n");           // cd_form_cntr + cd_form_cont
 CR("CD_FUNCTIONS","CD_DICTIONARYCOMPONENTS","n"); // cd_func_comp
 CR("CD_LIFESTATUSES","CD_CANVASES","n");    // cd_life_canv
 CR("CD_LIFESTATUSES","CD_TABLES","n");      // cd_life_tabl
-CR("CD_LIFESTATUSES","CD_LIFE_CHECKLIST","n");
 CR("CD_ROLES","CD_FUNCTIONS","n");          // cd_role_func
 CR("CD_ROLES","CD_LIFESTATUSES","n");       // cd_role_life
 CR("CD_TABLES","CD_FIELDS","n");            // cd_tabl_fiel
 CR("CD_TABLES","CD_FORMS","n");             // cd_tabl_form
-CR("CD_TABLES","CD_TABL_TABSETTINGS","n");
 CR("CD_TYPES","CD_LIFESTATUSES","n");       // cd_type_life
 CR("CD_TYPES","CD_TABLES","n");             // cd_type_tabl
-CR("CD_TYPES","CD_TYPE_FILTERINGSETTINGS","n");
-CR("CD_TYPES","CD_TYPE_RESTRICTIONS","n");
-CR("CD_CANVASES","CD_CANV_EXECUTION_LOG","n");
-
 // Reference relations (— = FK to lookup)
 CR("CD_CONTROLS","CD_LK_FORMATS","—");
 CR("CD_CONTROLS","CD_LK_ICONS","—");
@@ -1339,9 +1326,6 @@ CR("CD_FUNCTIONS","CD_LK_PARAMDATATYPES","—");
 CR("CD_FIELDS","CD_LK_FORMATS","—");
 CR("CD_FIELDS","CD_LK_FIELDFLAGS","—");
 CR("CD_FIELDS","CD_LK_PROPERTYMODES","—");
-CR("CD_FIEL_MATCH","CD_LK_MATCH_CONDITIONS","—");
-CR("CD_FIEL_MATCH","CD_LK_MATCH_MODES","—");
-CR("CD_FIEL_MATCH","CD_LK_MATCH_TYPES","—");
 CR("CD_FORMS","CD_LK_TEMPLATES","—");
 CR("CD_TABLES","CD_LK_SUBJECTAREAS","—");
 CR("CD_TABLES","CD_LK_RELATIONTYPEVALUES","—");
@@ -1366,8 +1350,7 @@ function renderDbDesigner() {
 
     for (const t of tables) {
         const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
-        const isSub = t.type === 'sub';
-        const bg = isMain ? mainBg : (isSub ? '#E0F2FE' : secBg);
+        const bg = isMain ? mainBg : secBg;
         colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1376,8 +1359,7 @@ function renderDbDesigner() {
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
         const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-        const isSubRow = row.type === 'sub';
-        const rowBg = isMainRow ? mainRowBg : (isSubRow ? '#F0F9FF' : secRowBg);
+        const rowBg = isMainRow ? mainRowBg : secRowBg;
 
         rows += `<tr>`;
         rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
@@ -1401,8 +1383,8 @@ function renderDbDesigner() {
                 rows += `<td class="cell-self"></td>`;
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
-                const isMainR = isDictMode ? (row.type === 'cd' || row.type === 'sub') : row.type === 'sys';
-                const isMainC = isDictMode ? (col.type === 'cd' || col.type === 'sub') : col.type === 'sys';
+                const isMainR = isDictMode ? (row.type === 'cd') : row.type === 'sys';
+                const isMainC = isDictMode ? (col.type === 'cd') : col.type === 'sys';
                 const isMainZone = isMainR && isMainC;
 
                 let cellClass = 'cell-empty';
