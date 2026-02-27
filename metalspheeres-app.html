@@ -1617,65 +1617,142 @@ const groupMeta = {
 };
 
 // Entity fields template
+// XSD-driven field definitions (compact: "FIELD:type" where type is u=uuid,i=int,b=bool,d=datetime,y=bytea,s=string)
+const xsdFieldData = {
+"CD_CANVASES":"REPLICATIONID:u,F_DICTIONARY:i,K_CANVAS:i,F_TYPE:i,NAME:s,F_KIND:i,F_ICON:i,F_TRIGGERACTION:i,F_TRIGGERSUBJECT:i,F_BEFORE_METHOD:i,F_APITYPE:i,F_REQUESTTYPE:i,F_APIPARAMTYPE:i,F_APIKIND:i,IS_PRIVATE:b,IS_REPEATABLE:b,URL:s,IS_REQUIRED:b,DEFAULTVALUE:s,TEST_VALUE:s,F_IMPORTMETHOD:i,XPOSITION:i,YPOSITION:i,EXECUTESYNC:b,F_FILLEDFROM:i,ZPOSITION:i,PROPERTIES:s,SIZE:i,F_SIDE:i,F_SHAPE:i,F_PROTOCOL:i,COLLAPSIBLE:b,CODE:s,SORT:i,MEMO_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_CANV_CANV":"F_ROOTCANVAS:i,K_CANV1:i,K_CANV2:i,K_SEQ:u,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u,PROPERTIES:s",
+"CD_CANV_EXECUTION_LOG":"K_CANV:i,K_SEQ:u,EXECUTION_ID:u,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_CANV_FUNC":"K_CANV:i,K_FUNC:i,PROPERTIES:s,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_CANV_LOGS":"K_CANV:i,K_SEQ:u,STATUS:s,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_CNTR_CANV":"K_CNTR:i,K_CANV:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_CNTR_CNTR":"K_CNTR1:i,K_CNTR2:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_CONTROLS":"REPLICATIONID:u,F_DICTIONARY:i,K_CONTROL:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,F_ICON:i,F_RECORD_LIFESTATUS:i,F_DESTINATION_TYPE:i,LABELPOS:i,PROPERTIES:s,USE_FIELD_NAME:b,F_TODO_ENTITY:i,F_TODO_TYPE:i,F_TODO_FIELD:i,F_TITLE_FIELD:i,F_KANBAN_SUBJECT:i,F_SCREEN:i,Sort:i,F_FORMAT:i,MEMO_EN:y,MEMO_NL:y,MEMO_EN_PLAINTEXT:s,MEMO_NL_PLAINTEXT:s,MEMO_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_DATABASES":"REPLICATIONID:u,F_DICTIONARY:i,K_DATABASE:i,F_TYPE:i,NAME:s,F_KIND:i,DBTYPE:s,FILENAME:s,VERSION:s,NETWORK_KEY:s,NETWORK_SECRET:u,URL:s,LICENSENR:s,PATH:s,MEMO_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_DBAS_DBAS":"K_DBAS1:i,K_DBAS2:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_DBAS_REMOTE":"K_DBAS:i,K_SEQ:u,F_USER:i,REMOTE_USERNAME:s,CONNECTED:b,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_DBAS_TABL":"K_DBAS:i,K_TABL:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_DICO_DICO":"K_DICO1:i,K_DICO2:i,K_SEQ:u,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_DICTIONARIES":"SWversion:i,UDversion:i,REPLICATIONID:u,K_DICTIONARY:i,F_TYPE:i,NAME:s,F_KIND:i,MEMO_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,LIFEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_DICTIONARYCOMPARISONS":"K_DICTIONARYCOMPARISON:i,F_TYPE:i,NAME:s,F_KIND:i,ALIAS:s,VALUE1:s,VALUE2:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_OWNER_PROFILE:i,F_OWNER:i,F_DICTIONARY:i,LASTSTATUSDATE:d",
+"CD_DICT_DBAS":"K_DBAS:i,K_DICT:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_FIELDS":"REPLICATIONID:u,F_DICTIONARY:i,K_FIELD:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,F_ICON:i,SORT:i,F_FORMAT:i,CALCULATED_EXPRESSION:s,ALLOWCUSTOMVALUE:b,F_REFERENCE:i,F_PROPERTY:i,F_PROPERTYMODE:i,F_HYPERLINK_PKEY:i,F_HYPERLINK_ENTITY:i,FILTER_SUBTABLE:b,F_FILTER_SUBTABLE_FIELD:i,FILTER_SUBTABLE_K_SEQ:b,F_FILTER_BY_FIELD:i,SORT_DESCRIPTION:b,ALLOWCREATINGRECORDS:b,HYPERBEHAVIOR:s,FLAGS:i,STORAGESIZE:i,DEFAULT:s,MEMO_PLAINTEXT:s,MEMO_EN:y,MEMO_EN_PLAINTEXT:s,MEMO_NL:y,MEMO_NL_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_FIEL_CLUSTERSETTINGS":"K_FIEL:i,K_SEQ:u,F_LEFT_TYPE:i,F_RIGHT_TYPE:i,F_RELATIONTYPE:i,F_LEFT_STATUS:i,F_RIGHT_STATUS:i,F_RELATIONTYPEVALUE:i,CLUSTEREDMODE:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FIEL_CNTR":"K_CNTR:i,K_FIEL:i,MAIN:b,LINKREQUIRED:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,SORT:i,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_FIEL_FIEL":"K_FIEL1:i,K_FIEL2:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_FIEL_FIELDKEY":"REPLICATIONID:u,F_DICTIONARY:i,K_FIEL:i,KEYTYPE:i,K_SEQ:u,SORTORDER:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FIEL_FIELDVALUE":"REPLICATIONID:u,F_DICTIONARY:i,K_FIEL:i,K_SEQ:u,FIELDVALUE:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FIEL_KINDS":"K_FIEL:i,K_SEQ:u,F_KIND:i,F_SHOWMODE:i,LABEL:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FIEL_LINKEDITORVISIBILITY":"K_FIEL:i,K_SEQ:u,F_LEFT_TYPE:i,F_RIGHT_TYPE:i,F_LEFT_KIND:i,F_RIGHT_KIND:i,LABEL:s,F_LEFT_STATUS:i,F_RIGHT_STATUS:i,FULL_WIDTH:b,FONT_STYLES:s,FONT_COLOR:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FIEL_MATCH":"K_FIELD:i,K_SEQ:u,F_MATCH_TYPE:i,F_MATCH_MODE:i,COMPARE_VALUE:s,ZERO_SCORE:b,RELATIVE_WEIGHT:i,F_MATCH_SUBJECT:i,F_MATCH_FIELDS:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_FOLDERS":"REPLICATIONID:u,F_DICTIONARY:i,K_FOLDER:i,F_TYPE:i,NAME:s,F_KIND:i,FOLDERNAME:s,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_FORMS":"REPLICATIONID:u,F_DICTIONARY:i,K_FORM:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,VERSION:s,F_TEMPLATE:i,PROPERTIES:s,SHOWPATHRUNNER:b,MEMO_PLAINTEXT:s,MEMO_EN:y,MEMO_EN_PLAINTEXT:s,MEMO_NL:y,MEMO_NL_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_FORM_CNTR":"K_CNTR:i,K_FORM:i,K_SEQ:u,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_FORM_FORM":"K_FORM1:i,K_FORM2:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_FUNCTIONS":"K_FUNCTION:i,F_TYPE:i,NAME:s,F_KIND:i,ALIAS:s,F_BEFORE_METHOD:i,URL:s,IS_PRIVATE:b,IS_REPEATABLE:b,DEFAULTVALUE:s,TEST_VALUE:s,IS_REQUIRED:b,F_APITYPE:i,F_REQUESTTYPE:i,F_APIPARAMTYPE:i,F_APIKIND:i,F_PARAMDATATYPE:i,CODE:s,SORT:i,F_LIFESTATUS:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_OWNER_PROFILE:i,F_OWNER:i,F_DICTIONARY:i,LASTSTATUSDATE:d",
+"CD_FUNC_FUNC":"K_FUNC1:i,K_FUNC2:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_LICENSES":"K_LICENSE:i,F_TYPE:i,NAME:s,F_KIND:i,USERS_NUMBER:i,MAXROLE:i,EXPIRATIONDATE:d,LOGO_FILE_NAME:s,LOGO_FILE_DATA:y,LOGO_FILE_TYPE:s,LOGO_THUMBNAIL:y,LOGO_ANNOTATIONS:s,LOGO_ORIGINAL:y,PORTAL_USERS_NUMBER:i,GDPR_USERS_NUMBER:i,PORTAL_SECURITYWORDS:i,GDPR_SECURITYWORDS:i,PORTAL_CONCURRENT_SESSIONS:i,GDPR_CONCURRENT_SESSIONS:i,LIMITED1_USERS_NUMBER:i,LIMITED2_USERS_NUMBER:i,LIMITED3_USERS_NUMBER:i,CONNECTION_USERS_NUMBER:i,REMOTE_USERS_NUMBER:i,SBI_DESIGNER:b,MEMO_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_LIFESTATUSES":"REPLICATIONID:u,F_DICTIONARY:i,K_LIFESTATUS:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,JSON:s,SORT:i,DATE_ELAPSED:d,DEADLINE_ELAPSED:d,NO_ACTION_NODE:b,MULTIPLE_ACTIONS:b,F_NODETYPE:i,F_FOLLOWUPMODE:i,IS_AUTOCOMPLETE:b,DISPLAYSORT:i,DEFAULT_RETIRED:b,F_SUBFLOW:i,LOCKED:b,MEMO_PLAINTEXT:s,MEMO_EN:y,MEMO_EN_PLAINTEXT:s,MEMO_NL:y,MEMO_NL_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,ENABLED:b,F_LIFESTATUS:i,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_LIFE_CANV":"K_LIFE:i,K_CANV:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_LIFE_CHECKLIST":"K_LIFE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_TYPE:i,K_SEQ:u,REQUIRED:b,VALFIELD:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,SORT:i",
+"CD_LIFE_LIFE":"K_LIFE1:i,K_LIFE2:i,K_SEQ:u,MAIN:b,JSON:s,NEXTALLOWED:b,F_APPROVAL:i,NAME_EN:s,NAME_NL:s,NAME:s,TEST_CONDITION:s,F_PROCESSCARD:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_LK_APIKINDS":"K_APIKIND:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_APIPARAMTYPES":"K_APIPARAMTYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_APITYPES":"K_APITYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_APPROVALS":"K_APPROVAL:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_DATAROLES":"K_DATAROLE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_FIELDFLAGS":"REPLICATIONID:u,F_DICTIONARY:i,K_FIELDFLAG:i,NAME:s,F_LANGUAGE:i,COUNTRY:s,ENABLED:b,VALUE:i,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_LK_FOLLOWUPMODES":"K_FOLLOWUPMODE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_FONTSTYLES":"K_FONTSTYLE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_FORMATS":"REPLICATIONID:u,F_DICTIONARY:i,K_FORMAT:i,NAME:s,F_ICON:i,ENABLED:b,DATATYPE:s,FMTOPTION:s,MASK:s,SYSTEMDEF:b,SORT:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDATE:d,CHANGEDATE:d,CREATEDBY:i,CHANGEDBY:i",
+"CD_LK_ICONS":"REPLICATIONID:u,F_DICTIONARY:i,K_ICON:i,NAME:s,F_LANGUAGE:i,COUNTRY:s,ENABLED:b,FONTNAME:s,GRAPHICAL:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_LK_IMPORTMETHODS":"K_IMPORTMETHOD:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_KINDS":"REPLICATIONID:u,F_DICTIONARY:i,K_KIND:i,NAME_EN:s,NAME_NL:s,NAME:s,F_TYPE:i,ENABLED:b,SORT:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_LK_LANGUAGES":"REPLICATIONID:u,F_DICTIONARY:i,K_LANGUAGE:i,NAME:s,SHORTNAME:s,ENABLED:b,SORT:i,FLAGBASE64:s,FLAG_FILE_NAME:s,FLAG_FILE_DATA:y,FLAG_FILE_TYPE:s,FLAG_THUMBNAIL:y,FLAG_ANNOTATIONS:s,FLAG_ORIGINAL:y,CREATEDBY:i,CHANGEDBY:i,CREATEDATE:d,CHANGEDATE:d",
+"CD_LK_MATCH_CONDITIONS":"K_MATCH_CONDITION:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_MATCH_MODES":"K_MATCH_MODE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_MATCH_TYPES":"K_MATCH_TYPE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_NODETYPES":"K_NODETYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_OPERATIONTYPES":"K_OPERATIONTYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_PARAMDATATYPES":"K_PARAMDATATYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_PROPERTYMODES":"K_PROPERTYMODE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_PROTOCOLS":"K_PROTOCOL:i,NAME:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_RELATIONTYPEVALUES":"K_RELATIONTYPEVALUE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,F_TYPE:i,REVERSE_EN:s,REVERSE_NL:s,REVERSE:s,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_LK_REQUESTTYPES":"K_REQUESTTYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_SHAPES":"K_SHAPE:i,NAME:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_SHOWMODES":"K_SHOWMODE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_SIDES":"K_SIDE:i,NAME:s,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_SUBJECTAREAS":"REPLICATIONID:u,F_DICTIONARY:i,K_SUBJECTAREA:i,NAME_EN:s,NAME_NL:s,NAME:s,F_ICON:i,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_LK_TEMPLATES":"REPLICATIONID:u,F_DICTIONARY:i,K_TEMPLATE:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CHANGEDBY:i,CREATEDATE:d,CHANGEDATE:d",
+"CD_LK_TRIGGERACTIONS":"K_TRIGGERACTION:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_LK_TRIGGERSUBJECTS":"K_TRIGGERSUBJECT:i,NAME:s,ENABLED:b,SORT:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i",
+"CD_ROLES":"K_ROLE:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,ALIAS:s,SORT:i,F_LIFESTATUS:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_ROLE_LIFE":"K_ROLE:i,K_LIFE:i,MAIN:b,SORT:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_TABLES":"REPLICATIONID:u,F_DICTIONARY:i,K_TABLE:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,QUERY:s,SHORTNAME:s,ISVIEW:b,TABLETYPE:i,F_ICON:i,ENTITYCOLOR:s,F_DYNAMIC_FIELDS:s,REVERSE_PASS_SECURITY:b,ONE_PARENT:b,ONDELETE:i,CONNECTION_STRING:s,TRIGGER:s,SEQUENCE_TYPE:i,ISMERGEVIEW:b,PROPERTIES:s,HIDDEN:b,INSERTONLY:b,Sort:i,MEMO_PLAINTEXT:s,MEMO_EN:y,MEMO_EN_PLAINTEXT:s,MEMO_NL:y,MEMO_NL_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,F_SUBJECTAREA:i,LASTSTATUSDATE:d",
+"CD_TABL_FIEL":"K_FIEL:i,K_TABL:i,K_SEQ:u,MAIN:b,CLUSTEREDMODE:i,TABLETYPE:i,DEFTYPE:i,DEFVALUE:s,FLAGS:i,GRIDORDER:i,VALALLOWEDIT:b,VALFIELD:i,VALTABLE:i,VALTYPE:i,ALIASDEFINITION:s,F_FILLEDBYID:i,F_DEPENDSON:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_TABL_FORM":"K_FORM:i,K_TABL:i,MAIN:b,TABLETYPE:i,F_FIELDCOLLECTION:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_TABL_TABL":"K_TABL1:i,K_TABL2:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_TABL_TABSETTINGS":"K_TABL:i,K_SEQ:u,F_LEFT_TYPE:i,F_RIGHT_TYPE:i,F_LEFT_STATUS:i,F_RIGHT_STATUS:i,F_TABLE:i,F_LOOKUP:i,F_TARGET_TABLE:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_TRANSLATIONS":"K_TRANSLATION:i,F_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,ALIAS:s,CODE:i,SORT:i,F_LIFESTATUS:i,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,REPLICATIONID:u,F_DICTIONARY:i,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_TYPES":"REPLICATIONID:u,F_DICTIONARY:i,K_TYPE:i,NAME_EN:s,NAME_NL:s,NAME:s,F_KIND:i,DEFAULT:b,F_ICON:i,F_TABLE:i,TYPETABLE:i,F_TYPE:i,FLOWFOLDER:b,ISROOT:b,INSTANCINGMAXIMUM:i,SORT:i,MEMO_PLAINTEXT:s,MEMO_EN:y,MEMO_EN_PLAINTEXT:s,MEMO_NL:y,MEMO_NL_PLAINTEXT:s,MEMO:y,F_LIFESTATUS:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_OWNER_PROFILE:i,F_OWNER:i,LASTSTATUSDATE:d",
+"CD_TYPE_FILTERINGSETTINGS":"K_TYPE:i,K_SEQ:u,F_LEFT_TYPE:i,F_RIGHT_TYPE:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_TYPE_LIFE":"K_LIFE:i,K_TYPE:i,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+"CD_TYPE_RESTRICTIONS":"K_TYPE:i,K_SEQ:u,F_ROLE:i,RESTRICTION:i,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d",
+"CD_TYPE_TYPE":"K_TYPE1:i,K_TYPE2:i,K_SEQ:u,MAIN:b,MEMO_PLAINTEXT:s,MEMO:y,CREATEDBY:i,CREATEDATE:d,CHANGEDBY:i,CHANGEDATE:d,F_DICTIONARY:i,REPLICATIONID:u",
+};
+
+// Parse compact XSD field data into structured field arrays
+const typeMap = { u:'uuid', i:'integer', b:'boolean', d:'timestamptz', y:'bytea', s:'varchar(500)' };
+function parseXsdFields(tableName) {
+    const raw = xsdFieldData[tableName.toUpperCase()];
+    if (!raw) return null;
+    const seen = new Set();
+    return raw.split(',').filter(f => {
+        const n = f.split(':')[0]; 
+        if (seen.has(n)) return false; // deduplicate
+        seen.add(n); return true;
+    }).map(f => {
+        const [name, t] = f.split(':');
+        const n = name.toUpperCase();
+        let group = 'OH';
+        if (n.startsWith('K_') && n !== 'K_SEQ') group = 'H';
+        else if (n === 'REPLICATIONID' || n === 'F_DICTIONARY') group = 'H';
+        else if (['CREATEDBY','CREATEDATE','CHANGEDBY','CHANGEDATE','F_OWNER','F_OWNER_PROFILE','LASTSTATUSDATE','F_LIFESTATUS'].includes(n)) group = 'F';
+        else if (n.startsWith('MEMO')) group = 'OF';
+        return { name: n, group, type: typeMap[t]||'varchar(500)', pk: n.startsWith('K_')&&n!=='K_SEQ', fk: n.startsWith('F_'), req: n.startsWith('K_')&&n!=='K_SEQ' };
+    });
+}
+
 function entityFields(name) {
-    const k = 'k_' + name.toLowerCase();
+    const xsd = parseXsdFields(name);
+    if (xsd) return xsd;
+    // Fallback for non-CD tables
+    const k = 'K_' + name.toUpperCase();
     return [
         { name: k, group: "H", type: "uuid", pk: true, req: true },
-        { name: "alias", group: "H", type: "varchar(100)", req: false },
-        { name: "name", group: "OH", type: "varchar(255)", req: false },
-        { name: "memo", group: "OF", type: "text", req: false },
-        { name: "f_lifestatus", group: "F", type: "uuid", fk: true, req: true },
-        { name: "f_owner", group: "F", type: "uuid", fk: true, req: false },
-        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "createdate", group: "F", type: "timestamptz", req: true },
-        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "changedate", group: "F", type: "timestamptz", req: true },
+        { name: "NAME", group: "OH", type: "varchar(255)", req: false },
+        { name: "MEMO", group: "OF", type: "text", req: false },
+        { name: "F_LIFESTATUS", group: "F", type: "uuid", fk: true, req: true },
+        { name: "F_OWNER", group: "F", type: "uuid", fk: true },
+        { name: "CREATEDBY", group: "F", type: "integer" },
+        { name: "CREATEDATE", group: "F", type: "timestamptz" },
+        { name: "CHANGEDBY", group: "F", type: "integer" },
+        { name: "CHANGEDATE", group: "F", type: "timestamptz" },
     ];
 }
 
-// Link table fields template
-function linkFields(name1, name2) {
-    const p1 = name1.substring(0, 4).toLowerCase();
-    const p2 = name2.substring(0, 4).toLowerCase();
-    return [
-        { name: 'k_' + p1, group: "H", type: "uuid", pk: true, fk: true, ref: name1, req: true },
-        { name: 'k_' + p2, group: "H", type: "uuid", pk: true, fk: true, ref: name2, req: true },
-        { name: "k_seq", group: "H", type: "uuid", req: false },
-        { name: "f_type", group: "H", type: "uuid", fk: true, req: false },
-        { name: "main", group: "H", type: "boolean", req: false },
-        { name: "memo", group: "OF", type: "text", req: false },
-        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "createdate", group: "F", type: "timestamptz", req: true },
-        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "changedate", group: "F", type: "timestamptz", req: true },
-    ];
-}
-
-// Sub table fields template
-function subFields(parentName) {
-    const k = 'k_' + parentName.toLowerCase();
-    return [
-        { name: k, group: "H", type: "uuid", pk: true, fk: true, ref: parentName, req: true },
-        { name: "k_seq", group: "H", type: "uuid", pk: true, req: true },
-        { name: "memo", group: "OF", type: "text", req: false },
-        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "createdate", group: "F", type: "timestamptz", req: true },
-        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "changedate", group: "F", type: "timestamptz", req: true },
-    ];
-}
-
-// Lookup table fields template
 function lookupFields(name) {
-    const k = 'k_' + name.toLowerCase();
+    const xsd = parseXsdFields(name);
+    if (xsd) return xsd;
+    const k = 'K_' + name.toUpperCase();
     return [
-        { name: k, group: "H", type: "uuid", pk: true, req: true },
-        { name: "k_seq", group: "H", type: "uuid", req: false },
-        { name: "name", group: "OH", type: "varchar(255)", req: true },
-        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "createdate", group: "F", type: "timestamptz", req: true },
-        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
-        { name: "changedate", group: "F", type: "timestamptz", req: true },
+        { name: k, group: "H", type: "integer", pk: true, req: true },
+        { name: "NAME", group: "OH", type: "varchar(255)", req: true },
+        { name: "ENABLED", group: "OH", type: "boolean" },
+        { name: "SORT", group: "OH", type: "integer" },
+        { name: "CREATEDBY", group: "F", type: "integer" },
+        { name: "CREATEDATE", group: "F", type: "timestamptz" },
+        { name: "CHANGEDBY", group: "F", type: "integer" },
+        { name: "CHANGEDATE", group: "F", type: "timestamptz" },
     ];
 }
 
@@ -1805,26 +1882,66 @@ function showTablePopup(tableName) {
 }
 
 function showLinkPopup(rowName, colName, relType) {
-    const prefix1 = rowName.replace('SYS_','').replace('CD_','').replace('CD_LK_','').substring(0, 4);
-    const prefix2 = colName.replace('SYS_','').replace('CD_','').replace('CD_LK_','').substring(0, 4);
-    const linkName = prefix1 + '_' + prefix2;
-
-    let fields, typeBadge;
-    if (relType === 'nn') {
-        fields = linkFields(rowName, colName);
-        typeBadge = 'Link (N:N)';
-    } else if (relType === 'n') {
-        fields = subFields(rowName);
-        typeBadge = 'Sub (1:N)';
+    // Derive link table name from row/col
+    // CD_ tables: CD_CANVASES + CD_FUNCTIONS → CD_CANV_FUNC
+    // SYS_ tables: SYS_USERS + SYS_ROLES → USER_ROLE
+    const isCd = rowName.startsWith('CD_');
+    let prefix1, prefix2, linkTableName;
+    
+    if (isCd) {
+        prefix1 = rowName.replace('CD_','').substring(0, 4).toUpperCase();
+        prefix2 = colName.replace('CD_','').substring(0, 4).toUpperCase();
+        if (relType === 'nn') {
+            // Self-referencing: CD_TYPE_TYPE, CD_FIEL_FIEL, etc.
+            linkTableName = 'CD_' + prefix1 + '_' + prefix1;
+        } else {
+            linkTableName = 'CD_' + prefix1 + '_' + prefix2;
+        }
     } else {
-        fields = [
-            { name: 'f_' + colName.toLowerCase().replace('sys_',''), group: "H", type: "uuid", fk: true, ref: colName, req: false },
-        ];
-        typeBadge = 'Reference (FK)';
+        prefix1 = rowName.replace('SYS_','').substring(0, 4).toUpperCase();
+        prefix2 = colName.replace('SYS_','').substring(0, 4).toUpperCase();
+        linkTableName = prefix1 + '_' + prefix2;
     }
 
-    const color = '#F59E0B';
-    renderPopup(linkName, typeBadge, color, fields, { from: rowName, to: colName, type: relType });
+    // Try XSD fields first
+    let fields = parseXsdFields(linkTableName);
+    let typeBadge;
+    
+    if (fields) {
+        typeBadge = relType === 'nn' ? 'Link (N:N)' : 'Sub (1:N)';
+    } else {
+        // Fallback: generic link fields
+        if (relType === 'nn') {
+            const p = prefix1.toLowerCase();
+            fields = [
+                { name: 'K_' + p + '1', group: "H", type: "integer", pk: true, req: true },
+                { name: 'K_' + p + '2', group: "H", type: "integer", pk: true, req: true },
+                { name: "MAIN", group: "OH", type: "boolean" },
+                { name: "MEMO", group: "OF", type: "bytea" },
+                { name: "CREATEDBY", group: "F", type: "integer" },
+                { name: "CREATEDATE", group: "F", type: "timestamptz" },
+                { name: "CHANGEDBY", group: "F", type: "integer" },
+                { name: "CHANGEDATE", group: "F", type: "timestamptz" },
+            ];
+            typeBadge = 'Link (N:N)';
+        } else {
+            const p1 = prefix1.toLowerCase();
+            const p2 = prefix2.toLowerCase();
+            fields = [
+                { name: 'K_' + p1, group: "H", type: "integer", pk: true, fk: true, req: true },
+                { name: 'K_' + p2, group: "H", type: "integer", pk: true, fk: true, req: true },
+                { name: "MEMO", group: "OF", type: "bytea" },
+                { name: "CREATEDBY", group: "F", type: "integer" },
+                { name: "CREATEDATE", group: "F", type: "timestamptz" },
+                { name: "CHANGEDBY", group: "F", type: "integer" },
+                { name: "CHANGEDATE", group: "F", type: "timestamptz" },
+            ];
+            typeBadge = 'Sub (1:N)';
+        }
+    }
+
+    const color = isCd ? '#3B82F6' : '#F59E0B';
+    renderPopup(linkTableName, typeBadge, color, fields, { from: rowName, to: colName, type: relType });
 }
 
 function renderPopup(title, typeBadge, color, fields, linkInfo, tableId) {
