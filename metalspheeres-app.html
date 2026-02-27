@@ -2369,15 +2369,21 @@ function selectLookupTable(tableName) {
         }
     }
 
-    // Load data - generate sample data based on table name
-    const shortName = tableName.replace('CD_LK_','');
-    const pkCol = 'K_' + shortName.replace(/S$/,'');
+    // Derive PK column name: CD_LK_KINDS→K_KIND, CD_LK_FORMATS→K_FORMAT, CD_LK_MATCH_MODES→K_MATCH_MODE
+    const lkSuffix = tableName.replace('CD_LK_','');
+    // Remove trailing S for singular, handle special cases
+    let singular = lkSuffix;
+    if (singular.endsWith('IES')) singular = singular.slice(0,-3) + 'Y';
+    else if (singular.endsWith('SSES')) singular = singular.slice(0,-2);
+    else if (singular.endsWith('S') && !singular.endsWith('SS')) singular = singular.slice(0,-1);
+    const pkCol = 'K_' + singular;
 
     // Sample data rows
+    const prettyName = singular.charAt(0) + singular.slice(1).toLowerCase();
     const sampleData = [
         { pk: 0, name: '—', enabled: true },
-        { pk: 1, name: shortName.charAt(0) + shortName.slice(1).toLowerCase().replace(/s$/,'') + ' 1', enabled: true },
-        { pk: 2, name: shortName.charAt(0) + shortName.slice(1).toLowerCase().replace(/s$/,'') + ' 2', enabled: true },
+        { pk: 1, name: prettyName, enabled: true },
+        { pk: 2, name: prettyName + ' 2', enabled: true },
     ];
 
     let rowsHtml = '';
