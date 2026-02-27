@@ -3638,9 +3638,7 @@ async function importXmlFile(input) {
     input.value = ''; // reset for re-upload
     
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    if (!confirm('Import "' + file.name + '" (' + sizeMB + ' MB) into dictionary?\n\nExisting CD_ data will be replaced.\n\nThis may take a few minutes for large files.')) return;
-    
-    showLoading('Uploading ' + sizeMB + ' MB...');
+    showLoading('Importing ' + file.name + ' (' + sizeMB + ' MB)...');
     
     try {
         const resp = await fetch(API + '/import-xml', {
@@ -3650,22 +3648,30 @@ async function importXmlFile(input) {
         });
         
         const result = await resp.json();
-        hideLoading();
         
         if (result.success) {
-            let msg = '✓ Import complete!\n\nTables: ' + result.tablesProcessed + '\nTotal records: ' + result.totalRows + '\n\nDetails:\n';
-            for (const d of (result.details || []).slice(0, 20)) {
-                msg += d.table + ': ' + d.rows + (d.error ? ' (' + d.error + ')' : '') + '\n';
+            // Build summary for spinner
+            let details = '';
+            for (const d of (result.details || [])) {
+                if (d.rows > 0) details += d.table + ': ' + d.rows + ' records\n';
             }
-            if ((result.details || []).length > 20) msg += '... and ' + (result.details.length - 20) + ' more';
-            alert(msg);
-            renderContent();
+            const msg = '✓ Import complete — ' + result.totalRows + ' records in ' + result.tablesProcessed + ' tables';
+            document.getElementById('loadingText').textContent = msg;
+            document.querySelector('.loading-spinner').style.display = 'none';
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                hideLoading();
+                document.querySelector('.loading-spinner').style.display = '';
+                renderContent();
+            }, 3000);
         } else {
-            alert('Error: ' + result.error);
+            hideLoading();
+            document.getElementById('loadingText').textContent = 'Error: ' + result.error;
+            setTimeout(hideLoading, 3000);
         }
     } catch (err) {
-        hideLoading();
-        alert('Error: ' + err.message);
+        document.getElementById('loadingText').textContent = 'Error: ' + err.message;
+        setTimeout(hideLoading, 3000);
     }
 }
 
