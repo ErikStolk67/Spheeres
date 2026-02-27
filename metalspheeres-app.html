@@ -1410,6 +1410,25 @@ CR("CD_TABLES","CD_FIELDS","n");            // cd_tabl_fiel
 CR("CD_TABLES","CD_FORMS","n");             // cd_tabl_form
 CR("CD_TYPES","CD_LIFESTATUSES","n");       // cd_type_life
 CR("CD_TYPES","CD_TABLES","n");             // cd_type_tabl
+
+// Auto-generate reciprocal dashes for CD: if A→B is "n", B→A gets "—"
+for (const row of Object.keys(cdRelations)) {
+    for (const col of Object.keys(cdRelations[row])) {
+        if (cdRelations[row][col] === 'n' && (!cdRelations[col] || !cdRelations[col][row])) {
+            CR(col, row, "—");
+        }
+    }
+}
+
+// Auto-generate reciprocal dashes for User: if A→B is "n", B→A gets "—"
+for (const row of Object.keys(relations)) {
+    for (const col of Object.keys(relations[row])) {
+        if (relations[row][col] === 'n' && (!relations[col] || !relations[col][row])) {
+            R(col, row, "—");
+        }
+    }
+}
+
 // Lookup mappings: which CD_LK_ tables belong to which entity (for Lookup Editor tree)
 const cdLookupMap = {
     'Databases':    ['CD_LK_KINDS'],
@@ -1524,21 +1543,21 @@ function renderDbDesigner() {
 
     // Legend
     const legendItems = isDictMode ? `
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#3B82F6;"></div> nn = N:N (link table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#93C5FD;"></div> n = 1:N (sub table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#DBEAFE;"></div> — = reference</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (lookup)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (lookup)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#1D4ED8;"></div> nn = N:N (link table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#3B82F6;"></div> n = 1:N (sub table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#93C5FD;"></div> — = reference</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#64748B;"></div> nn (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> n (lookup)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> — (lookup)</div>
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#DBEAFE;border:1px solid #93C5FD;"></div> CD_ tables</div>
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> Lookup tables</div>
     ` : `
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> nn = N:N (link table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> n = 1:N (sub table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF3C7;"></div> — = reference</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> nn (user)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> n (user)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#E2E8F0;"></div> — (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#D97706;"></div> nn = N:N (link table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> n = 1:N (sub table)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> — = reference</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#64748B;"></div> nn (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> n (user)</div>
+        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> — (user)</div>
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF9C3;border:1px solid #E5E7EB;"></div> SYS_ tables</div>
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
     `;
