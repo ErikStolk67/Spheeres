@@ -4064,61 +4064,21 @@ function initDbStatistics() {
         if (e.target === pop) pop.classList.remove('open');
     });
 
-    // Static record counts from production database
-    const recordCounts = {
-        // CD Entities (71.463 total)
-        "CD_CANVASES":37571,"CD_FIELDS":16488,"CD_CONTROLS":9978,"CD_FORMS":3877,
-        "CD_TRANSLATIONS":1518,"CD_TABLES":700,"CD_TYPES":432,"CD_LIFESTATUSES":218,
-        "CD_ROLES":98,"CD_FUNCTIONS":72,"CD_DICTIONARIES":34,"CD_DATABASES":24,
-        "CD_FOLDERS":16,"CD_LICENSES":8,"CD_DICTIONARYCOMPONENTS":6,"CD_DICTIONARYCOMPARISONS":4,
-        // CD Lookups (2.786 total)
-        "CD_LK_ICONS":2552,"CD_LK_RELATIONTYPEVALUES":49,"CD_LK_FORMATS":33,
-        "CD_LK_PROTOCOLS":21,"CD_LK_TRIGGERACTIONS":16,"CD_LK_NODETYPES":12,
-        "CD_LK_SHAPES":11,"CD_LK_SIDES":8,"CD_LK_IMPORTMETHODS":7,
-        "CD_LK_APITYPES":6,"CD_LK_REQUESTTYPES":5,"CD_LK_APIPARAMTYPES":4,
-        "CD_LK_APIKINDS":3,"CD_LK_PARAMDATATYPES":3,"CD_LK_KINDS":3,
-        "CD_LK_FONTSTYLES":3,"CD_LK_FOLLOWUPMODES":3,"CD_LK_TEMPLATES":2,
-        // CD Links (99.304 total)
-        "CD_CANV_CANV":39153,"CD_TABL_FIEL":22219,"CD_FIEL_CNTR":20872,
-        "CD_FORM_CNTR":6232,"CD_FORM_FORM":3225,"CD_CNTR_CNTR":2823,
-        "CD_TYPE_TYPE":1456,"CD_TABL_FORM":1118,"CD_TYPE_LIFE":872,
-        "CD_ROLE_FUNC":432,"CD_ROLE_LIFE":218,"CD_FIEL_FIEL":198,
-        "CD_CANV_FUNC":142,"CD_CANV_TABL":98,"CD_CNTR_CANV":76,
-        "CD_DBAS_TABL":48,"CD_LIFE_CANV":32,"CD_LIFE_TABL":28,
-        "CD_FUNC_COMP":24,"CD_DICT_COMP":18,"CD_DICT_DBAS":12,
-        "CD_TYPE_TABL":8,"CD_TABL_TABL":4,"CD_TYPE_FILTERINGSETTINGS":3,
-        "CD_TYPE_RESTRICTIONS":2,"CD_FUNC_FUNC":1,
-        // CD Subtables (1.688 total)
-        "CD_FIEL$FIELDVALUE":568,"CD_CANV$LOGS":555,"CD_FIEL$KINDS":238,
-        "CD_FIEL$FIELDKEY":224,"CD_FIEL$LINKEDITORVISIBILITY":62,
-        "CD_CANV$EXECUTION_LOG":18,"CD_TABL$HOOKS":12,"CD_FUNC$PARAMS":11,
-    };
-
-    // Apply counts to all data-records elements
-    for (const [table, count] of Object.entries(recordCounts)) {
-        const els = document.querySelectorAll(`[data-records="${table}"]`);
-        els.forEach(el => {
-            el.textContent = count.toLocaleString();
-            el.style.color = count > 0 ? '#0F172A' : '#CBD5E1';
-        });
-    }
-
-    // Also try API for live counts
-    if (apiAvailable) {
-        fetch(API + '/stats/counts')
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-            if (!data) return;
-            for (const [table, count] of Object.entries(data)) {
-                const els = document.querySelectorAll(`[data-records="${table.toUpperCase()}"]`);
-                els.forEach(el => {
-                    el.textContent = count.toLocaleString();
-                    el.style.color = count > 0 ? '#0F172A' : '#CBD5E1';
-                });
-            }
-        })
-        .catch(() => {});
-    }
+    // Load live record counts from API (Neon cloud database)
+    fetch(API + '/stats/counts')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+        if (!data) return;
+        for (const [table, count] of Object.entries(data)) {
+            const els = document.querySelectorAll(`[data-records="${table.toUpperCase()}"]`);
+            els.forEach(el => {
+                el.textContent = count.toLocaleString();
+                el.style.color = count > 0 ? '#0F172A' : '#CBD5E1';
+            });
+        }
+        updateSectionTotals();
+    })
+    .catch(() => { console.log('Could not load record counts from API'); });
 
     // Update card totals
     updateSectionTotals();
