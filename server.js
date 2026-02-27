@@ -195,5 +195,21 @@ app.get('/api/raw/:table', async (req, res) => {
     }
 });
 
+// ============================================================================
+// MIGRATE ENDPOINT - Execute SQL remotely
+// ============================================================================
+
+app.post('/api/migrate', async (req, res) => {
+    const { sql, key } = req.body;
+    if (key !== 'ms2026!') return res.status(403).json({ error: 'Invalid key' });
+    if (!sql) return res.status(400).json({ error: 'No SQL provided' });
+    try {
+        const result = await pool.query(sql);
+        res.json({ success: true, rowCount: result.rowCount, rows: result.rows?.slice(0, 100) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
