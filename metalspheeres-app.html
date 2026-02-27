@@ -287,6 +287,68 @@
         }
         .dict-filter-btn:hover { background: #F1F5F9; }
         .dict-filter-btn.active { background: #3B82F6; color: #fff; border-color: #3B82F6; }
+
+        /* ============ FIELD POPUP ============ */
+        .popup-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15,23,42,0.4); z-index: 100; backdrop-filter: blur(2px);
+        }
+        .popup-overlay.open { display: flex; align-items: center; justify-content: center; }
+        .popup {
+            background: #fff; border-radius: 16px; width: 580px; max-width: 90vw;
+            max-height: 85vh; display: flex; flex-direction: column;
+            box-shadow: 0 24px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+            animation: popupIn 0.2s ease-out;
+        }
+        @keyframes popupIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .popup-header {
+            padding: 20px 24px 16px; border-bottom: 1px solid #E2E8F0;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .popup-header-left { display: flex; align-items: center; gap: 12px; }
+        .popup-header-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+        .popup-title { font-size: 18px; font-weight: 600; color: #0F172A; letter-spacing: -0.02em; }
+        .popup-subtitle { font-size: 12px; color: #94A3B8; margin-top: 2px; }
+        .popup-close {
+            width: 32px; height: 32px; border-radius: 8px; border: none;
+            background: #F1F5F9; cursor: pointer; display: flex; align-items: center;
+            justify-content: center; font-size: 18px; color: #64748B; transition: background 0.15s;
+        }
+        .popup-close:hover { background: #E2E8F0; }
+        .popup-body { padding: 16px 24px 24px; overflow-y: auto; flex: 1; }
+
+        .field-group { margin-bottom: 16px; }
+        .field-group-header {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+            padding-bottom: 6px; border-bottom: 1px solid #F1F5F9;
+        }
+        .field-group-badge {
+            padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+        .field-group-label { font-size: 12px; font-weight: 500; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.04em; }
+
+        .field-row {
+            display: grid; grid-template-columns: 1fr 90px 70px 50px;
+            padding: 5px 0; font-size: 13px; border-bottom: 1px solid #FAFBFC;
+            align-items: center;
+        }
+        .field-row:hover { background: #F8FAFC; border-radius: 4px; }
+        .field-name { color: #0F172A; font-weight: 500; padding-left: 4px; }
+        .field-name.pk { color: #D97706; }
+        .field-name.fk { color: #2563EB; }
+        .field-type { color: #64748B; font-size: 11px; font-family: monospace; }
+        .field-badge {
+            font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600;
+            text-align: center; width: fit-content;
+        }
+        .field-required { color: #DC2626; font-size: 11px; text-align: center; }
+
+        .link-info {
+            background: #F8FAFC; border-radius: 8px; padding: 12px 16px;
+            margin-bottom: 16px; display: flex; align-items: center; gap: 12px;
+        }
+        .link-info-arrow { font-size: 20px; color: #94A3B8; }
     </style>
 </head>
 <body>
@@ -331,6 +393,9 @@
         <div class="content" id="content"></div>
     </div>
 </div>
+
+<!-- Field Popup Overlay -->
+<div class="popup-overlay" id="fieldPopup"></div>
 
 <script>
 // ============================================================================
@@ -927,7 +992,7 @@ function renderDbDesigner() {
 
     for (const t of tables) {
         const bg = t.type === 'sys' ? '#FEF9C3' : '#F1F5F9';
-        colHeaders += `<th class="col-header" style="background:${bg};">${t.name}</th>`;
+        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
     // Rows
@@ -937,7 +1002,7 @@ function renderDbDesigner() {
         const rowBg = row.type === 'sys' ? '#FFFEF5' : '#FAFBFC';
 
         rows += `<tr>`;
-        rows += `<th class="row-header" style="background:${rowBg};"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
+        rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
 
         // Meta columns (Type, Sub, Screens)
         for (let m = 0; m < 3; m++) {
@@ -963,7 +1028,7 @@ function renderDbDesigner() {
                 else if (val === 'n') cellClass = isSysZone ? 'cell-n' : 'cell-n-user';
                 else if (val === '—') cellClass = isSysZone ? 'cell-dash' : 'cell-dash-user';
 
-                rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}">${val}</td>`;
+                rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" ${val ? 'style="cursor:pointer;" onclick="showLinkPopup(\'' + row.name + '\',\'' + col.name + '\',\'' + val + '\')"' : ''}>${val}</td>`;
             }
         }
         rows += `</tr>`;
@@ -1093,6 +1158,218 @@ function toggleSidebar() {
     document.getElementById("sidebar").classList.toggle("collapsed", sidebarCollapsed);
     renderSidebar();
 }
+
+// ============================================================================
+// FIELD DEFINITIONS PER TABLE (for popup)
+// Groups: H=Header, OH=Optional Header, C=Custom, OF=Optional Footer, F=Footer
+// ============================================================================
+const groupMeta = {
+    H:  { label: "Header",           color: "#8B5CF6", bg: "#8B5CF618" },
+    OH: { label: "Optional Header",  color: "#3B82F6", bg: "#3B82F618" },
+    C:  { label: "Custom Fields",    color: "#22C55E", bg: "#22C55E18" },
+    OF: { label: "Optional Footer",  color: "#F59E0B", bg: "#F59E0B18" },
+    F:  { label: "Footer",           color: "#64748B", bg: "#64748B18" },
+};
+
+// Entity fields template
+function entityFields(name) {
+    const k = 'k_' + name.toLowerCase();
+    return [
+        { name: k, group: "H", type: "uuid", pk: true, req: true },
+        { name: "alias", group: "H", type: "varchar(100)", req: false },
+        { name: "name", group: "OH", type: "varchar(255)", req: false },
+        { name: "memo", group: "OF", type: "text", req: false },
+        { name: "f_lifestatus", group: "F", type: "uuid", fk: true, req: true },
+        { name: "f_owner", group: "F", type: "uuid", fk: true, req: false },
+        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "createdate", group: "F", type: "timestamptz", req: true },
+        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "changedate", group: "F", type: "timestamptz", req: true },
+    ];
+}
+
+// Link table fields template
+function linkFields(name1, name2) {
+    const p1 = name1.substring(0, 4).toLowerCase();
+    const p2 = name2.substring(0, 4).toLowerCase();
+    return [
+        { name: 'k_' + p1, group: "H", type: "uuid", pk: true, fk: true, ref: name1, req: true },
+        { name: 'k_' + p2, group: "H", type: "uuid", pk: true, fk: true, ref: name2, req: true },
+        { name: "k_seq", group: "H", type: "uuid", req: false },
+        { name: "f_type", group: "H", type: "uuid", fk: true, req: false },
+        { name: "main", group: "H", type: "boolean", req: false },
+        { name: "memo", group: "OF", type: "text", req: false },
+        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "createdate", group: "F", type: "timestamptz", req: true },
+        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "changedate", group: "F", type: "timestamptz", req: true },
+    ];
+}
+
+// Sub table fields template
+function subFields(parentName) {
+    const k = 'k_' + parentName.toLowerCase();
+    return [
+        { name: k, group: "H", type: "uuid", pk: true, fk: true, ref: parentName, req: true },
+        { name: "k_seq", group: "H", type: "uuid", pk: true, req: true },
+        { name: "memo", group: "OF", type: "text", req: false },
+        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "createdate", group: "F", type: "timestamptz", req: true },
+        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "changedate", group: "F", type: "timestamptz", req: true },
+    ];
+}
+
+// Lookup table fields template
+function lookupFields(name) {
+    const k = 'k_' + name.toLowerCase();
+    return [
+        { name: k, group: "H", type: "uuid", pk: true, req: true },
+        { name: "k_seq", group: "H", type: "uuid", req: false },
+        { name: "name", group: "OH", type: "varchar(255)", req: true },
+        { name: "f_createdby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "createdate", group: "F", type: "timestamptz", req: true },
+        { name: "f_changedby", group: "F", type: "uuid", fk: true, req: true },
+        { name: "changedate", group: "F", type: "timestamptz", req: true },
+    ];
+}
+
+// Map table names to their table types
+const tableTypes = {};
+dbTables.forEach(t => {
+    // User tables without prefix are entities
+    tableTypes[t.name] = t.type === 'sys' ? 'sys' : 'entity';
+});
+tableTypes["STATS"] = 'lookup';
+
+// ============================================================================
+// POPUP FUNCTIONS
+// ============================================================================
+function showTablePopup(tableName) {
+    const table = dbTables.find(t => t.name === tableName);
+    if (!table) return;
+
+    const isLookup = tableTypes[tableName] === 'lookup';
+    const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
+    const color = table.type === 'sys' ? '#F59E0B' : '#64748B';
+    const typeBadge = table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity');
+
+    renderPopup(tableName, typeBadge, color, fields, null);
+}
+
+function showLinkPopup(rowName, colName, relType) {
+    const prefix1 = rowName.replace('SYS_','').substring(0, 4);
+    const prefix2 = colName.replace('SYS_','').substring(0, 4);
+    const linkName = prefix1 + '_' + prefix2;
+
+    let fields, typeBadge;
+    if (relType === 'nn') {
+        fields = linkFields(rowName, colName);
+        typeBadge = 'Link (N:N)';
+    } else if (relType === 'n') {
+        fields = subFields(rowName);
+        typeBadge = 'Sub (1:N)';
+    } else {
+        fields = [
+            { name: 'f_' + colName.toLowerCase().replace('sys_',''), group: "H", type: "uuid", fk: true, ref: colName, req: false },
+        ];
+        typeBadge = 'Reference (FK)';
+    }
+
+    const color = '#F59E0B';
+    renderPopup(linkName, typeBadge, color, fields, { from: rowName, to: colName, type: relType });
+}
+
+function renderPopup(title, typeBadge, color, fields, linkInfo) {
+    // Group fields
+    const groups = {};
+    const groupOrder = ['H', 'OH', 'C', 'OF', 'F'];
+    for (const f of fields) {
+        if (!groups[f.group]) groups[f.group] = [];
+        groups[f.group].push(f);
+    }
+
+    let bodyHtml = '';
+
+    // Link info bar
+    if (linkInfo) {
+        const typeLabel = linkInfo.type === 'nn' ? 'N : N' : linkInfo.type === 'n' ? '1 : N' : 'FK ref';
+        bodyHtml += '<div class="link-info">' +
+            '<span style="font-weight:600;color:#0F172A;">' + linkInfo.from + '</span>' +
+            '<span class="link-info-arrow">&harr;</span>' +
+            '<span style="font-weight:600;color:#0F172A;">' + linkInfo.to + '</span>' +
+            '<span style="margin-left:auto;padding:2px 10px;border-radius:4px;font-size:11px;font-weight:600;background:' + color + '18;color:' + color + ';">' + typeLabel + '</span>' +
+        '</div>';
+    }
+
+    // Field column header
+    bodyHtml += '<div class="field-row" style="font-size:11px;font-weight:600;color:#94A3B8;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #E2E8F0;padding-bottom:6px;margin-bottom:4px;">' +
+        '<span style="padding-left:4px;">Field</span><span>Data Type</span><span>Badge</span><span style="text-align:center;">Req</span></div>';
+
+    // Render groups
+    for (const g of groupOrder) {
+        if (!groups[g]) {
+            if (g === 'C') {
+                // Show empty custom fields placeholder
+                bodyHtml += '<div class="field-group">' +
+                    '<div class="field-group-header">' +
+                        '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
+                        '<span class="field-group-label">' + groupMeta[g].label + '</span>' +
+                    '</div>' +
+                    '<div style="padding:8px 4px;font-size:12px;color:#CBD5E1;font-style:italic;">No custom fields defined</div>' +
+                '</div>';
+            }
+            continue;
+        }
+        bodyHtml += '<div class="field-group">' +
+            '<div class="field-group-header">' +
+                '<span class="field-group-badge" style="background:' + groupMeta[g].bg + ';color:' + groupMeta[g].color + ';">' + g + '</span>' +
+                '<span class="field-group-label">' + groupMeta[g].label + '</span>' +
+            '</div>';
+
+        for (const f of groups[g]) {
+            let nameClass = 'field-name';
+            let badge = '';
+            if (f.pk) { nameClass += ' pk'; badge = '<span class="field-badge" style="background:#FBBF2418;color:#D97706;">PK</span>'; }
+            else if (f.fk) { nameClass += ' fk'; badge = '<span class="field-badge" style="background:#3B82F618;color:#2563EB;">FK</span>'; }
+
+            bodyHtml += '<div class="field-row">' +
+                '<span class="' + nameClass + '">' + f.name + (f.ref ? ' <span style="font-size:10px;color:#94A3B8;">&rarr; ' + f.ref + '</span>' : '') + '</span>' +
+                '<span class="field-type">' + f.type + '</span>' +
+                '<span>' + badge + '</span>' +
+                '<span class="field-required">' + (f.req ? '*' : '') + '</span>' +
+            '</div>';
+        }
+        bodyHtml += '</div>';
+    }
+
+    const popup = document.getElementById('fieldPopup');
+    popup.innerHTML = '<div class="popup">' +
+        '<div class="popup-header">' +
+            '<div class="popup-header-left">' +
+                '<div class="popup-header-icon" style="background:' + color + '18;color:' + color + ';">' + title.substring(0,2) + '</div>' +
+                '<div><div class="popup-title">' + title + '</div>' +
+                '<div class="popup-subtitle">' + typeBadge + ' &middot; ' + fields.length + ' fields</div></div>' +
+            '</div>' +
+            '<button class="popup-close" onclick="closePopup()">&times;</button>' +
+        '</div>' +
+        '<div class="popup-body">' + bodyHtml + '</div>' +
+    '</div>';
+    popup.classList.add('open');
+}
+
+function closePopup() {
+    document.getElementById('fieldPopup').classList.remove('open');
+}
+
+// Close on overlay click
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'fieldPopup') closePopup();
+});
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closePopup();
+});
 
 // ============================================================================
 // INIT
