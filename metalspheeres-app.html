@@ -1189,93 +1189,163 @@ R("ACTIONS","AGENDA","n");
 R("ACTIONS","DOCUMENTS","n");
 
 // ============================================================================
-// DICTIONARY (CD_) tables for blue matrix
+// DICTIONARY (CD_) tables for blue matrix - full set from XSD
 // ============================================================================
-const cdTables = [
-    { name: "CD_DICTIONARIES", type: "cd", icon: "Di", cols: [0,"",""] },
-    { name: "CD_DATABASES",    type: "cd", icon: "Db", cols: [0,"",""] },
-    { name: "CD_TABLES",       type: "cd", icon: "Tb", cols: [0,9,""] },
-    { name: "CD_FIELDS",       type: "cd", icon: "Fl", cols: [0,"",""] },
-    { name: "CD_CONTROLS",     type: "cd", icon: "Ct", cols: [0,"",""] },
-    { name: "CD_TYPES",        type: "cd", icon: "Ty", cols: [0,"",""] },
-    { name: "CD_LIFESTATUSES", type: "cd", icon: "Ls", cols: [0,"",""] },
-    { name: "CD_FORMS",        type: "cd", icon: "Fm", cols: [0,"",""] },
-    { name: "CD_ROLES",        type: "cd", icon: "Rl", cols: [0,"",""] },
-    { name: "CD_FOLDERS",      type: "cd", icon: "Fo", cols: [0,"",""] },
-    { name: "CD_FUNCTIONS",    type: "cd", icon: "Fn", cols: [0,"",""] },
-    { name: "CD_CANVASES",     type: "cd", icon: "Cv", cols: [0,"",""] },
-    { name: "CD_LICENSES",     type: "cd", icon: "Li", cols: [0,"",""] },
-    { name: "CD_TRANSLATIONS", type: "cd", icon: "Tr", cols: [0,"",""] },
-    // Lookup tables
-    { name: "CD_LK_FORMATS",   type: "lk", icon: "Lf", cols: ["","",""] },
-    { name: "CD_LK_ICONS",     type: "lk", icon: "Li", cols: ["","",""] },
-    { name: "CD_LK_KINDS",     type: "lk", icon: "Lk", cols: ["","",""] },
-    { name: "CD_LK_LANGUAGES", type: "lk", icon: "Ll", cols: ["","",""] },
-    { name: "CD_LK_FIELDFLAGS",type: "lk", icon: "Lf", cols: ["","",""] },
-    { name: "CD_LK_TEMPLATES", type: "lk", icon: "Lt", cols: ["","",""] },
+
+// Main CD_ tables (entities)
+const cdMainTables = [
+    { name: "CD_DICTIONARIES",           type: "cd", icon: "Di" },
+    { name: "CD_DATABASES",              type: "cd", icon: "Db" },
+    { name: "CD_TABLES",                 type: "cd", icon: "Tb" },
+    { name: "CD_FIELDS",                 type: "cd", icon: "Fl" },
+    { name: "CD_CONTROLS",              type: "cd", icon: "Ct" },
+    { name: "CD_TYPES",                  type: "cd", icon: "Ty" },
+    { name: "CD_LIFESTATUSES",           type: "cd", icon: "Ls" },
+    { name: "CD_FORMS",                  type: "cd", icon: "Fm" },
+    { name: "CD_ROLES",                  type: "cd", icon: "Rl" },
+    { name: "CD_FOLDERS",                type: "cd", icon: "Fo" },
+    { name: "CD_FUNCTIONS",              type: "cd", icon: "Fn" },
+    { name: "CD_CANVASES",              type: "cd", icon: "Cv" },
+    { name: "CD_LICENSES",              type: "cd", icon: "Li" },
+    { name: "CD_TRANSLATIONS",           type: "cd", icon: "Tr" },
+    { name: "CD_DICTIONARYCOMPONENTS",   type: "cd", icon: "Dc" },
+    { name: "CD_DICTIONARYCOMPARISONS",  type: "cd", icon: "Dp" },
+    // Sub-entity tables (children of main tables but have own records)
+    { name: "CD_FIEL_MATCH",             type: "sub", icon: "Fm" },
+    { name: "CD_FIEL_CLUSTERSETTINGS",   type: "sub", icon: "Fc" },
+    { name: "CD_FIEL_FIELDKEY",          type: "sub", icon: "Fk" },
+    { name: "CD_FIEL_FIELDVALUE",        type: "sub", icon: "Fv" },
+    { name: "CD_FIEL_LINKEDITORVISIBILITY", type: "sub", icon: "Fl" },
+    { name: "CD_LIFE_CHECKLIST",         type: "sub", icon: "Lc" },
+    { name: "CD_CANV_EXECUTION_LOG",     type: "sub", icon: "Ce" },
+    { name: "CD_CANV_LOGS",             type: "sub", icon: "Cl" },
+    { name: "CD_DBAS_REMOTE",           type: "sub", icon: "Dr" },
+    { name: "CD_TABL_TABSETTINGS",       type: "sub", icon: "Ts" },
+    { name: "CD_TYPE_FILTERINGSETTINGS", type: "sub", icon: "Tf" },
+    { name: "CD_TYPE_RESTRICTIONS",      type: "sub", icon: "Tr" },
 ];
 
-// CD relations
+// Lookup tables
+const cdLookupTables = [
+    { name: "CD_LK_FORMATS",            type: "lk", icon: "Lf" },
+    { name: "CD_LK_ICONS",              type: "lk", icon: "Li" },
+    { name: "CD_LK_KINDS",              type: "lk", icon: "Lk" },
+    { name: "CD_LK_LANGUAGES",          type: "lk", icon: "Ll" },
+    { name: "CD_LK_FIELDFLAGS",         type: "lk", icon: "Lf" },
+    { name: "CD_LK_TEMPLATES",          type: "lk", icon: "Lt" },
+    { name: "CD_LK_APIKINDS",           type: "lk", icon: "La" },
+    { name: "CD_LK_APIPARAMTYPES",      type: "lk", icon: "Lp" },
+    { name: "CD_LK_APITYPES",           type: "lk", icon: "La" },
+    { name: "CD_LK_APPROVALS",          type: "lk", icon: "La" },
+    { name: "CD_LK_DATAROLES",          type: "lk", icon: "Ld" },
+    { name: "CD_LK_FOLLOWUPMODES",      type: "lk", icon: "Lf" },
+    { name: "CD_LK_FONTSTYLES",         type: "lk", icon: "Lf" },
+    { name: "CD_LK_IMPORTMETHODS",      type: "lk", icon: "Li" },
+    { name: "CD_LK_MATCH_CONDITIONS",   type: "lk", icon: "Lm" },
+    { name: "CD_LK_MATCH_MODES",        type: "lk", icon: "Lm" },
+    { name: "CD_LK_MATCH_TYPES",        type: "lk", icon: "Lm" },
+    { name: "CD_LK_NODETYPES",          type: "lk", icon: "Ln" },
+    { name: "CD_LK_OPERATIONTYPES",     type: "lk", icon: "Lo" },
+    { name: "CD_LK_PARAMDATATYPES",     type: "lk", icon: "Lp" },
+    { name: "CD_LK_PROPERTYMODES",      type: "lk", icon: "Lp" },
+    { name: "CD_LK_PROTOCOLS",          type: "lk", icon: "Lp" },
+    { name: "CD_LK_RELATIONTYPEVALUES", type: "lk", icon: "Lr" },
+    { name: "CD_LK_REQUESTTYPES",       type: "lk", icon: "Lr" },
+    { name: "CD_LK_SHAPES",             type: "lk", icon: "Ls" },
+    { name: "CD_LK_SHOWMODES",          type: "lk", icon: "Ls" },
+    { name: "CD_LK_SIDES",              type: "lk", icon: "Ls" },
+    { name: "CD_LK_SUBJECTAREAS",       type: "lk", icon: "Ls" },
+    { name: "CD_LK_TRIGGERACTIONS",      type: "lk", icon: "Lt" },
+    { name: "CD_LK_TRIGGERSUBJECTS",     type: "lk", icon: "Lt" },
+];
+
+// Combine all CD tables (add cols property)
+const cdTables = [...cdMainTables, ...cdLookupTables].map(t => ({...t, cols: ["","",""]}));
+
+// CD relations - derived from link table names
 const cdRelations = {};
 function CR(row, col, val) {
     if (!cdRelations[row]) cdRelations[row] = {};
     cdRelations[row][col] = val;
 }
 
-// CD_DICTIONARIES
-CR("CD_DICTIONARIES","CD_DATABASES","n");
-CR("CD_DICTIONARIES","CD_TABLES","n");
+// nn relations (same prefix twice = link table between self)
+CR("CD_CANVASES","CD_CANVASES","nn");       // cd_canv_canv
+CR("CD_CONTROLS","CD_CONTROLS","nn");       // cd_cntr_cntr
+CR("CD_DATABASES","CD_DATABASES","nn");     // cd_dbas_dbas
+CR("CD_DICTIONARIES","CD_DICTIONARIES","nn"); // cd_dico_dico
+CR("CD_FIELDS","CD_FIELDS","nn");           // cd_fiel_fiel
+CR("CD_FORMS","CD_FORMS","nn");             // cd_form_form
+CR("CD_FUNCTIONS","CD_FUNCTIONS","nn");     // cd_func_func
+CR("CD_LIFESTATUSES","CD_LIFESTATUSES","nn"); // cd_life_life
+CR("CD_TABLES","CD_TABLES","nn");           // cd_tabl_tabl
+CR("CD_TYPES","CD_TYPES","nn");             // cd_type_type
 
-// CD_DATABASES
-CR("CD_DATABASES","CD_TABLES","nn");
+// n relations (different prefixes = parent has child)
+CR("CD_CANVASES","CD_FUNCTIONS","n");       // cd_canv_func
+CR("CD_CANVASES","CD_CANV_LOGS","n");       // cd_canv_logs
+CR("CD_CANVASES","CD_TABLES","n");          // cd_canv_tabl
+CR("CD_CONTROLS","CD_CANVASES","n");        // cd_cntr_canv
+CR("CD_DATABASES","CD_DBAS_REMOTE","n");    // cd_dbas_remote
+CR("CD_DATABASES","CD_TABLES","n");         // cd_dbas_tabl
+CR("CD_DICTIONARIES","CD_DICTIONARYCOMPONENTS","n"); // cd_dict_comp
+CR("CD_DICTIONARIES","CD_DATABASES","n");   // cd_dict_data + cd_dict_dbas
+CR("CD_FIELDS","CD_CONTROLS","n");          // cd_fiel_cntr + cd_fiel_cont
+CR("CD_FIELDS","CD_LK_KINDS","—");          // cd_fiel_kinds (ref to lookup)
+CR("CD_FIELDS","CD_FIEL_MATCH","n");        // cd_fiel_match
+CR("CD_FIELDS","CD_FIEL_CLUSTERSETTINGS","n");
+CR("CD_FIELDS","CD_FIEL_FIELDKEY","n");
+CR("CD_FIELDS","CD_FIEL_FIELDVALUE","n");
+CR("CD_FIELDS","CD_FIEL_LINKEDITORVISIBILITY","n");
+CR("CD_FORMS","CD_CONTROLS","n");           // cd_form_cntr + cd_form_cont
+CR("CD_FUNCTIONS","CD_DICTIONARYCOMPONENTS","n"); // cd_func_comp
+CR("CD_LIFESTATUSES","CD_CANVASES","n");    // cd_life_canv
+CR("CD_LIFESTATUSES","CD_TABLES","n");      // cd_life_tabl
+CR("CD_LIFESTATUSES","CD_LIFE_CHECKLIST","n");
+CR("CD_ROLES","CD_FUNCTIONS","n");          // cd_role_func
+CR("CD_ROLES","CD_LIFESTATUSES","n");       // cd_role_life
+CR("CD_TABLES","CD_FIELDS","n");            // cd_tabl_fiel
+CR("CD_TABLES","CD_FORMS","n");             // cd_tabl_form
+CR("CD_TABLES","CD_TABL_TABSETTINGS","n");
+CR("CD_TYPES","CD_LIFESTATUSES","n");       // cd_type_life
+CR("CD_TYPES","CD_TABLES","n");             // cd_type_tabl
+CR("CD_TYPES","CD_TYPE_FILTERINGSETTINGS","n");
+CR("CD_TYPES","CD_TYPE_RESTRICTIONS","n");
+CR("CD_CANVASES","CD_CANV_EXECUTION_LOG","n");
 
-// CD_TABLES
-CR("CD_TABLES","CD_FIELDS","n");
-CR("CD_TABLES","CD_TYPES","n");
-CR("CD_TABLES","CD_FORMS","n");
-CR("CD_TABLES","CD_LIFESTATUSES","n");
-CR("CD_TABLES","CD_ROLES","n");
-CR("CD_TABLES","CD_FUNCTIONS","n");
-CR("CD_TABLES","CD_CANVASES","n");
-
-// CD_FIELDS
-CR("CD_FIELDS","CD_CONTROLS","n");
-CR("CD_FIELDS","CD_LK_FORMATS","—");
-CR("CD_FIELDS","CD_LK_FIELDFLAGS","—");
-CR("CD_FIELDS","CD_LK_KINDS","—");
-
-// CD_CONTROLS
+// Reference relations (— = FK to lookup)
 CR("CD_CONTROLS","CD_LK_FORMATS","—");
 CR("CD_CONTROLS","CD_LK_ICONS","—");
-CR("CD_CONTROLS","CD_CANVASES","nn");
-
-// CD_TYPES
-CR("CD_TYPES","CD_TYPES","nn");
-CR("CD_TYPES","CD_LIFESTATUSES","nn");
 CR("CD_TYPES","CD_LK_KINDS","—");
 CR("CD_TYPES","CD_LK_ICONS","—");
-
-// CD_LIFESTATUSES
-CR("CD_LIFESTATUSES","CD_LIFESTATUSES","nn");
-CR("CD_LIFESTATUSES","CD_CANVASES","nn");
-
-// CD_FORMS
-CR("CD_FORMS","CD_CONTROLS","nn");
-CR("CD_FORMS","CD_FORMS","nn");
-CR("CD_FORMS","CD_LK_TEMPLATES","—");
-
-// CD_ROLES
-CR("CD_ROLES","CD_LIFESTATUSES","nn");
-
-// CD_FUNCTIONS
-CR("CD_FUNCTIONS","CD_FUNCTIONS","nn");
-
-// CD_CANVASES
-CR("CD_CANVASES","CD_FUNCTIONS","nn");
-CR("CD_CANVASES","CD_CANVASES","nn");
-
-// CD_TRANSLATIONS
 CR("CD_TRANSLATIONS","CD_LK_LANGUAGES","—");
+CR("CD_LIFESTATUSES","CD_LK_NODETYPES","—");
+CR("CD_LIFESTATUSES","CD_LK_FOLLOWUPMODES","—");
+CR("CD_CANVASES","CD_LK_TRIGGERACTIONS","—");
+CR("CD_CANVASES","CD_LK_TRIGGERSUBJECTS","—");
+CR("CD_CANVASES","CD_LK_SHAPES","—");
+CR("CD_CANVASES","CD_LK_SIDES","—");
+CR("CD_CANVASES","CD_LK_PROTOCOLS","—");
+CR("CD_CANVASES","CD_LK_IMPORTMETHODS","—");
+CR("CD_CANVASES","CD_LK_APITYPES","—");
+CR("CD_CANVASES","CD_LK_REQUESTTYPES","—");
+CR("CD_CANVASES","CD_LK_APIPARAMTYPES","—");
+CR("CD_CANVASES","CD_LK_APIKINDS","—");
+CR("CD_FUNCTIONS","CD_LK_APITYPES","—");
+CR("CD_FUNCTIONS","CD_LK_REQUESTTYPES","—");
+CR("CD_FUNCTIONS","CD_LK_APIPARAMTYPES","—");
+CR("CD_FUNCTIONS","CD_LK_APIKINDS","—");
+CR("CD_FUNCTIONS","CD_LK_PARAMDATATYPES","—");
+CR("CD_FIELDS","CD_LK_FORMATS","—");
+CR("CD_FIELDS","CD_LK_FIELDFLAGS","—");
+CR("CD_FIELDS","CD_LK_PROPERTYMODES","—");
+CR("CD_FIEL_MATCH","CD_LK_MATCH_CONDITIONS","—");
+CR("CD_FIEL_MATCH","CD_LK_MATCH_MODES","—");
+CR("CD_FIEL_MATCH","CD_LK_MATCH_TYPES","—");
+CR("CD_FORMS","CD_LK_TEMPLATES","—");
+CR("CD_TABLES","CD_LK_SUBJECTAREAS","—");
+CR("CD_TABLES","CD_LK_RELATIONTYPEVALUES","—");
+CR("CD_LIFESTATUSES","CD_LK_FONTSTYLES","—");
 
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
@@ -1295,8 +1365,9 @@ function renderDbDesigner() {
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
 
     for (const t of tables) {
-        const isMain = isDictMode ? t.type === 'cd' : t.type === 'sys';
-        const bg = isMain ? mainBg : secBg;
+        const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
+        const isSub = t.type === 'sub';
+        const bg = isMain ? mainBg : (isSub ? '#E0F2FE' : secBg);
         colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1304,8 +1375,9 @@ function renderDbDesigner() {
     let rows = '';
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
-        const isMainRow = isDictMode ? row.type === 'cd' : row.type === 'sys';
-        const rowBg = isMainRow ? mainRowBg : secRowBg;
+        const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
+        const isSubRow = row.type === 'sub';
+        const rowBg = isMainRow ? mainRowBg : (isSubRow ? '#F0F9FF' : secRowBg);
 
         rows += `<tr>`;
         rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon">${row.icon}</span>${row.name}</th>`;
@@ -1329,8 +1401,8 @@ function renderDbDesigner() {
                 rows += `<td class="cell-self"></td>`;
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
-                const isMainR = isDictMode ? row.type === 'cd' : row.type === 'sys';
-                const isMainC = isDictMode ? col.type === 'cd' : col.type === 'sys';
+                const isMainR = isDictMode ? (row.type === 'cd' || row.type === 'sub') : row.type === 'sys';
+                const isMainC = isDictMode ? (col.type === 'cd' || col.type === 'sub') : col.type === 'sys';
                 const isMainZone = isMainR && isMainC;
 
                 let cellClass = 'cell-empty';
@@ -1578,6 +1650,10 @@ dbTables.forEach(t => {
     tableTypes[t.name] = t.type === 'sys' ? 'sys' : 'entity';
 });
 tableTypes["STATS"] = 'lookup';
+// Add CD_ tables to tableTypes
+cdTables.forEach(t => {
+    tableTypes[t.name] = t.type === 'lk' ? 'lookup' : 'entity';
+});
 
 // ============================================================================
 // CUSTOM FIELDS STORAGE (in-memory per table)
@@ -1636,12 +1712,16 @@ loadTableMap();
 // POPUP FUNCTIONS
 // ============================================================================
 function showTablePopup(tableName) {
-    const table = dbTables.find(t => t.name === tableName);
+    // Find in both user and CD tables
+    const table = dbTables.find(t => t.name === tableName) || cdTables.find(t => t.name === tableName);
     if (!table) return;
 
     const isLookup = tableTypes[tableName] === 'lookup';
-    const color = table.type === 'sys' ? '#F59E0B' : '#64748B';
-    const typeBadge = table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity');
+    const isCd = table.type === 'cd' || table.type === 'sub';
+    const isLk = table.type === 'lk';
+    const color = isCd ? '#3B82F6' : (isLk ? '#64748B' : (table.type === 'sys' ? '#F59E0B' : '#64748B'));
+    const typeBadge = isCd ? 'Dictionary' : (isLk ? 'Lookup' : (table.type === 'sys' ? 'System' : (isLookup ? 'Lookup' : 'Entity')));
+    const isSub = table.type === 'sub';
 
     // Try to find table ID for API lookup
     const tableId = tableMap[tableName] || tableMap[tableName.charAt(0).toUpperCase() + tableName.slice(1).toLowerCase()];
@@ -1661,21 +1741,19 @@ function showTablePopup(tableName) {
                 }));
                 renderPopup(tableName, typeBadge, color, fields, null, tableId);
             } else {
-                // Fallback to template
-                const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
+                const fields = isLookup || isLk ? lookupFields(tableName) : entityFields(tableName);
                 renderPopup(tableName, typeBadge, color, fields, null, tableId);
             }
         });
     } else {
-        // No API - use templates
-        const fields = isLookup ? lookupFields(tableName) : entityFields(tableName);
+        const fields = isLookup || isLk ? lookupFields(tableName) : entityFields(tableName);
         renderPopup(tableName, typeBadge, color, fields, null, null);
     }
 }
 
 function showLinkPopup(rowName, colName, relType) {
-    const prefix1 = rowName.replace('SYS_','').substring(0, 4);
-    const prefix2 = colName.replace('SYS_','').substring(0, 4);
+    const prefix1 = rowName.replace('SYS_','').replace('CD_','').replace('CD_LK_','').substring(0, 4);
+    const prefix2 = colName.replace('SYS_','').replace('CD_','').replace('CD_LK_','').substring(0, 4);
     const linkName = prefix1 + '_' + prefix2;
 
     let fields, typeBadge;
