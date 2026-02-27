@@ -431,7 +431,7 @@
         .fl-toggle { color: #CBD5E1; font-size: 10px; margin-right: 4px; }
 
         /* ============ TYPES EDITOR ============ */
-        .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 10px; display: flex; flex-direction: column; }
+        .te-popup { width: 900px; max-width: 95vw; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
         .te-title { font-size: 14px; color: #64748B; padding: 10px 16px; border-bottom: 1px solid #F1F5F9; }
         .te-title strong { color: #0F172A; }
         .te-toolbar {
@@ -1176,31 +1176,31 @@ const dbTables = [
     // SYS tables (yellow)
     { name: "SYS_LOGS",        type: "sys", icon: "scroll-text", cols: [4,0,2] },
     { name: "SYS_GLOBALS",     type: "sys", icon: "globe", cols: [9,0,3] },
-    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: [0,0,0] },
+    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: [2,0,0] },
     { name: "SYS_OBJECTS",     type: "sys", icon: "box", cols: [2,0,0] },
     { name: "SYS_QUEUES",      type: "sys", icon: "list-ordered", cols: [11,0,2] },
-    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: [0,0,0] },
-    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: [0,0,0] },
-    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: [0,0,0] },
+    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: [3,0,0] },
+    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: [2,0,0] },
+    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: [1,0,0] },
     { name: "SYS_THINGS",      type: "sys", icon: "package", cols: [1,0,2] },
     { name: "SYS_THESAURI",    type: "sys", icon: "book-open", cols: [12,0,3] },
     { name: "SYS_TRANSPORTS",  type: "sys", icon: "truck", cols: [2,0,1] },
     { name: "SYS_USERS",       type: "sys", icon: "users", cols: [6,0,3] },
     { name: "SYS_COMMANDS",    type: "sys", icon: "terminal", cols: [9,0,2] },
-    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: [0,0,3] },
+    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: [4,0,3] },
     { name: "SYS_PLANNING",    type: "sys", icon: "calendar", cols: [7,0,3] },
-    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: [0,0,1] },
-    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: [0,0,0] },
+    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: [3,0,1] },
+    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: [1,0,0] },
     // User tables (grey)
     { name: "ACTIONS",         type: "user", icon: "zap", cols: [3,0,4] },
-    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: [0,0,0] },
-    { name: "CONTACTS",        type: "user", icon: "user", cols: [0,0,0] },
-    { name: "COMPANIES",       type: "user", icon: "building-2", cols: [0,0,0] },
-    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: [0,0,0] },
-    { name: "CASES",           type: "user", icon: "briefcase", cols: [0,0,0] },
-    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: [0,0,0] },
-    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: [0,0,0] },
-    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: [0,0,0] },
+    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: [2,0,0] },
+    { name: "CONTACTS",        type: "user", icon: "user", cols: [5,0,2] },
+    { name: "COMPANIES",       type: "user", icon: "building-2", cols: [4,0,2] },
+    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: [6,0,3] },
+    { name: "CASES",           type: "user", icon: "briefcase", cols: [8,0,3] },
+    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: [5,0,2] },
+    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: [3,0,1] },
+    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: [7,0,2] },
 ];
 
 // Set sub counts from userSubTables
@@ -1353,9 +1353,17 @@ const cdSubTables = {
 };
 
 // Combine main CD tables for matrix (NO sub, NO lookup)
+const cdTypeCount = {
+    "CD_DICTIONARIES":2,"CD_DATABASES":3,"CD_TABLES":5,"CD_FIELDS":4,"CD_CONTROLS":4,
+    "CD_TYPES":3,"CD_LIFESTATUSES":4,"CD_FORMS":4,"CD_ROLES":3,"CD_FOLDERS":2,
+    "CD_FUNCTIONS":3,"CD_CANVASES":3,"CD_LICENSES":3,"CD_TRANSLATIONS":4,
+    "CD_DICTIONARYCOMPONENTS":2,"CD_DICTIONARYCOMPARISONS":2,
+};
 const cdTables = cdMainTables.map(t => {
     const subs = cdSubTables[t.name] || [];
-    return {...t, cols: ["", subs.length || "", ""]};
+    const typeC = cdTypeCount[t.name] || 0;
+    const subC = subs.length || 0;
+    return {...t, cols: [typeC || "—", subC || "—", "—"]};
 });
 
 // CD relations - derived from link table names
@@ -1449,14 +1457,14 @@ function renderDbDesigner() {
         // Meta columns (Type, Sub, Screens)
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
+            const isNum = typeof v === 'number' && v > 0;
             if (m === 0) {
                 // Type column - always clickable
-                const display = v ? v : '—';
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${display}</td>`;
-            } else if (m === 1 && v && v !== 0) {
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;text-decoration:underline;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '—'}</td>`;
+            } else if (m === 1 && isNum) {
                 // Sub column - clickable with dropdown when subs exist
                 rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;text-decoration:underline;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
-            } else if (m === 2 && v && v !== 0) {
+            } else if (m === 2 && isNum) {
                 // Screens column - show count
                 rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v}</td>`;
             } else {
@@ -2832,15 +2840,70 @@ function openTypesEditor(tableName) {
             renderTypesEditor();
         })
         .catch(() => {
-            typesEditorState.types = [];
-            typesEditorState.selectedId = null;
-            renderTypesEditor();
+            loadSampleTypes(tableName);
         });
     } else {
-        typesEditorState.types = [];
-        typesEditorState.selectedId = null;
-        renderTypesEditor();
+        loadSampleTypes(tableName);
     }
+}
+
+function loadSampleTypes(tableName) {
+    // Sample types per table for demo
+    const sampleTypes = {
+        "SYS_USERS": ["Administrator","User","Guest","Portal","API","Service"],
+        "SYS_LOGS": ["Error","Warning","Info","Debug"],
+        "SYS_GLOBALS": ["Setting","Counter","Flag","Config","Parameter","Cache","Template","Registry","Variable"],
+        "SYS_LOCKS": ["Record","Table"],
+        "SYS_OBJECTS": ["File","Image"],
+        "SYS_QUEUES": ["Email","Notification","Export","Import","Sync","Process","Report","Webhook","Scheduled","Batch","Archive"],
+        "SYS_RIGHTS": ["Read","Write","Admin"],
+        "SYS_SECURITY": ["Login","Token"],
+        "SYS_SESSIONS": ["Active"],
+        "SYS_THINGS": ["Item"],
+        "SYS_THESAURI": ["Category","Tag","Keyword","Subject","Domain","Concept","Term","Abbreviation","Synonym","Antonym","Broader","Narrower"],
+        "SYS_TRANSPORTS": ["Export","Import"],
+        "SYS_COMMANDS": ["Query","Action","Script","Trigger","Batch","Macro","Schedule","Plugin","Hook"],
+        "SYS_COMPETENCES": ["Skill","Certificate","Training","Assessment"],
+        "SYS_PLANNING": ["Task","Milestone","Phase","Sprint","Iteration","Meeting","Deadline"],
+        "SYS_HOOK": ["Before","After","Instead"],
+        "SYS_HISTORY": ["Change"],
+        "ACTIONS": ["Task","Call","Meeting"],
+        "STATS": ["Counter","Metric"],
+        "CONTACTS": ["Customer","Supplier","Partner","Employee","Lead"],
+        "COMPANIES": ["Customer","Supplier","Partner","Prospect"],
+        "PROJECTS": ["Internal","External","Development","Research","Maintenance","Support"],
+        "CASES": ["Bug","Feature","Support","Incident","Change","Problem","Request","Enhancement"],
+        "OPPORTUNITIES": ["New","Qualified","Proposal","Negotiation","Closed"],
+        "AGENDA": ["Meeting","Task","Reminder"],
+        "DOCUMENTS": ["Contract","Invoice","Quote","Report","Spec","Manual","Template"],
+        "CD_DICTIONARIES": ["Master","Slave"],
+        "CD_DATABASES": ["Local","Remote","Cloud"],
+        "CD_TABLES": ["Entity","Link","Sub","Lookup","View"],
+        "CD_FIELDS": ["Data","Relation","Calculated","Virtual"],
+        "CD_CONTROLS": ["Input","Display","Action","Container"],
+        "CD_TYPES": ["Entity","Process","Document"],
+        "CD_LIFESTATUSES": ["Active","Inactive","Draft","Archived"],
+        "CD_FORMS": ["Default","Custom","Print","Mobile"],
+        "CD_ROLES": ["Admin","User","Guest"],
+        "CD_FOLDERS": ["Root","Sub"],
+        "CD_FUNCTIONS": ["API","Canvas","Trigger"],
+        "CD_CANVASES": ["Process","Integration","Automation"],
+        "CD_LICENSES": ["Standard","Professional","Enterprise"],
+        "CD_TRANSLATIONS": ["EN","NL","DE","FR"],
+        "CD_DICTIONARYCOMPONENTS": ["Core","Extension"],
+        "CD_DICTIONARYCOMPARISONS": ["Schema","Data"],
+    };
+    
+    const names = sampleTypes[tableName] || ["Default"];
+    typesEditorState.types = names.map((n, i) => ({
+        k_type: 'sample_' + i,
+        name: n,
+        memo: '',
+        flow_folder: false,
+        f_parent: null,
+    }));
+    typesEditorState.selectedId = typesEditorState.types[0].k_type;
+    renderTypesEditor();
 }
 
 function renderTypesEditor() {
