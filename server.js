@@ -929,6 +929,14 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             
             await client.query(`TRUNCATE "${tableName}" CASCADE`);
             
+            // Get primary key columns for upsert
+            const pkResult = await client.query(`
+                SELECT kcu.column_name FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.table_schema='public' AND tc.table_name=$1 AND tc.constraint_type='PRIMARY KEY'
+            `, [tableName]);
+            const pkCols = pkResult.rows.map(r => r.column_name);
+            
             // Widen all varchar columns to text to match XSD xs:string (unlimited)
             for (const [colName, dtype] of Object.entries(dbCols)) {
                 if (dtype === 'character varying') {
@@ -964,7 +972,18 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 if (cols.length === 0) continue;
                 try {
                     await client.query('SAVEPOINT sp');
-                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                    // Find primary key column for upsert
+                    const pkCol = Object.keys(dbCols).find(c => pkCols.includes(c));
+                    if (pkCol && cols.includes(`"${pkCol}"`)) {
+                        const updateSet = cols.filter(c => c !== `"${pkCol}"`).map(c => `${c} = EXCLUDED.${c}`).join(', ');
+                        if (updateSet) {
+                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO UPDATE SET ${updateSet}`, vals);
+                        } else {
+                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO NOTHING`, vals);
+                        }
+                    } else {
+                        await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                    }
                     await client.query('RELEASE SAVEPOINT sp');
                     inserted++;
                 } catch (e) {
