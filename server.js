@@ -792,10 +792,11 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         const tableRows = {};
         
         for (const raw of xmlParts) {
-        // Strip dataset wrapper(s) like <CD_Verspaning>
+        // Strip dataset wrapper(s) like <CD_Verspaning> or any root element
         const stripped = raw.replace(/<\/?CD_[Vv]erspaning[^>]*>/g, '').trim();
         
-        const recordRegex = /<(CD_[A-Za-z_]+)>([\s\S]*?)<\/\1>/g;
+        // Match all record elements (tags whose content contains child tags)
+        const recordRegex = /<([A-Z][A-Za-z_0-9]+)>([\s\S]*?)<\/\1>/g;
         let match;
         
         while ((match = recordRegex.exec(stripped)) !== null) {
@@ -824,7 +825,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
-            return res.json({ success: false, error: 'No CD_ records found in file' });
+            return res.json({ success: false, error: 'No records found in file' });
         }
         
         const importResults = [];
