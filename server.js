@@ -783,7 +783,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                         try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
                     }
                     
-                    cols.push(col); vals.push(pgVal); ph.push(`$${pi}`); pi++;
+                    cols.push(`"${col}"`); vals.push(pgVal); ph.push(`$${pi}`); pi++;
                 }
                 
                 if (cols.length === 0) continue;
