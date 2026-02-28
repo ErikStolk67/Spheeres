@@ -187,12 +187,25 @@ app.get('/api/stats/counts', async (req, res) => {
 
 app.get('/api/raw/:table', async (req, res) => {
     const table = req.params.table.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (!table.startsWith('cd_')) {
-        return res.status(403).json({ error: 'Only CD_ tables allowed' });
-    }
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+    const search = req.query.search || '';
     try {
-        const { rows } = await pool.query(`SELECT * FROM "${table}" LIMIT 100`);
-        res.json(rows);
+        // Get total count
+        const countRes = await pool.query(`SELECT count(*) FROM "${table}"`);
+        const total = parseInt(countRes.rows[0].count);
+        
+        // Get rows with optional search on name column
+        let query = `SELECT * FROM "${table}"`;
+        const params = [];
+        if (search) {
+            query += ` WHERE name ILIKE $1`;
+            params.push(`%${search}%`);
+        }
+        query += ` ORDER BY 1 LIMIT ${limit} OFFSET ${offset}`;
+        
+        const { rows } = await pool.query(query, params);
+        res.json({ rows, total, limit, offset });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

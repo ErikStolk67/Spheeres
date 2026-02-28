@@ -1680,6 +1680,21 @@ function renderDashboard() {
 }
 
 function renderEntityScreen(item, group) {
+    // Map menu items to database table names
+    const tableMap = {
+        'companies': 'companies', 'contacts': 'contacts', 'addresses': 'addresses',
+        'projects': 'projects', 'opportunities': 'opportunities', 'cases': 'cases',
+        'products': 'products', 'orders': 'orders', 'suppliers': 'suppliers',
+        'agenda': 'agenda', 'documents': 'documents', 'mails': 'mails',
+        'groups': 'groups', 'templates': 'templates', 'actions': 'actions',
+        'sys_users': 'sys_users', 'sys_rights': 'sys_rights', 'sys_security': 'sys_security',
+        'sys_sessions': 'sys_sessions', 'sys_logs': 'sys_logs', 'sys_globals': 'sys_globals',
+    };
+    const tableName = tableMap[item.id] || item.id;
+    
+    // Load data after render
+    setTimeout(() => loadEntityList(tableName, item, group), 100);
+    
     return `<div class="entity-screen">
         <div class="entity-header">
             <div class="entity-icon" style="background:${group.color}18;">
@@ -1694,26 +1709,86 @@ function renderEntityScreen(item, group) {
             <div class="entity-toolbar">
                 <div class="toolbar-btns">
                     <button class="toolbar-btn">+ New</button>
-                    <button class="toolbar-btn ghost">Filter</button>
-                    <button class="toolbar-btn ghost">Sort</button>
+                    <button class="toolbar-btn ghost" onclick="loadEntityList('${tableName}','${item.id}')">Refresh</button>
                 </div>
                 <div class="toolbar-search">
                     <i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>
-                    <span>Search ${item.label.toLowerCase()}...</span>
+                    <input type="text" placeholder="Search ${item.label.toLowerCase()}..." 
+                        style="border:none;outline:none;font-size:13px;background:transparent;width:200px;"
+                        onkeyup="if(event.key==='Enter')loadEntityList('${tableName}',null,null,this.value)">
                 </div>
             </div>
-            <div class="table-header">
-                <span></span><span>Name</span><span>Alias</span><span>Status</span><span>Changed</span><span>Owner</span>
-            </div>
-            <div class="entity-empty">
-                <i data-lucide="${item.icon}" style="width:40px;height:40px;color:#CBD5E1;stroke-width:1;"></i>
-                <p>No ${item.label.toLowerCase()} yet</p>
-                <button class="entity-empty-btn" style="background:${group.color};">
-                    Create first ${item.label.toLowerCase().replace(/s$/, '')}
-                </button>
+            <div id="entityListContainer">
+                <div style="padding:40px;text-align:center;color:#94A3B8;">
+                    <div class="loading-spinner" style="width:24px;height:24px;margin:0 auto 12px;border-width:3px;"></div>
+                    Loading...
+                </div>
             </div>
         </div>
     </div>`;
+}
+
+async function loadEntityList(tableName, item, group, search) {
+    const container = document.getElementById('entityListContainer');
+    if (!container) return;
+    
+    try {
+        const url = API + '/raw/' + tableName + (search ? '?search=' + encodeURIComponent(search) : '');
+        const resp = await fetch(url);
+        const data = await resp.json();
+        
+        if (data.error) {
+            container.innerHTML = '<div style="padding:20px;color:#EF4444;">Error: ' + data.error + '</div>';
+            return;
+        }
+        
+        const rows = data.rows || [];
+        const total = data.total || rows.length;
+        
+        if (rows.length === 0) {
+            container.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8;">' +
+                '<p>No records found' + (search ? ' for "' + search + '"' : '') + '</p>' +
+                '<p style="font-size:12px;">' + total + ' total records in ' + tableName + '</p></div>';
+            return;
+        }
+        
+        // Get column names from first row
+        const cols = Object.keys(rows[0]).filter(c => 
+            !['replicationid','f_dictionary','memo','memo_en','memo_nl','memo_plaintext','memo_en_plaintext','memo_nl_plaintext','graphical','flag_file_data','flag_thumbnail','flag_original','flagbase64','properties','code'].includes(c)
+        ).slice(0, 8); // max 8 visible columns
+        
+        let html = '<div style="font-size:11px;color:#64748B;padding:8px 16px;border-bottom:1px solid #E2E8F0;">' +
+            total + ' records' + (search ? ' matching "' + search + '"' : '') + '</div>';
+        
+        // Header
+        html += '<div style="display:grid;grid-template-columns:' + cols.map(() => '1fr').join(' ') + 
+            ';padding:8px 16px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;font-size:11px;font-weight:600;color:#64748B;">';
+        for (const c of cols) {
+            html += '<span>' + c.toUpperCase() + '</span>';
+        }
+        html += '</div>';
+        
+        // Rows
+        html += '<div style="max-height:calc(100vh - 320px);overflow-y:auto;">';
+        for (const row of rows) {
+            html += '<div style="display:grid;grid-template-columns:' + cols.map(() => '1fr').join(' ') + 
+                ';padding:8px 16px;border-bottom:1px solid #F1F5F9;font-size:13px;cursor:pointer;" onmouseover="this.style.background=\'#F8FAFC\'" onmouseout="this.style.background=\'\'">';
+            for (const c of cols) {
+                let val = row[c];
+                if (val === null || val === undefined) val = '';
+                else if (typeof val === 'boolean') val = val ? '✓' : '';
+                else if (typeof val === 'string' && val.length > 40) val = val.substring(0, 40) + '…';
+                else if (val instanceof Object) val = JSON.stringify(val).substring(0, 40);
+                html += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + val + '</span>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = '<div style="padding:20px;color:#EF4444;">Error loading: ' + err.message + '</div>';
+    }
 }
 
 // ============================================================================
