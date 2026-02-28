@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
+    const MS_VERSION = 'v0.4.0';
+    const MS_BUILD = '2026-02-28 22:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -693,6 +695,7 @@
         <div class="sidebar-menu" id="sidebarMenu"></div>
 
         <div class="sidebar-toggle">
+            <div id="sidebarVersion" style="padding:4px 16px;font-size:10px;color:#94A3B8;"></div>
             <button class="sidebar-collapse-btn" onclick="toggleSidebar()">
                 <i data-lucide="menu" style="width:16px;height:16px;color:#64748B;"></i>
             </button>
@@ -878,6 +881,8 @@ function renderSidebar() {
     }
 
     menu.innerHTML = html;
+    const verEl = document.getElementById('sidebarVersion');
+    if (verEl) verEl.textContent = MS_VERSION + ' · ' + MS_BUILD;
     lucide.createIcons();
 }
 
