@@ -906,8 +906,18 @@ function renderContent() {
             <span class="breadcrumb-group">${group.label}</span>
             <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
             <span class="breadcrumb-item">${item.label}</span>`;
-        content.innerHTML = renderDbStatistics();
-        initDbStatistics();
+        // Ensure schema is loaded before rendering statistics
+        if (Object.keys(xsdFieldData).length === 0) {
+            content.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8;">Laden...</div>';
+            loadSchemaFromDB().then(() => {
+                content.innerHTML = renderDbStatistics();
+                initDbStatistics();
+                lucide.createIcons();
+            });
+        } else {
+            content.innerHTML = renderDbStatistics();
+            initDbStatistics();
+        }
     } else if (activeItem && activeItem.startsWith('cd_')) {
         const { item, group } = findContext();
         breadcrumb.innerHTML = `
@@ -2033,8 +2043,6 @@ async function loadFieldsFromDB(tableId) {
         return await resp.json();
     } catch (e) { return null; }
 }
-
-loadTableMap();
 
 // ============================================================================
 // POPUP FUNCTIONS
@@ -3955,10 +3963,12 @@ function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 // INIT
 // ============================================================================
 renderSidebar();
-// Load schema from DB first, then render
-loadSchemaFromDB().then(() => {
+// Load schema from DB first, then render content
+(async () => {
+    await loadSchemaFromDB();
+    await loadTableMap();
     renderContent();
-});
+})();
 </script>
 </body>
 </html>
