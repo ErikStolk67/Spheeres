@@ -1576,15 +1576,21 @@ function renderDbDesigner() {
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
     `;
 
-    return `<div class="designer">
+    return `<div class="designer" id="designerArea">
         <h1>Database Designer</h1>
         ${toggleHtml}
 
-        <div class="matrix-wrapper">
+        <div class="matrix-wrapper" id="matrixDropZone">
             <table class="matrix">
                 <thead><tr>${colHeaders}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
+        </div>
+        <div id="dropOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(99,102,241,0.15);z-index:9999;pointer-events:none;align-items:center;justify-content:center;">
+            <div style="background:white;border-radius:16px;padding:40px 60px;box-shadow:0 20px 60px rgba(0,0,0,0.15);text-align:center;pointer-events:none;">
+                <div style="font-size:48px;margin-bottom:12px;">📦</div>
+                <div style="font-size:18px;font-weight:600;color:#4F46E5;">Drop XML/ZIP to import</div>
+            </div>
         </div>
     </div>`;
 }
@@ -2862,6 +2868,55 @@ function showLoading(text) {
 }
 function hideLoading() {
     document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+// Drag & drop import on designer
+document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    const overlay = document.getElementById('dropOverlay');
+    if (overlay) overlay.style.display = 'flex';
+});
+document.addEventListener('dragleave', function(e) {
+    if (e.relatedTarget === null || e.relatedTarget === document.documentElement) {
+        const overlay = document.getElementById('dropOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+});
+document.addEventListener('drop', function(e) {
+    e.preventDefault();
+    const overlay = document.getElementById('dropOverlay');
+    if (overlay) overlay.style.display = 'none';
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (ext === 'xml' || ext === 'zip') {
+        importDroppedFile(file);
+    }
+});
+
+async function importDroppedFile(file) {
+    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+    showLoading('Importing ' + file.name + ' (' + sizeMB + ' MB)...');
+    try {
+        const resp = await fetch(API + '/import-xml', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file
+        });
+        const result = await resp.json();
+        hideLoading();
+        // Invalidate schema cache
+        sessionStorage.removeItem('ms_schema');
+        if (result.success) {
+            showImportReport(result);
+            loadSchemaFromDB().then(() => renderContent());
+        } else {
+            showImportReport({ error: result.error });
+        }
+    } catch (err) {
+        hideLoading();
+        showImportReport({ error: err.message });
+    }
 }
 
 // Import XML data file into CD_ tables
