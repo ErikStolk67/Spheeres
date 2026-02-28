@@ -2868,18 +2868,115 @@ function hideLoading() {
 // Use window + capture to ensure we always catch the event
 window.addEventListener('dragover', function(e) { e.preventDefault(); e.stopPropagation(); }, true);
 window.addEventListener('dragenter', function(e) { e.preventDefault(); e.stopPropagation(); }, true);
-window.addEventListener('drop', function(e) {
+window.addEventListener('drop', async function(e) {
     e.preventDefault();
     e.stopPropagation();
-    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!file) return;
-    var name = file.name.toLowerCase();
-    var type = file.type || '';
-    if (name.endsWith('.xml') || name.endsWith('.zip') || name.endsWith('.xsd') ||
-        type.includes('zip') || type.includes('xml') || type.includes('octet')) {
-        importDroppedFile(file);
+    
+    // Collect all XML files from dropped items (files, folders, zips)
+    var files = [];
+    
+    // Try DataTransferItemList for folder support
+    if (e.dataTransfer.items && e.dataTransfer.items.length) {
+        var entries = [];
+        for (var i = 0; i < e.dataTransfer.items.length; i++) {
+            var entry = e.dataTransfer.items[i].webkitGetAsEntry && e.dataTransfer.items[i].webkitGetAsEntry();
+            if (entry) entries.push(entry);
+        }
+        
+        async function readEntry(entry) {
+            if (entry.isFile) {
+                return new Promise(function(resolve) {
+                    entry.file(function(f) { resolve([f]); }, function() { resolve([]); });
+                });
+            } else if (entry.isDirectory) {
+                return new Promise(function(resolve) {
+                    var reader = entry.createReader();
+                    reader.readEntries(async function(entries) {
+                        var allFiles = [];
+                        for (var e of entries) {
+                            var sub = await readEntry(e);
+                            allFiles = allFiles.concat(sub);
+                        }
+                        resolve(allFiles);
+                    }, function() { resolve([]); });
+                });
+            }
+            return [];
+        }
+        
+        for (var entry of entries) {
+            var found = await readEntry(entry);
+            files = files.concat(found);
+        }
+    } else {
+        // Fallback: plain file list
+        for (var i = 0; i < e.dataTransfer.files.length; i++) {
+            files.push(e.dataTransfer.files[i]);
+        }
+    }
+    
+    // Filter to xml/zip files
+    var importFiles = files.filter(function(f) {
+        var name = f.name.toLowerCase();
+        var type = f.type || '';
+        return name.endsWith('.xml') || name.endsWith('.zip') || name.endsWith('.xsd') || type.includes('zip');
+    });
+    
+    if (importFiles.length === 0) return;
+    
+    if (importFiles.length === 1) {
+        importDroppedFile(importFiles[0]);
+    } else {
+        // Multiple files: concatenate XML into one request
+        importMultipleFiles(importFiles);
     }
 }, true);
+
+async function importMultipleFiles(files) {
+    showLoading('Importing ' + files.length + ' files...');
+    try {
+        // Read all files and concatenate XML
+        var xmlParts = [];
+        for (var f of files) {
+            if (f.name.toLowerCase().endsWith('.zip')) {
+                // Send zip separately
+                var resp = await fetch(API + '/import-xml', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: f
+                });
+                continue;
+            }
+            var text = await f.text();
+            xmlParts.push(text);
+        }
+        
+        if (xmlParts.length > 0) {
+            var combined = '<IMPORT>' + xmlParts.join('\n') + '</IMPORT>';
+            var resp = await fetch(API + '/import-xml', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: combined
+            });
+            var result = await resp.json();
+            hideLoading();
+            sessionStorage.removeItem('ms_schema');
+            if (result.success) {
+                showImportReport(result);
+                loadSchemaFromDB().then(function() { renderContent(); });
+            } else {
+                showImportReport({ error: result.error });
+            }
+        } else {
+            hideLoading();
+            sessionStorage.removeItem('ms_schema');
+            loadSchemaFromDB().then(function() { renderContent(); });
+        }
+    } catch (err) {
+        hideLoading();
+        showImportReport({ error: err.message });
+    }
+}
 
 async function importDroppedFile(file) {
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
