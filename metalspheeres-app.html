@@ -1352,15 +1352,37 @@ const cdLookupTables = [
     { name: "CD_LK_TRIGGERSUBJECTS",     type: "lk", icon: "Lt" },
 ];
 
-// Sub-tables (not shown in matrix, counted in Sub column)
-const cdSubTables = {
-    'CD_FIELDS': ['CD_FIEL_MATCH','CD_FIEL_CLUSTERSETTINGS','CD_FIEL_FIELDKEY','CD_FIEL_FIELDVALUE','CD_FIEL_LINKEDITORVISIBILITY'],
-    'CD_LIFESTATUSES': ['CD_LIFE_CHECKLIST'],
-    'CD_CANVASES': ['CD_CANV_EXECUTION_LOG','CD_CANV_LOGS'],
-    'CD_DATABASES': ['CD_DBAS_REMOTE'],
-    'CD_TABLES': ['CD_TABL_TABSETTINGS'],
-    'CD_TYPES': ['CD_TYPE_FILTERINGSETTINGS','CD_TYPE_RESTRICTIONS'],
-};
+// Sub-tables - dynamically derived from schema at render time
+function getCdSubTables() {
+    const subs = {};
+    const mainPrefixes = {};
+    // Build prefix map from main tables: CD_FIELDS -> FIEL, CD_CANVASES -> CANV, etc.
+    for (const t of cdMainTables) {
+        const base = t.name.replace('CD_', '');
+        const prefix = base.substring(0, 4).toUpperCase();
+        mainPrefixes[prefix] = t.name;
+    }
+    // Find all CD_ tables in schema that match CD_PREFIX_SOMETHING pattern
+    const allTables = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_'));
+    for (const t of allTables) {
+        const base = t.replace('CD_', '');
+        if (!base.includes('_')) continue; // main entity, skip
+        if (t.startsWith('CD_LK_')) continue; // lookup, skip
+        const parts = base.split('_');
+        const prefix = parts[0].toUpperCase();
+        const parent = mainPrefixes[prefix];
+        if (parent && t !== parent) {
+            // Check it's not a link table (both parts map to main entities)
+            const secondPrefix = parts.slice(1).join('_').substring(0, 4).toUpperCase();
+            const isLink = mainPrefixes[secondPrefix] && parts.length === 2 && parts[1].length <= 5;
+            if (!isLink) {
+                if (!subs[parent]) subs[parent] = [];
+                if (!subs[parent].includes(t)) subs[parent].push(t);
+            }
+        }
+    }
+    return subs;
+}
 
 // Combine main CD tables for matrix (NO sub, NO lookup)
 const cdTypeCount = {
@@ -1369,12 +1391,15 @@ const cdTypeCount = {
     "CD_FUNCTIONS":3,"CD_CANVASES":3,"CD_LICENSES":3,"CD_TRANSLATIONS":4,
     "CD_DICTIONARYCOMPONENTS":2,"CD_DICTIONARYCOMPARISONS":2,
 };
-const cdTables = cdMainTables.map(t => {
-    const subs = cdSubTables[t.name] || [];
-    const typeC = cdTypeCount[t.name] || 0;
-    const subC = subs.length || 0;
-    return {...t, cols: [typeC || "—", subC || "—", "—"]};
-});
+function getCdTables() {
+    const cdSubTables = getCdSubTables();
+    return cdMainTables.map(t => {
+        const subs = cdSubTables[t.name] || [];
+        const typeC = cdTypeCount[t.name] || 0;
+        const subC = subs.length || 0;
+        return {...t, cols: [typeC || "—", subC || "—", "—"]};
+    });
+}
 
 // CD relations - derived from link table names
 const cdRelations = {};
@@ -1452,7 +1477,7 @@ const cdLookupMap = {
 
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
-    const tables = isDictMode ? cdTables : dbTables;
+    const tables = isDictMode ? getCdTables() : dbTables;
     const rels = isDictMode ? cdRelations : relations;
 
     // Colors per mode
@@ -2004,9 +2029,12 @@ dbTables.forEach(t => {
     tableTypes[t.name] = t.type === 'sys' ? 'sys' : 'entity';
 });
 tableTypes["STATS"] = 'lookup';
-// Add CD_ tables to tableTypes
-cdTables.forEach(t => {
-    tableTypes[t.name] = t.type === 'lk' ? 'lookup' : 'entity';
+// Add CD_ tables to tableTypes (use main tables directly, dynamic subs come from schema)
+cdMainTables.forEach(t => {
+    tableTypes[t.name] = 'entity';
+});
+cdLookupTables.forEach(t => {
+    tableTypes[t.name] = 'lookup';
 });
 
 // ============================================================================
@@ -2065,11 +2093,12 @@ async function loadFieldsFromDB(tableId) {
 // ============================================================================
 function showTablePopup(tableName) {
     // Find in user tables, CD main tables, or recognize as sub/link/lookup table
-    let table = dbTables.find(t => t.name === tableName) || cdTables.find(t => t.name === tableName);
+    let table = dbTables.find(t => t.name === tableName) || getCdTables().find(t => t.name === tableName);
     
     // If not found in main arrays, check if it's a known XSD table (sub, link, lookup)
     if (!table && xsdFieldData[tableName.toUpperCase()]) {
-        const isSub = Object.values(cdSubTables).flat().includes(tableName);
+        const cdSubs = getCdSubTables();
+        const isSub = Object.values(cdSubs).flat().includes(tableName);
         const isLk = tableName.startsWith('CD_LK_');
         table = { name: tableName, type: isSub ? 'sub' : (isLk ? 'lk' : 'cd'), icon: 'table' };
     }
@@ -3537,7 +3566,7 @@ function openSubDropdown(event, tableName) {
     const old = document.getElementById('subDropdown');
     if (old) old.remove();
 
-    const subs = cdSubTables[tableName] || userSubTables[tableName] || [];
+    const subs = getCdSubTables()[tableName] || userSubTables[tableName] || [];
     if (subs.length === 0) return;
 
     const isCd = tableName.startsWith('CD_');
@@ -3611,13 +3640,15 @@ function createNewSubTable(parentTable) {
         subName = (parentTable.startsWith('SYS_') ? 'SYS_' : '') + prefix + '_' + name.toUpperCase().replace(/\s+/g,'_');
     }
 
-    // Add to appropriate sub-table map
-    const subMap = isCd ? cdSubTables : userSubTables;
-    if (!subMap[parentTable]) subMap[parentTable] = [];
-    subMap[parentTable].push(subName);
+    // Add to appropriate sub-table map (will be auto-detected by getCdSubTables after schema reload)
+    const subMap = isCd ? {} : userSubTables;
+    if (!isCd) {
+        if (!subMap[parentTable]) subMap[parentTable] = [];
+        subMap[parentTable].push(subName);
+    }
 
     // Update sub count
-    const tableArr = isCd ? cdTables : dbTables;
+    const tableArr = isCd ? getCdTables() : dbTables;
     const tbl = tableArr.find(t => t.name === parentTable);
     if (tbl) tbl.cols[1] = subMap[parentTable].length;
 
