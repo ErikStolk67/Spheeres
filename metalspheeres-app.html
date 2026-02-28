@@ -1791,12 +1791,18 @@ let xsdFieldData = {};
 async function loadSchemaFromDB() {
     try {
         const resp = await fetch(API + '/schema/all');
-        if (!resp.ok) return;
+        if (!resp.ok) {
+            console.error('Schema load failed: HTTP', resp.status);
+            return;
+        }
         const schema = await resp.json();
+        if (schema.error) {
+            console.error('Schema load error:', schema.error);
+            return;
+        }
         xsdFieldData = {};
         for (const [tableName, cols] of Object.entries(schema)) {
             const upper = tableName.toUpperCase();
-            // Convert DB schema to xsdFieldData format: "COL1:type,COL2:type,..."
             const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
                 'character varying':'s', 'uuid':'u', 'bytea':'y',
                 'timestamp with time zone':'d', 'timestamp without time zone':'d',
@@ -1806,14 +1812,13 @@ async function loadSchemaFromDB() {
                 return c.name.toUpperCase() + ':' + t;
             }).join(',');
             xsdFieldData[upper] = fieldStr;
-            // Also store without CD_ prefix for lookups
             if (upper.startsWith('CD_LK_')) {
                 xsdFieldData[upper.replace('CD_','')] = fieldStr;
             }
         }
-        console.log('Schema loaded from DB:', Object.keys(xsdFieldData).length, 'tables');
+        console.log('Schema loaded:', Object.keys(xsdFieldData).length, 'tables');
     } catch(e) {
-        console.log('Schema load failed, using empty:', e.message);
+        console.error('Schema load exception:', e.message);
     }
 }
 
