@@ -3763,8 +3763,8 @@ function renderDbStatistics() {
                 let listHtml = sorted.map(t => 
                     '<div class="ds-table-row" onclick="showTablePopup(\'' + t.name + '\')" title="' + t.name + '">' +
                         '<span class="ds-table-name" style="color:' + cardColor + ';">' + t.name + '</span>' +
-                        '<span class="ds-table-count" data-records="' + t.name + '" style="min-width:50px;text-align:right;">—</span>' +
-                        '<span class="ds-table-count" style="min-width:35px;text-align:right;">' + t.fields + '</span>' +
+                        '<span class="ds-table-count" data-records="' + t.name + '" style="min-width:55px;text-align:right;">—</span>' +
+                        '<span class="ds-table-count" style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;">' + t.fields + '</span>' +
                     '</div>'
                 ).join('');
                 
@@ -3775,8 +3775,8 @@ function renderDbStatistics() {
                     '<div class="ds-card-sub">' + count + ' tabellen</div>' +
                     '<div class="ds-card-divider"></div>' +
                     '<div class="ds-table-header"><span>Tabel</span><span style="display:flex;gap:0;">' +
-                    '<span style="min-width:50px;text-align:right;">Records</span>' +
-                    '<span style="min-width:35px;text-align:right;">Fields</span></span></div>' +
+                    '<span style="min-width:55px;text-align:right;">Records</span>' +
+                    '<span style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;">Fields</span></span></div>' +
                     '<div class="ds-card-list">' + listHtml + '</div></div>';
             }
             
