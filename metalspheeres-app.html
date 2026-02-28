@@ -820,8 +820,9 @@ const menuGroups = [
 // ============================================================================
 // STATE
 // ============================================================================
-let activeItem = null;
-let expandedGroups = ["primary"];
+let activeItem = sessionStorage.getItem('ms_activeItem') || null;
+if (activeItem === 'null') activeItem = null;
+let expandedGroups = JSON.parse(sessionStorage.getItem('ms_expandedGroups') || '["primary"]');
 let sidebarCollapsed = false;
 
 // ============================================================================
@@ -1166,7 +1167,7 @@ function renderDictionaryScreen(item, group) {
 // ============================================================================
 // DATABASE DESIGNER - Relationship Matrix
 // ============================================================================
-let designerMode = 'user'; // 'user' or 'dictionary'
+let designerMode = sessionStorage.getItem('ms_designerMode') || 'user';
 
 // USER DATABASE tables (SYS + entity)
 // Sub-tables for user database
@@ -1554,8 +1555,8 @@ function renderDbDesigner() {
         '<input type="file" id="xmlFileInput" accept=".xml,.xsd,.zip" style="display:none" onchange="importXmlFile(this)">';
     }
     const toggleHtml = `<div class="designer-toggle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
-        <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';renderContent();">Dictionary</button>
+        <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';sessionStorage.setItem('ms_designerMode',designerMode);renderContent();">User Database</button>
+        <button class="toggle-btn ${isDictMode ? 'active-dict' : ''}" onclick="designerMode='dictionary';sessionStorage.setItem('ms_designerMode',designerMode);renderContent();">Dictionary</button>
         <span style="flex:1;"></span>
         ${actionBtns}
         <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
@@ -1747,12 +1748,14 @@ function findContext() {
 
 function navigate(itemId) {
     activeItem = itemId;
+    sessionStorage.setItem('ms_activeItem', itemId);
     if (itemId) {
         for (const group of menuGroups) {
             if (group.items.find(i => i.id === itemId) && !expandedGroups.includes(group.id)) {
                 expandedGroups.push(group.id);
             }
         }
+        sessionStorage.setItem('ms_expandedGroups', JSON.stringify(expandedGroups));
     }
     renderSidebar();
     renderContent();
@@ -1762,6 +1765,7 @@ function toggleGroup(groupId) {
     const idx = expandedGroups.indexOf(groupId);
     if (idx >= 0) expandedGroups.splice(idx, 1);
     else expandedGroups.push(groupId);
+    sessionStorage.setItem('ms_expandedGroups', JSON.stringify(expandedGroups));
     renderSidebar();
 }
 
