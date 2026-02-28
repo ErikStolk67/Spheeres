@@ -26,68 +26,92 @@ app.get('/api/dictionaries', async (req, res) => {
     res.json(rows);
 });
 
-app.get('/api/schema/counts', async (req, res) => {
-    try {
-        const { rows: tables } = await pool.query(`
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        `);
-        const counts = {};
-        // Use a single query with UNION ALL for speed
-        if (tables.length > 0) {
-            const parts = tables.map(t => 
-                `SELECT '${t.table_name}' as t, count(*) as c FROM "${t.table_name}"`
-            );
-            // Execute in batches of 20 to avoid query length limits
-            for (let i = 0; i < parts.length; i += 20) {
-                const batch = parts.slice(i, i + 20).join(' UNION ALL ');
-                const { rows } = await pool.query(batch);
-                for (const r of rows) counts[r.t] = parseInt(r.c);
-            }
+// Cache for schema - refreshed every 5 min or on demand
+let schemaCache = null;
+let schemaCacheTime = 0;
+const SCHEMA_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getSchemaFull() {
+    if (schemaCache && Date.now() - schemaCacheTime < SCHEMA_CACHE_TTL) return schemaCache;
+    
+    // Get columns
+    const { rows } = await pool.query(`
+        SELECT t.table_name, c.column_name, c.data_type, c.character_maximum_length,
+               c.is_nullable, c.column_default,
+               CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk
+        FROM information_schema.tables t
+        JOIN information_schema.columns c ON t.table_name = c.table_name AND c.table_schema = 'public'
+        LEFT JOIN (
+            SELECT kcu.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
+        ) pk ON pk.table_name = t.table_name AND pk.column_name = c.column_name
+        WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+        ORDER BY t.table_name, c.ordinal_position
+    `);
+    
+    const tables = {};
+    for (const r of rows) {
+        if (!tables[r.table_name]) tables[r.table_name] = { columns: [], count: 0 };
+        tables[r.table_name].columns.push({
+            name: r.column_name, type: r.data_type,
+            maxLen: r.character_maximum_length,
+            nullable: r.is_nullable === 'YES', pk: r.is_pk
+        });
+    }
+    
+    // Get counts in batches
+    const names = Object.keys(tables);
+    for (let i = 0; i < names.length; i += 20) {
+        const batch = names.slice(i, i + 20)
+            .map(t => `SELECT '${t}' as t, count(*) as c FROM "${t}"`)
+            .join(' UNION ALL ');
+        const { rows: countRows } = await pool.query(batch);
+        for (const r of countRows) {
+            if (tables[r.t]) tables[r.t].count = parseInt(r.c);
         }
-        res.json(counts);
+    }
+    
+    schemaCache = tables;
+    schemaCacheTime = Date.now();
+    return tables;
+}
+
+// Single endpoint: schema + counts in one call
+app.get('/api/schema/full', async (req, res) => {
+    try {
+        res.json(await getSchemaFull());
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
+// Invalidate cache after import/clear/migrate
+function invalidateSchemaCache() { schemaCache = null; schemaCacheTime = 0; }
+
+// Keep backward compat
 app.get('/api/schema/all', async (req, res) => {
     try {
-        const { rows } = await pool.query(`
-            SELECT t.table_name, 
-                   c.column_name, c.data_type, c.character_maximum_length,
-                   c.is_nullable, c.column_default,
-                   CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk
-            FROM information_schema.tables t
-            JOIN information_schema.columns c ON t.table_name = c.table_name AND c.table_schema = 'public'
-            LEFT JOIN (
-                SELECT kcu.table_name, kcu.column_name
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-                WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
-            ) pk ON pk.table_name = t.table_name AND pk.column_name = c.column_name
-            WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-            ORDER BY t.table_name, c.ordinal_position
-        `);
-        
-        // Group by table
-        const tables = {};
-        for (const r of rows) {
-            if (!tables[r.table_name]) tables[r.table_name] = [];
-            tables[r.table_name].push({
-                name: r.column_name,
-                type: r.data_type,
-                maxLen: r.character_maximum_length,
-                nullable: r.is_nullable === 'YES',
-                pk: r.is_pk,
-                default: r.column_default
-            });
-        }
-        res.json(tables);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        const full = await getSchemaFull();
+        const result = {};
+        for (const [t, v] of Object.entries(full)) result[t] = v.columns;
+        res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
+app.get('/api/schema/counts', async (req, res) => {
+    try {
+        const full = await getSchemaFull();
+        const result = {};
+        for (const [t, v] of Object.entries(full)) result[t] = v.count;
+        res.json(result);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Keep-alive: ping every 4 minutes to prevent Render sleep
+setInterval(() => {
+    pool.query('SELECT 1').catch(() => {});
+}, 4 * 60 * 1000);
 
 app.get('/api/databases', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM cd_databases ORDER BY name');
@@ -284,6 +308,7 @@ app.post('/api/migrate', async (req, res) => {
     if (!sql) return res.status(400).json({ error: 'No SQL provided' });
     try {
         const result = await pool.query(sql);
+        invalidateSchemaCache();
         res.json({ success: true, rowCount: result.rowCount, rows: result.rows?.slice(0, 100) });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -471,6 +496,7 @@ app.post('/api/clear-all', async (req, res) => {
         for (const r of rows) {
             await client.query(`TRUNCATE TABLE ${r.table_name} CASCADE`);
         }
+        invalidateSchemaCache();
         res.json({ success: true, tables_cleared: rows.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -500,6 +526,7 @@ app.post('/api/clear-dictionary', async (req, res) => {
         }
         
         await client.query('COMMIT');
+        invalidateSchemaCache();
         res.json({ success: true, tables_cleared: rows.length });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -956,6 +983,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             if (r.rows > 0) try { await client.query(`ANALYZE ${r.table}`); } catch(e) {}
         }
         
+        invalidateSchemaCache();
         res.json({ success: true, tablesProcessed: importResults.length, totalRows, details: importResults });
     } catch (err) {
         try { await client.query('ROLLBACK'); } catch(e) {}

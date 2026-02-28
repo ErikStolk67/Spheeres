@@ -1783,31 +1783,20 @@ let xsdFieldData = {};
 
 async function loadSchemaFromDB() {
     try {
-        const resp = await fetch(API + '/schema/all');
-        if (!resp.ok) {
-            console.error('Schema load failed: HTTP', resp.status);
-            return;
-        }
+        const resp = await fetch(API + '/schema/full');
+        if (!resp.ok) { console.error('Schema load failed:', resp.status); return; }
         const schema = await resp.json();
-        if (schema.error) {
-            console.error('Schema load error:', schema.error);
-            return;
-        }
+        if (schema.error) { console.error('Schema error:', schema.error); return; }
         xsdFieldData = {};
-        for (const [tableName, cols] of Object.entries(schema)) {
-            const upper = tableName.toUpperCase();
-            const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
-                'character varying':'s', 'uuid':'u', 'bytea':'y',
-                'timestamp with time zone':'d', 'timestamp without time zone':'d',
-                'date':'d', 'numeric':'s', 'real':'s', 'double precision':'s' };
-            const fieldStr = cols.map(c => {
-                const t = typeMap[c.type] || 's';
-                return c.name.toUpperCase() + ':' + t;
-            }).join(',');
-            xsdFieldData[upper] = fieldStr;
-            if (upper.startsWith('CD_LK_')) {
-                xsdFieldData[upper.replace('CD_','')] = fieldStr;
-            }
+        const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
+            'character varying':'s', 'uuid':'u', 'bytea':'y',
+            'timestamp with time zone':'d', 'timestamp without time zone':'d',
+            'date':'d', 'numeric':'s', 'real':'s', 'double precision':'s' };
+        for (const [tn, info] of Object.entries(schema)) {
+            const upper = tn.toUpperCase();
+            const cols = info.columns || info;
+            xsdFieldData[upper] = (Array.isArray(cols) ? cols : []).map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
+            if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
         }
         console.log('Schema loaded:', Object.keys(xsdFieldData).length, 'tables');
     } catch(e) {
@@ -3718,12 +3707,10 @@ function renderDbStatistics() {
         if (!container) return;
         
         try {
-            const resp = await fetch(API + '/schema/all');
+            const resp = await fetch(API + '/schema/full');
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const schema = await resp.json();
             if (schema.error) throw new Error(schema.error);
-            
-            const tables = Object.keys(schema);
             
             // Populate xsdFieldData for popups
             const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
@@ -3731,23 +3718,25 @@ function renderDbStatistics() {
                 'timestamp with time zone':'d', 'timestamp without time zone':'d',
                 'date':'d', 'numeric':'s', 'real':'s', 'double precision':'s' };
             xsdFieldData = {};
-            for (const [tn, cols] of Object.entries(schema)) {
+            for (const [tn, info] of Object.entries(schema)) {
                 const upper = tn.toUpperCase();
-                xsdFieldData[upper] = cols.map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
+                xsdFieldData[upper] = info.columns.map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
                 if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
             }
             
             // Categorize
             const cats = { cd:{entities:[],lookups:[],links:[],subtables:[]}, sys:{entities:[],lookups:[],links:[],subtables:[]}, user:{entities:[],lookups:[],links:[],subtables:[]} };
-            for (const tn of tables) {
+            for (const [tn, info] of Object.entries(schema)) {
                 const t = tn.toUpperCase();
                 let zone = t.startsWith('CD_') ? 'cd' : (t.startsWith('SYS_') ? 'sys' : 'user');
-                const fields = schema[tn].length;
+                const fields = info.columns.length;
+                const count = info.count || 0;
                 const base = t.replace(/^CD_|^SYS_/, '');
-                if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push({name:t,fields});
-                else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push({name:t,fields});
-                else if (base.includes('_')) cats[zone].subtables.push({name:t,fields});
-                else cats[zone].entities.push({name:t,fields});
+                const item = {name:t, fields, count};
+                if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
+                else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
+                else if (base.includes('_')) cats[zone].subtables.push(item);
+                else cats[zone].entities.push(item);
             }
             
             function cardHtml(type, items, cardIcon, cardColor) {
@@ -3755,12 +3744,13 @@ function renderDbStatistics() {
                 let list = sorted.map(t =>
                     '<div class="ds-table-row" onclick="showTablePopup(\x27' + t.name + '\x27)" title="' + t.name + '">' +
                     '<span class="ds-table-name" style="color:' + cardColor + ';">' + t.name + '</span>' +
-                    '<span class="ds-table-count" data-records="' + t.name + '" style="min-width:55px;text-align:right;"><span class="count-spinner"></span></span>' +
+                    '<span class="ds-table-count" style="min-width:55px;text-align:right;">' + t.count + '</span>' +
                     '<span class="ds-table-count" style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;">' + t.fields + '</span></div>'
                 ).join('');
+                const totalRec = items.reduce((s,t) => s + t.count, 0);
                 return '<div class="ds-card"><div class="ds-card-header"><span class="ds-card-title">' + type + '</span>' +
                     '<i data-lucide="' + cardIcon + '" style="width:18px;height:18px;color:' + cardColor + ';"></i></div>' +
-                    '<div class="ds-card-number">' + items.length + '</div><div class="ds-card-sub">' + items.length + ' tabellen</div>' +
+                    '<div class="ds-card-number">' + items.length + '</div><div class="ds-card-sub">' + items.length + ' tabellen \u00b7 ' + totalRec.toLocaleString() + ' records</div>' +
                     '<div class="ds-card-divider"></div><div class="ds-table-header"><span>Tabel</span><span style="display:flex;gap:0;">' +
                     '<span style="min-width:55px;text-align:right;">Records</span>' +
                     '<span style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;">Fields</span></span></div>' +
@@ -3770,16 +3760,16 @@ function renderDbStatistics() {
             function sectionHtml(zone, label, icon, color) {
                 const c = cats[zone]; const all = [...c.entities,...c.lookups,...c.links,...c.subtables];
                 const totalFields = all.reduce((s,t) => s + t.fields, 0);
+                const totalRec = all.reduce((s,t) => s + t.count, 0);
                 return '<div class="ds-section"><div class="ds-section-header">' +
                     '<i data-lucide="' + icon + '" style="width:20px;height:20px;color:' + color + ';"></i>' +
                     '<span class="ds-section-title">' + label + '</span>' +
-                    '<span class="ds-section-count">\u2014 ' + all.length + ' tabellen, ' + totalFields + ' velden</span></div>' +
+                    '<span class="ds-section-count">\u2014 ' + all.length + ' tabellen, ' + totalFields + ' velden, ' + totalRec.toLocaleString() + ' records</span></div>' +
                     '<div class="ds-cards">' + cardHtml('Entities',c.entities,'table',color) +
                     cardHtml('Lookups',c.lookups,'list',color) + cardHtml('Links',c.links,'link',color) +
                     cardHtml('Subtables',c.subtables,'layers',color) + '</div></div>';
             }
             
-            // Show cards immediately
             container.innerHTML =
                 '<h1 style="font-size:24px;font-weight:600;color:#0F172A;margin-bottom:4px;">Database Statistieken</h1>' +
                 '<p style="font-size:13px;color:#64748B;margin-bottom:24px;">Overzicht van tabellen en velden per categorie</p>' +
@@ -3788,18 +3778,8 @@ function renderDbStatistics() {
                 sectionHtml('user', 'User tabellen', 'users', '#22C55E');
             lucide.createIcons();
             
-            // Load record counts in one bulk call
-            fetch(API + '/schema/counts').then(r => r.json()).then(counts => {
-                for (const [tn, count] of Object.entries(counts)) {
-                    const el = document.querySelector('[data-records="' + tn.toUpperCase() + '"]');
-                    if (el) el.textContent = count;
-                }
-            }).catch(() => {
-                document.querySelectorAll('.count-spinner').forEach(el => { el.parentElement.textContent = '?'; });
-            });
-            
         } catch(e) {
-            container.innerHTML = '<div style="padding:40px;color:#EF4444;">Error: ' + e.message + '</div>';
+            container.innerHTML = '<div style="padding:40px;color:#EF4444;">Error: ' + e.message + '<br><br><button onclick="renderContent()" style="padding:8px 16px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;cursor:pointer;">Retry</button></div>';
         }
     }, 10);
     
