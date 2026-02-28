@@ -2874,7 +2874,9 @@ window.addEventListener('drop', function(e) {
     var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (!file) return;
     var name = file.name.toLowerCase();
-    if (name.endsWith('.xml') || name.endsWith('.zip')) {
+    var type = file.type || '';
+    if (name.endsWith('.xml') || name.endsWith('.zip') || name.endsWith('.xsd') ||
+        type.includes('zip') || type.includes('xml') || type.includes('octet')) {
         importDroppedFile(file);
     }
 }, true);
