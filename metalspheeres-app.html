@@ -3910,10 +3910,21 @@ function renderDbStatistics() {
         if (!container) return;
         
         try {
-            const resp = await fetch(API + '/schema/full');
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const schema = await resp.json();
-            if (schema.error) throw new Error(schema.error);
+            // Use cached schema if available, otherwise fetch
+            let schema = window._schemaFull;
+            if (!schema) {
+                const cached = sessionStorage.getItem('ms_schema');
+                if (cached) {
+                    schema = JSON.parse(cached);
+                } else {
+                    const resp = await fetch(API + '/schema/full');
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    schema = await resp.json();
+                    if (schema.error) throw new Error(schema.error);
+                    sessionStorage.setItem('ms_schema', JSON.stringify(schema));
+                }
+                window._schemaFull = schema;
+            }
             
             // Populate xsdFieldData for popups
             const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
