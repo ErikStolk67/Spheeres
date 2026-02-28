@@ -1545,7 +1545,7 @@ function renderDbDesigner() {
         '<button onclick="clearAll()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear All</button>' +
         '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
         '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML/ZIP</button>' +
-        '<input type="file" id="xmlFileInput" accept=".xml,.xsd,.zip" style="display:none" onchange="importXmlFile(this)">';
+        '<input type="file" id="xmlFileInput" accept=".xml,.xsd,.zip,application/zip,application/x-zip-compressed,text/xml" style="display:none" onchange="importXmlFile(this)">';
     }
     const toggleHtml = `<div class="designer-toggle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';sessionStorage.setItem('ms_designerMode',designerMode);renderContent();">User Database</button>
@@ -1786,26 +1786,51 @@ const groupMeta = {
 let xsdFieldData = {};
 
 async function loadSchemaFromDB() {
+    // Try sessionStorage cache first - instant load
+    const cached = sessionStorage.getItem('ms_schema');
+    if (cached) {
+        try {
+            const schema = JSON.parse(cached);
+            applySchema(schema);
+            console.log('Schema from cache:', Object.keys(xsdFieldData).length, 'tables');
+            // Refresh in background
+            fetch(API + '/schema/full').then(r => r.json()).then(schema => {
+                if (!schema.error) {
+                    sessionStorage.setItem('ms_schema', JSON.stringify(schema));
+                    applySchema(schema);
+                }
+            }).catch(() => {});
+            return;
+        } catch(e) {}
+    }
+    // No cache - fetch and store
     try {
         const resp = await fetch(API + '/schema/full');
-        if (!resp.ok) { console.error('Schema load failed:', resp.status); return; }
+        if (!resp.ok) return;
         const schema = await resp.json();
-        if (schema.error) { console.error('Schema error:', schema.error); return; }
-        xsdFieldData = {};
-        const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
-            'character varying':'s', 'uuid':'u', 'bytea':'y',
-            'timestamp with time zone':'d', 'timestamp without time zone':'d',
-            'date':'d', 'numeric':'s', 'real':'s', 'double precision':'s' };
-        for (const [tn, info] of Object.entries(schema)) {
-            const upper = tn.toUpperCase();
-            const cols = info.columns || info;
-            xsdFieldData[upper] = (Array.isArray(cols) ? cols : []).map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
-            if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
-        }
+        if (schema.error) return;
+        sessionStorage.setItem('ms_schema', JSON.stringify(schema));
+        applySchema(schema);
         console.log('Schema loaded:', Object.keys(xsdFieldData).length, 'tables');
     } catch(e) {
-        console.error('Schema load exception:', e.message);
+        console.error('Schema load failed:', e.message);
     }
+}
+
+function applySchema(schema) {
+    xsdFieldData = {};
+    const typeMap = { 'integer':'i', 'bigint':'i', 'boolean':'b', 'text':'s',
+        'character varying':'s', 'uuid':'u', 'bytea':'y',
+        'timestamp with time zone':'d', 'timestamp without time zone':'d',
+        'date':'d', 'numeric':'s', 'real':'s', 'double precision':'s' };
+    for (const [tn, info] of Object.entries(schema)) {
+        const upper = tn.toUpperCase();
+        const cols = info.columns || info;
+        xsdFieldData[upper] = (Array.isArray(cols) ? cols : []).map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
+        if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
+    }
+    // Store full schema for statistics page
+    window._schemaFull = schema;
 }
 
 
@@ -2859,6 +2884,8 @@ async function importXmlFile(input) {
         hideLoading();
         
         if (result.success) {
+            sessionStorage.removeItem('ms_schema');
+            await loadSchemaFromDB();
             showImportReport(result);
             renderContent();
         } else {
@@ -2957,6 +2984,8 @@ async function clearAll() {
             ? '✓ All ' + result.tables_cleared + ' tables cleared'
             : 'Error: ' + result.error;
         document.querySelector('.loading-spinner').style.display = 'none';
+        sessionStorage.removeItem('ms_schema');
+        await loadSchemaFromDB();
         setTimeout(() => { hideLoading(); document.querySelector('.loading-spinner').style.display = ''; renderContent(); }, 2000);
     } catch (err) {
         document.getElementById('loadingText').textContent = 'Error: ' + err.message;
