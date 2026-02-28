@@ -793,7 +793,15 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         for (const raw of xmlParts) {
         // Strip dataset wrapper(s) like <CD_Verspaning> or any root element
-        const stripped = raw.replace(/<\/?CD_[Vv]erspaning[^>]*>/g, '').trim();
+        // Strip dataset wrappers like <CD_Verspaning>, <Database>, etc.
+        let stripped = raw.trim();
+        // Find first tag
+        const firstTagMatch = stripped.match(/^<([A-Za-z_][A-Za-z_0-9]*)[^>]*>/);
+        if (firstTagMatch) {
+            const wrapTag = firstTagMatch[1];
+            // Remove all open/close of this wrapper tag
+            stripped = stripped.replace(new RegExp('</?(' + wrapTag + ')[^>]*>', 'gi'), '').trim();
+        }
         
         // Match all record elements (tags whose content contains child tags)
         const recordRegex = /<([A-Z][A-Za-z_0-9]+)>([\s\S]*?)<\/\1>/g;
