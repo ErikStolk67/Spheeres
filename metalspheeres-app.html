@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
     const MS_VERSION = 'v0.4.0';
-    const MS_BUILD = '2026-02-28 22:00';
+    const MS_BUILD = '2026-02-28 22:10';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -3982,8 +3982,8 @@ function renderDbStatistics() {
                     '<span class="ds-section-title">' + label + '</span>' +
                     '<span class="ds-section-count">\u2014 ' + all.length + ' tabellen, ' + totalFields + ' velden, ' + totalRec.toLocaleString() + ' records</span></div>' +
                     '<div class="ds-cards">' + cardHtml('Entities',c.entities,'table',color) +
-                    cardHtml('Lookups',c.lookups,'list',color) + cardHtml('Links',c.links,'link',color) +
-                    cardHtml('Subtables',c.subtables,'layers',color) + '</div></div>';
+                    cardHtml('Links',c.links,'link',color) + cardHtml('Subtables',c.subtables,'layers',color) +
+                    cardHtml('Lookups',c.lookups,'list',color) + '</div></div>';
             }
             
             container.innerHTML =
