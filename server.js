@@ -26,6 +26,44 @@ app.get('/api/dictionaries', async (req, res) => {
     res.json(rows);
 });
 
+app.get('/api/schema/all', async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT t.table_name, 
+                   c.column_name, c.data_type, c.character_maximum_length,
+                   c.is_nullable, c.column_default,
+                   CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_pk
+            FROM information_schema.tables t
+            JOIN information_schema.columns c ON t.table_name = c.table_name AND c.table_schema = 'public'
+            LEFT JOIN (
+                SELECT kcu.table_name, kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
+            ) pk ON pk.table_name = t.table_name AND pk.column_name = c.column_name
+            WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+            ORDER BY t.table_name, c.ordinal_position
+        `);
+        
+        // Group by table
+        const tables = {};
+        for (const r of rows) {
+            if (!tables[r.table_name]) tables[r.table_name] = [];
+            tables[r.table_name].push({
+                name: r.column_name,
+                type: r.data_type,
+                maxLen: r.character_maximum_length,
+                nullable: r.is_nullable === 'YES',
+                pk: r.is_pk,
+                default: r.column_default
+            });
+        }
+        res.json(tables);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/databases', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM cd_databases ORDER BY name');
     res.json(rows);
