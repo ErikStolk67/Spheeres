@@ -1114,68 +1114,12 @@ const dictData = {
 // RENDER DICTIONARY SCREEN
 // ============================================================================
 function renderDictionaryScreen(item, group) {
-    const data = dictData[item.id] || { columns: ["Name"], rows: [] };
+    const tableName = item.id;
     const color = group.color;
-    const count = data.rows.length;
-
-    // Build filter bar for fields
-    let filterBar = '';
-    if (item.id === 'cd_fields') {
-        const tables = [...new Set(data.rows.map(r => r[5]))];
-        filterBar = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">';
-        filterBar += '<button class="dict-filter-btn active" onclick="filterDictTable(this, \'all\')">All (' + data.rows.length + ')</button>';
-        for (const t of tables) {
-            const c = data.rows.filter(r => r[5] === t).length;
-            filterBar += '<button class="dict-filter-btn" onclick="filterDictTable(this, \'' + t + '\')">' + t + ' (' + c + ')</button>';
-        }
-        filterBar += '</div>';
-    }
-
-    // Table header
-    let thCells = data.columns.map(c => '<th>' + c + '</th>').join('');
-
-    // Table rows
-    let trRows = '';
-    if (count === 0) {
-        trRows = '<tr><td colspan="' + data.columns.length + '" style="text-align:center;padding:40px;color:#94A3B8;font-style:italic;">No records yet</td></tr>';
-    } else {
-        for (const row of data.rows) {
-            let cells = '';
-            for (let i = 0; i < row.length; i++) {
-                let val = row[i];
-                // Color badge for status/lifestatus
-                if (data.columns[i] === 'Status' && val) {
-                    const sc = val === 'active' ? '#22C55E' : val === 'inactive' ? '#F59E0B' : '#6B7280';
-                    val = '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:' + sc + ';"></span>' + val + '</span>';
-                }
-                // Color swatch for color column
-                if (data.columns[i] === 'Color' && val && val.startsWith('#')) {
-                    val = '<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:3px;background:' + val + ';border:1px solid #E2E8F0;"></span>' + val + '</span>';
-                }
-                // Group badge
-                if (data.columns[i] === 'Group') {
-                    const gc = {H:'#8B5CF6',OH:'#3B82F6',C:'#22C55E',OF:'#F59E0B',F:'#64748B'}[val] || '#94A3B8';
-                    val = '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:' + gc + '18;color:' + gc + ';">' + val + '</span>';
-                }
-                // Type badge
-                if (data.columns[i] === 'Type' && (val === 'entity' || val === 'lookup' || val === 'link' || val === 'sub')) {
-                    const tc = {entity:'#3B82F6',lookup:'#8B5CF6',link:'#F59E0B',sub:'#22C55E'}[val] || '#94A3B8';
-                    val = '<span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:' + tc + '18;color:' + tc + ';">' + val + '</span>';
-                }
-                // PK badge
-                if (data.columns[i] === 'PK' && val === 'Yes') {
-                    val = '<span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;background:#FBBF2418;color:#D97706;">PK</span>';
-                }
-                // Boolean Yes
-                if (val === 'Yes' && data.columns[i] !== 'PK') {
-                    val = '<span style="color:#22C55E;">&#10003;</span>';
-                }
-                cells += '<td data-table="' + (row[5] || '') + '">' + (val || '') + '</td>';
-            }
-            trRows += '<tr data-table="' + (row[5] || '') + '">' + cells + '</tr>';
-        }
-    }
-
+    
+    // Load data after render
+    setTimeout(() => loadEntityList(tableName, item, group), 100);
+    
     return '<div class="entity-screen">' +
         '<div class="entity-header">' +
             '<div class="entity-icon" style="background:' + color + '18;">' +
@@ -1183,41 +1127,30 @@ function renderDictionaryScreen(item, group) {
             '</div>' +
             '<div>' +
                 '<div class="entity-title">' + item.label + '</div>' +
-                '<span class="entity-group" style="color:' + color + ';">' + group.label + ' &middot; ' + count + ' records</span>' +
+                '<span class="entity-group" style="color:' + color + ';">' + group.label + '</span>' +
             '</div>' +
         '</div>' +
-        filterBar +
         '<div class="entity-table" style="margin-top:24px;">' +
             '<div class="entity-toolbar">' +
                 '<div class="toolbar-btns">' +
                     '<button class="toolbar-btn">+ New</button>' +
-                    '<button class="toolbar-btn ghost">Export</button>' +
+                    '<button class="toolbar-btn ghost" onclick="loadEntityList(\'' + tableName + '\')">Refresh</button>' +
                 '</div>' +
                 '<div class="toolbar-search">' +
                     '<i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>' +
-                    '<span>Search ' + item.label.toLowerCase() + '...</span>' +
+                    '<input type="text" placeholder="Search ' + item.label.toLowerCase() + '..." ' +
+                        'style="border:none;outline:none;font-size:13px;background:transparent;width:200px;" ' +
+                        'onkeyup="if(event.key===\'Enter\')loadEntityList(\'' + tableName + '\',null,null,this.value)">' +
                 '</div>' +
             '</div>' +
-            '<div style="overflow-x:auto;">' +
-                '<table class="dict-table">' +
-                    '<thead><tr>' + thCells + '</tr></thead>' +
-                    '<tbody id="dictTableBody">' + trRows + '</tbody>' +
-                '</table>' +
+            '<div id="entityListContainer">' +
+                '<div style="padding:40px;text-align:center;color:#94A3B8;">' +
+                    '<div class="loading-spinner" style="width:24px;height:24px;margin:0 auto 12px;border-width:3px;"></div>' +
+                    'Loading...' +
+                '</div>' +
             '</div>' +
         '</div>' +
     '</div>';
-}
-
-function filterDictTable(btn, tableName) {
-    document.querySelectorAll('.dict-filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('#dictTableBody tr').forEach(tr => {
-        if (tableName === 'all' || tr.getAttribute('data-table') === tableName) {
-            tr.style.display = '';
-        } else {
-            tr.style.display = 'none';
-        }
-    });
 }
 
 // ============================================================================
