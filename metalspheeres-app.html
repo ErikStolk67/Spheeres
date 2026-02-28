@@ -4617,50 +4617,53 @@ function openStatsTable(tableName) {
     }
 
     function renderDataTab() {
-        // Try API first, else show message
         const tableKey = tableName.toLowerCase();
-        const tableId = tableMap[tableName];
         
-        if (apiAvailable && tableId) {
-            // Load from API
-            const body = document.getElementById('statsDataBody');
-            if (body) body.innerHTML = '<div style="padding:20px;color:#94A3B8;font-style:italic;">Laden...</div>';
-            fetch(API + '/query', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({sql: 'SELECT * FROM "' + tableName + '" LIMIT 100'})
-            })
+        // Always try to load from API
+        setTimeout(() => {
+            fetch(API + '/raw/' + tableKey)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                if (data && data.rows && data.rows.length > 0) {
-                    renderDataRows(data.fields || Object.keys(data.rows[0]), data.rows);
+                const rows = data && data.rows ? data.rows : (Array.isArray(data) ? data : []);
+                const total = data && data.total ? data.total : rows.length;
+                const body = document.getElementById('statsDataBody');
+                const countEl = document.getElementById('statsDataCount');
+                if (!body) return;
+                
+                if (rows.length > 0) {
+                    const cols = Object.keys(rows[0]);
+                    let html = '<table style="width:max-content;min-width:100%;border-collapse:collapse;">';
+                    html += '<thead><tr>' + cols.map(c => 
+                        '<th style="padding:8px 10px;font-size:10px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;white-space:nowrap;border-bottom:2px solid #E2E8F0;background:#F8FAFC;position:sticky;top:0;">' + c + '</th>'
+                    ).join('') + '</tr></thead><tbody>';
+                    for (const row of rows) {
+                        html += '<tr>';
+                        for (const c of cols) {
+                            let val = row[c];
+                            if (val === null || val === undefined) val = '';
+                            else if (typeof val === 'boolean') val = val ? '✓' : '';
+                            else if (typeof val === 'object') val = '';
+                            else if (typeof val === 'string' && val.length > 60) val = val.substring(0, 60) + '…';
+                            html += '<td style="padding:6px 10px;font-size:12px;border-bottom:1px solid #F1F5F9;white-space:nowrap;">' + val + '</td>';
+                        }
+                        html += '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    body.innerHTML = html;
+                    if (countEl) countEl.textContent = total + ' records, ' + cols.length + ' kolommen';
                 } else {
-                    document.getElementById('statsDataBody').innerHTML =
-                        '<div style="padding:20px;color:#94A3B8;font-style:italic;">Geen records gevonden</div>';
+                    body.innerHTML = '<div style="padding:20px;color:#94A3B8;font-style:italic;">Geen records</div>';
+                    if (countEl) countEl.textContent = '0 records';
                 }
             })
             .catch(() => {
-                document.getElementById('statsDataBody').innerHTML =
-                    '<div style="padding:20px;color:#94A3B8;font-style:italic;">Kan data niet laden</div>';
+                const body = document.getElementById('statsDataBody');
+                if (body) body.innerHTML = '<div style="padding:20px;color:#94A3B8;font-style:italic;">Kan data niet laden</div>';
             });
-        }
-
-        // Column headers from field definitions
-        const colHeaders = fields.map(f =>
-            `<th style="padding:8px 10px;font-size:10px;font-weight:600;color:#64748B;text-align:left;text-transform:uppercase;white-space:nowrap;border-bottom:2px solid #E2E8F0;background:#F8FAFC;position:sticky;top:0;">${f.name}</th>`
-        ).join('');
-
-        const isCd = tableName.startsWith('CD_');
-        const emptyMsg = isCd && apiAvailable
-            ? '<div style="padding:20px;color:#94A3B8;font-style:italic;">Laden...</div>'
-            : `<div style="padding:20px;color:#94A3B8;font-style:italic;">${isCd ? 'Geen records' : 'Alleen CD_ tabellen hebben data (via API)'}</div>`;
+        }, 100);
 
         return `<div style="overflow:auto;flex:1;" id="statsDataBody">
-            <table style="width:max-content;min-width:100%;border-collapse:collapse;" id="statsDataTable">
-                <thead><tr>${colHeaders}</tr></thead>
-                <tbody></tbody>
-            </table>
-            ${emptyMsg}
+            <div style="padding:20px;color:#94A3B8;font-style:italic;">Laden...</div>
         </div>
         <div style="padding:8px 16px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;" id="statsDataCount">${fields.length} kolommen</div>`;
     }
