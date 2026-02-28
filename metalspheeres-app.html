@@ -1295,157 +1295,138 @@ R("ACTIONS","AGENDA","n");
 R("ACTIONS","DOCUMENTS","n");
 
 // ============================================================================
-// DICTIONARY (CD_) tables for blue matrix - full set from XSD
+// DICTIONARY (CD_) tables - ALL derived from database schema
 // ============================================================================
 
-// Main CD_ tables (entities)
-const cdMainTables = [
-    { name: "CD_DICTIONARIES",           type: "cd", icon: "book" },
-    { name: "CD_DATABASES",              type: "cd", icon: "database" },
-    { name: "CD_TABLES",                 type: "cd", icon: "table" },
-    { name: "CD_FIELDS",                 type: "cd", icon: "columns" },
-    { name: "CD_CONTROLS",              type: "cd", icon: "settings" },
-    { name: "CD_TYPES",                  type: "cd", icon: "layers" },
-    { name: "CD_LIFESTATUSES",           type: "cd", icon: "activity" },
-    { name: "CD_FORMS",                  type: "cd", icon: "layout" },
-    { name: "CD_ROLES",                  type: "cd", icon: "shield" },
-    { name: "CD_FOLDERS",                type: "cd", icon: "folder" },
-    { name: "CD_FUNCTIONS",              type: "cd", icon: "code" },
-    { name: "CD_CANVASES",              type: "cd", icon: "pen-tool" },
-    { name: "CD_LICENSES",              type: "cd", icon: "key" },
-    { name: "CD_TRANSLATIONS",           type: "cd", icon: "languages" },
-    { name: "CD_DICTIONARYCOMPONENTS",   type: "cd", icon: "puzzle" },
-    { name: "CD_DICTIONARYCOMPARISONS",  type: "cd", icon: "git-compare" },
-];
+// Icon map for known entity names
+const cdIconMap = {
+    'DICTIONARIES':'book', 'DATABASES':'database', 'TABLES':'table', 'FIELDS':'columns',
+    'CONTROLS':'settings', 'TYPES':'layers', 'LIFESTATUSES':'activity', 'FORMS':'layout',
+    'ROLES':'shield', 'FOLDERS':'folder', 'FUNCTIONS':'code', 'CANVASES':'pen-tool',
+    'LICENSES':'key', 'TRANSLATIONS':'languages', 'DICTIONARYCOMPONENTS':'puzzle',
+    'DICTIONARYCOMPARISONS':'git-compare'
+};
 
-// Lookup tables
-const cdLookupTables = [
-    { name: "CD_LK_FORMATS",            type: "lk", icon: "Lf" },
-    { name: "CD_LK_ICONS",              type: "lk", icon: "Li" },
-    { name: "CD_LK_KINDS",              type: "lk", icon: "Lk" },
-    { name: "CD_LK_LANGUAGES",          type: "lk", icon: "Ll" },
-    { name: "CD_LK_FIELDFLAGS",         type: "lk", icon: "Lf" },
-    { name: "CD_LK_TEMPLATES",          type: "lk", icon: "Lt" },
-    { name: "CD_LK_APIKINDS",           type: "lk", icon: "La" },
-    { name: "CD_LK_APIPARAMTYPES",      type: "lk", icon: "Lp" },
-    { name: "CD_LK_APITYPES",           type: "lk", icon: "La" },
-    { name: "CD_LK_APPROVALS",          type: "lk", icon: "La" },
-    { name: "CD_LK_DATAROLES",          type: "lk", icon: "Ld" },
-    { name: "CD_LK_FOLLOWUPMODES",      type: "lk", icon: "Lf" },
-    { name: "CD_LK_FONTSTYLES",         type: "lk", icon: "Lf" },
-    { name: "CD_LK_IMPORTMETHODS",      type: "lk", icon: "Li" },
-    { name: "CD_LK_MATCH_CONDITIONS",   type: "lk", icon: "Lm" },
-    { name: "CD_LK_MATCH_MODES",        type: "lk", icon: "Lm" },
-    { name: "CD_LK_MATCH_TYPES",        type: "lk", icon: "Lm" },
-    { name: "CD_LK_NODETYPES",          type: "lk", icon: "Ln" },
-    { name: "CD_LK_OPERATIONTYPES",     type: "lk", icon: "Lo" },
-    { name: "CD_LK_PARAMDATATYPES",     type: "lk", icon: "Lp" },
-    { name: "CD_LK_PROPERTYMODES",      type: "lk", icon: "Lp" },
-    { name: "CD_LK_PROTOCOLS",          type: "lk", icon: "Lp" },
-    { name: "CD_LK_RELATIONTYPEVALUES", type: "lk", icon: "Lr" },
-    { name: "CD_LK_REQUESTTYPES",       type: "lk", icon: "Lr" },
-    { name: "CD_LK_SHAPES",             type: "lk", icon: "Ls" },
-    { name: "CD_LK_SHOWMODES",          type: "lk", icon: "Ls" },
-    { name: "CD_LK_SIDES",              type: "lk", icon: "Ls" },
-    { name: "CD_LK_SUBJECTAREAS",       type: "lk", icon: "Ls" },
-    { name: "CD_LK_TRIGGERACTIONS",      type: "lk", icon: "Lt" },
-    { name: "CD_LK_TRIGGERSUBJECTS",     type: "lk", icon: "Lt" },
-];
-
-// Sub-tables - dynamically derived from schema at render time
-function getCdSubTables() {
-    const subs = {};
-    const mainPrefixes = {};
-    // Build prefix map from main tables: CD_FIELDS -> FIEL, CD_CANVASES -> CANV, etc.
-    for (const t of cdMainTables) {
-        const base = t.name.replace('CD_', '');
-        const prefix = base.substring(0, 4).toUpperCase();
-        mainPrefixes[prefix] = t.name;
-    }
-    // Find all CD_ tables in schema that match CD_PREFIX_SOMETHING pattern
-    const allTables = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_'));
-    for (const t of allTables) {
+// Build all CD_ table structures dynamically from xsdFieldData
+function buildCdSchema() {
+    const allCd = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_')).sort();
+    
+    const entities = [];   // CD_XXXX (no underscore in base)
+    const lookups = [];    // CD_LK_*
+    const subs = {};       // CD_XXXX_YYYY where XXXX is entity prefix
+    const links = [];      // CD_XXXX_YYYY where both are entity prefixes
+    
+    // Step 1: find entities and lookups
+    for (const t of allCd) {
         const base = t.replace('CD_', '');
-        if (!base.includes('_')) continue; // main entity, skip
-        if (t.startsWith('CD_LK_')) continue; // lookup, skip
+        if (base.startsWith('LK_')) {
+            lookups.push({ name: t, type: 'lk', icon: 'L' + base.charAt(3).toLowerCase() });
+        } else if (!base.includes('_')) {
+            entities.push({ name: t, type: 'cd', icon: cdIconMap[base] || 'table' });
+        }
+    }
+    
+    // Step 2: build prefix map from entities
+    const prefixMap = {}; // FIEL -> CD_FIELDS, CANV -> CD_CANVASES, etc.
+    for (const e of entities) {
+        const base = e.name.replace('CD_', '');
+        prefixMap[base.substring(0, 4)] = e.name;
+        // Also try shorter prefixes for names like CD_DICTIONARYCOMPONENTS -> DICT
+        if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
+    }
+    
+    // Step 3: classify remaining tables as subs or links
+    for (const t of allCd) {
+        const base = t.replace('CD_', '');
+        if (!base.includes('_') || base.startsWith('LK_')) continue;
+        
         const parts = base.split('_');
-        const prefix = parts[0].toUpperCase();
-        const parent = mainPrefixes[prefix];
-        if (parent && t !== parent) {
-            // Check it's not a link table (both parts map to main entities)
-            const secondPrefix = parts.slice(1).join('_').substring(0, 4).toUpperCase();
-            const isLink = mainPrefixes[secondPrefix] && parts.length === 2 && parts[1].length <= 5;
-            if (!isLink) {
-                if (!subs[parent]) subs[parent] = [];
-                if (!subs[parent].includes(t)) subs[parent].push(t);
+        const firstPrefix = parts[0];
+        const secondPart = parts.slice(1).join('_');
+        const secondPrefix = secondPart.substring(0, 4);
+        
+        const parent1 = prefixMap[firstPrefix] || prefixMap[firstPrefix.substring(0, 3)];
+        const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
+        
+        if (parent1 && parent2 && parent1 !== parent2) {
+            // Link table: both parts match entities
+            links.push({ name: t, from: parent1, to: parent2 });
+        } else if (parent1 && parent1 !== t) {
+            // Sub table
+            if (!subs[parent1]) subs[parent1] = [];
+            subs[parent1].push(t);
+        } else if (parent1 === parent2 && parent1) {
+            // Self-link (e.g. CD_FIEL_FIEL)
+            links.push({ name: t, from: parent1, to: parent1 });
+        }
+    }
+    
+    // Step 4: derive relations from links and subs
+    const rels = {};
+    function setRel(row, col, val) {
+        if (!rels[row]) rels[row] = {};
+        if (!rels[row][col]) rels[row][col] = val;
+    }
+    for (const link of links) {
+        if (link.from === link.to) {
+            setRel(link.from, link.to, 'nn'); // self-link
+        } else {
+            setRel(link.from, link.to, 'n');
+            setRel(link.to, link.from, '—');
+        }
+    }
+    
+    // Step 5: build table list with sub/type counts for matrix
+    const tableList = entities.map(e => {
+        const subCount = (subs[e.name] || []).length;
+        return { ...e, cols: ['—', subCount || '—', '—'] };
+    });
+    
+    return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
+}
+
+// Cached result
+let _cdSchema = null;
+function getCdSchema() {
+    if (!_cdSchema || Object.keys(xsdFieldData).length === 0) {
+        _cdSchema = buildCdSchema();
+    }
+    return _cdSchema;
+}
+
+// Invalidate when schema changes
+function invalidateCdSchema() { _cdSchema = null; }
+
+// Backward-compatible accessors
+function getCdTables() { return getCdSchema().tableList; }
+function getCdSubTables() { return getCdSchema().subs; }
+function getCdRelations() { return getCdSchema().relations; }
+function getCdLookupTables() { return getCdSchema().lookups; }
+
+// Lookup mappings: derive from F_ columns in entity tables
+function getCdLookupMap() {
+    const map = {};
+    const schema = window._schemaFull || {};
+    for (const [tn, info] of Object.entries(schema)) {
+        const upper = tn.toUpperCase();
+        if (!upper.startsWith('CD_') || upper.startsWith('CD_LK_')) continue;
+        const cols = info.columns || [];
+        const lkCols = cols.filter(c => c.name.startsWith('f_') || c.name.startsWith('F_'));
+        // Each F_ column potentially references a lookup
+        for (const c of lkCols) {
+            const fName = c.name.toLowerCase().replace('f_', '');
+            // Find matching lookup table
+            const lk = Object.keys(xsdFieldData).find(t => 
+                t.startsWith('CD_LK_') && t.toLowerCase().includes(fName.substring(0, 4))
+            );
+            if (lk) {
+                const entityLabel = upper.replace('CD_', '');
+                if (!map[entityLabel]) map[entityLabel] = [];
+                if (!map[entityLabel].includes(lk)) map[entityLabel].push(lk);
             }
         }
     }
-    return subs;
-}
-
-// Combine main CD tables for matrix (NO sub, NO lookup)
-const cdTypeCount = {
-    "CD_DICTIONARIES":2,"CD_DATABASES":3,"CD_TABLES":5,"CD_FIELDS":4,"CD_CONTROLS":4,
-    "CD_TYPES":3,"CD_LIFESTATUSES":4,"CD_FORMS":4,"CD_ROLES":3,"CD_FOLDERS":2,
-    "CD_FUNCTIONS":3,"CD_CANVASES":3,"CD_LICENSES":3,"CD_TRANSLATIONS":4,
-    "CD_DICTIONARYCOMPONENTS":2,"CD_DICTIONARYCOMPARISONS":2,
-};
-function getCdTables() {
-    const cdSubTables = getCdSubTables();
-    return cdMainTables.map(t => {
-        const subs = cdSubTables[t.name] || [];
-        const typeC = cdTypeCount[t.name] || 0;
-        const subC = subs.length || 0;
-        return {...t, cols: [typeC || "—", subC || "—", "—"]};
-    });
-}
-
-// CD relations - derived from link table names
-const cdRelations = {};
-function CR(row, col, val) {
-    if (!cdRelations[row]) cdRelations[row] = {};
-    cdRelations[row][col] = val;
-}
-
-// nn relations (same prefix twice = link table between self)
-CR("CD_CANVASES","CD_CANVASES","nn");       // cd_canv_canv
-CR("CD_CONTROLS","CD_CONTROLS","nn");       // cd_cntr_cntr
-CR("CD_DATABASES","CD_DATABASES","nn");     // cd_dbas_dbas
-CR("CD_DICTIONARIES","CD_DICTIONARIES","nn"); // cd_dico_dico
-CR("CD_FIELDS","CD_FIELDS","nn");           // cd_fiel_fiel
-CR("CD_FORMS","CD_FORMS","nn");             // cd_form_form
-CR("CD_FUNCTIONS","CD_FUNCTIONS","nn");     // cd_func_func
-CR("CD_LIFESTATUSES","CD_LIFESTATUSES","nn"); // cd_life_life
-CR("CD_TABLES","CD_TABLES","nn");           // cd_tabl_tabl
-CR("CD_TYPES","CD_TYPES","nn");             // cd_type_type
-
-// n relations (different prefixes = parent has child)
-CR("CD_CANVASES","CD_FUNCTIONS","n");       // cd_canv_func
-CR("CD_CANVASES","CD_TABLES","n");          // cd_canv_tabl
-CR("CD_CONTROLS","CD_CANVASES","n");        // cd_cntr_canv
-CR("CD_DATABASES","CD_TABLES","n");         // cd_dbas_tabl
-CR("CD_DICTIONARIES","CD_DICTIONARYCOMPONENTS","n"); // cd_dict_comp
-CR("CD_DICTIONARIES","CD_DATABASES","n");   // cd_dict_data + cd_dict_dbas
-CR("CD_FIELDS","CD_CONTROLS","n");          // cd_fiel_cntr + cd_fiel_cont
-CR("CD_FORMS","CD_CONTROLS","n");           // cd_form_cntr + cd_form_cont
-CR("CD_FUNCTIONS","CD_DICTIONARYCOMPONENTS","n"); // cd_func_comp
-CR("CD_LIFESTATUSES","CD_CANVASES","n");    // cd_life_canv
-CR("CD_LIFESTATUSES","CD_TABLES","n");      // cd_life_tabl
-CR("CD_ROLES","CD_FUNCTIONS","n");          // cd_role_func
-CR("CD_ROLES","CD_LIFESTATUSES","n");       // cd_role_life
-CR("CD_TABLES","CD_FIELDS","n");            // cd_tabl_fiel
-CR("CD_TABLES","CD_FORMS","n");             // cd_tabl_form
-CR("CD_TYPES","CD_LIFESTATUSES","n");       // cd_type_life
-CR("CD_TYPES","CD_TABLES","n");             // cd_type_tabl
-
-// Auto-generate reciprocal dashes for CD: if A→B is "n", B→A gets "—"
-for (const row of Object.keys(cdRelations)) {
-    for (const col of Object.keys(cdRelations[row])) {
-        if (cdRelations[row][col] === 'n' && (!cdRelations[col] || !cdRelations[col][row])) {
-            CR(col, row, "—");
-        }
-    }
+    return map;
 }
 
 // Auto-generate reciprocal dashes for User: if A→B is "n", B→A gets "—"
@@ -1458,27 +1439,10 @@ for (const row of Object.keys(relations)) {
 }
 
 // Lookup mappings: which CD_LK_ tables belong to which entity (for Lookup Editor tree)
-const cdLookupMap = {
-    'Databases':    ['CD_LK_KINDS'],
-    'Tables':       ['CD_LK_KINDS','CD_LK_ICONS','CD_LK_SUBJECTAREAS'],
-    'Fields':       ['CD_LK_FORMATS','CD_LK_KINDS','CD_LK_FIELDFLAGS','CD_LK_ICONS','CD_LK_PROPERTYMODES'],
-    'Controls':     ['CD_LK_FORMATS','CD_LK_ICONS'],
-    'Forms':        ['CD_LK_TEMPLATES'],
-    'Types':        ['CD_LK_KINDS','CD_LK_ICONS'],
-    'Statuses':     ['CD_LK_NODETYPES','CD_LK_FOLLOWUPMODES','CD_LK_FONTSTYLES'],
-    'Canvases':     ['CD_LK_TRIGGERACTIONS','CD_LK_TRIGGERSUBJECTS','CD_LK_SHAPES','CD_LK_SIDES','CD_LK_PROTOCOLS','CD_LK_IMPORTMETHODS','CD_LK_APITYPES','CD_LK_REQUESTTYPES','CD_LK_APIPARAMTYPES','CD_LK_APIKINDS'],
-    'Roles':        [],
-    'Functions':    ['CD_LK_APITYPES','CD_LK_REQUESTTYPES','CD_LK_APIPARAMTYPES','CD_LK_APIKINDS','CD_LK_PARAMDATATYPES'],
-    'Translations': ['CD_LK_LANGUAGES'],
-    'Licences':     [],
-    'Folders':      [],
-    'Dictionaries': [],
-};
-
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
     const tables = isDictMode ? getCdTables() : dbTables;
-    const rels = isDictMode ? cdRelations : relations;
+    const rels = isDictMode ? getCdRelations() : relations;
 
     // Colors per mode
     const mainBg = isDictMode ? '#DBEAFE' : '#FEF9C3';      // blue vs yellow headers
@@ -1854,8 +1818,9 @@ function applySchema(schema) {
         xsdFieldData[upper] = (Array.isArray(cols) ? cols : []).map(c => c.name.toUpperCase() + ':' + (typeMap[c.type]||'s')).join(',');
         if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
     }
-    // Store full schema for statistics page
     window._schemaFull = schema;
+    invalidateCdSchema();
+    updateCdTableTypes();
 }
 
 
@@ -2029,13 +1994,14 @@ dbTables.forEach(t => {
     tableTypes[t.name] = t.type === 'sys' ? 'sys' : 'entity';
 });
 tableTypes["STATS"] = 'lookup';
-// Add CD_ tables to tableTypes (use main tables directly, dynamic subs come from schema)
-cdMainTables.forEach(t => {
-    tableTypes[t.name] = 'entity';
-});
-cdLookupTables.forEach(t => {
-    tableTypes[t.name] = 'lookup';
-});
+// Add CD_ tables to tableTypes (will be populated after schema loads)
+function updateCdTableTypes() {
+    const schema = getCdSchema();
+    for (const e of schema.entities) tableTypes[e.name] = 'entity';
+    for (const l of schema.lookups) tableTypes[l.name] = 'lookup';
+}
+// Run once at init, re-run after schema loads
+if (Object.keys(xsdFieldData).length > 0) updateCdTableTypes();
 
 // ============================================================================
 // CUSTOM FIELDS STORAGE (in-memory per table)
@@ -3424,7 +3390,7 @@ function renderLookupEditor() {
     };
 
     let treeHtml = '';
-    for (const [entity, lookups] of Object.entries(cdLookupMap)) {
+    for (const [entity, lookups] of Object.entries(getCdLookupMap())) {
         const icon = entityIcons[entity] || '&#9632;';
         const hasLookups = lookups.length > 0;
         treeHtml += `<div class="le-tree-entity" onclick="toggleLookupBranch(this)">
