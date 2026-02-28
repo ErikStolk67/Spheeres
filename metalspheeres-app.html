@@ -888,41 +888,45 @@ function renderContent() {
     const content = document.getElementById("content");
     const breadcrumb = document.getElementById("breadcrumb");
 
-    // Validate activeItem still exists in menu
-    if (activeItem !== null) {
-        const ctx = findContext();
-        if (!ctx) {
-            // activeItem not found in menu, reset to dashboard
-            activeItem = null;
-            sessionStorage.setItem('ms_activeItem', null);
+    try {
+        // Validate activeItem still exists in menu
+        if (activeItem !== null) {
+            const ctx = findContext();
+            if (!ctx) {
+                activeItem = null;
+                sessionStorage.setItem('ms_activeItem', null);
+            }
         }
-    }
 
-    if (activeItem === null) {
-        breadcrumb.innerHTML = '<span class="breadcrumb-item">Dashboard</span>';
-        content.innerHTML = renderDashboard();
-    } else {
-        const { item, group } = findContext();
-        breadcrumb.innerHTML = `
-            <span class="breadcrumb-group">${group.label}</span>
-            <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
-            <span class="breadcrumb-item">${item.label}</span>`;
-        
-        if (activeItem === 'db_designer') {
-            content.innerHTML = renderDbDesigner();
-        } else if (activeItem === 'lookup_editor') {
-            content.innerHTML = renderLookupEditor();
-            initLookupTree();
-        } else if (activeItem === 'db_statistics') {
-            content.innerHTML = renderDbStatistics();
-            initDbStatistics();
-        } else if (activeItem.startsWith('cd_')) {
-            content.innerHTML = renderDictionaryScreen(item, group);
+        if (activeItem === null) {
+            breadcrumb.innerHTML = '<span class="breadcrumb-item">Dashboard</span>';
+            content.innerHTML = renderDashboard();
         } else {
-            content.innerHTML = renderEntityScreen(item, group);
+            const { item, group } = findContext();
+            breadcrumb.innerHTML = `
+                <span class="breadcrumb-group">${group.label}</span>
+                <i data-lucide="chevron-right" style="width:14px;height:14px;color:#CBD5E1;"></i>
+                <span class="breadcrumb-item">${item.label}</span>`;
+            
+            if (activeItem === 'db_designer') {
+                content.innerHTML = renderDbDesigner();
+            } else if (activeItem === 'lookup_editor') {
+                content.innerHTML = renderLookupEditor();
+                initLookupTree();
+            } else if (activeItem === 'db_statistics') {
+                content.innerHTML = renderDbStatistics();
+                initDbStatistics();
+            } else if (activeItem.startsWith('cd_')) {
+                content.innerHTML = renderDictionaryScreen(item, group);
+            } else {
+                content.innerHTML = renderEntityScreen(item, group);
+            }
         }
+        lucide.createIcons();
+    } catch(e) {
+        console.error('renderContent error:', e);
+        content.innerHTML = '<div style="padding:40px;color:#EF4444;"><h2>Render Error</h2><pre>' + e.message + '\n' + e.stack + '</pre><br><button onclick="activeItem=null;sessionStorage.clear();renderContent();" style="padding:8px 16px;background:#3B82F6;color:white;border:none;border-radius:6px;cursor:pointer;">Reset to Dashboard</button></div>';
     }
-    lucide.createIcons();
 }
 
 // ============================================================================
@@ -3987,11 +3991,14 @@ function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 // INIT
 // ============================================================================
 renderSidebar();
-// Load schema from DB first, then render content
+renderContent(); // Show page immediately
+
+// Load schema in background for popups/statistics
 (async () => {
     await loadSchemaFromDB();
     await loadTableMap();
-    renderContent();
+    // If on statistics page, re-render now that schema is loaded
+    if (activeItem === 'db_statistics') renderContent();
 })();
 </script>
 </body>
