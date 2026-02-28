@@ -4621,14 +4621,20 @@ function openStatsTable(tableName) {
         
         // Always try to load from API
         setTimeout(() => {
+            console.log('Fetching data from:', API + '/raw/' + tableKey);
             fetch(API + '/raw/' + tableKey)
-            .then(r => r.ok ? r.json() : null)
+            .then(r => {
+                console.log('Response status:', r.status, r.ok);
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
             .then(data => {
+                console.log('Data received:', data ? 'yes' : 'no', 'rows:', data?.rows?.length, 'total:', data?.total);
                 const rows = data && data.rows ? data.rows : (Array.isArray(data) ? data : []);
                 const total = data && data.total ? data.total : rows.length;
                 const body = document.getElementById('statsDataBody');
                 const countEl = document.getElementById('statsDataCount');
-                if (!body) return;
+                if (!body) { console.log('statsDataBody not found!'); return; }
                 
                 if (rows.length > 0) {
                     const cols = Object.keys(rows[0]);
@@ -4714,20 +4720,6 @@ function openStatsTable(tableName) {
         </div>
     </div>`;
     popup.classList.add('open');
-
-    // If CD_ table with API, auto-load data
-    if (apiAvailable && tableName.startsWith('CD_')) {
-        const lower = tableName.toLowerCase();
-        fetch(API + '/raw/' + lower)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-            if (data && data.length > 0) {
-                const cols = Object.keys(data[0]);
-                renderDataRows(cols, data.slice(0, 100));
-            }
-        })
-        .catch(() => {});
-    }
 }
 
 function switchStatsTab(el, tab) {
