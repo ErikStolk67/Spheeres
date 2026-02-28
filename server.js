@@ -26,6 +26,31 @@ app.get('/api/dictionaries', async (req, res) => {
     res.json(rows);
 });
 
+app.get('/api/schema/counts', async (req, res) => {
+    try {
+        const { rows: tables } = await pool.query(`
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        `);
+        const counts = {};
+        // Use a single query with UNION ALL for speed
+        if (tables.length > 0) {
+            const parts = tables.map(t => 
+                `SELECT '${t.table_name}' as t, count(*) as c FROM "${t.table_name}"`
+            );
+            // Execute in batches of 20 to avoid query length limits
+            for (let i = 0; i < parts.length; i += 20) {
+                const batch = parts.slice(i, i + 20).join(' UNION ALL ');
+                const { rows } = await pool.query(batch);
+                for (const r of rows) counts[r.t] = parseInt(r.c);
+            }
+        }
+        res.json(counts);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/schema/all', async (req, res) => {
     try {
         const { rows } = await pool.query(`
@@ -409,6 +434,33 @@ app.post('/api/data/:table', async (req, res) => {
 });
 
 // ============================================================================
+// REBUILD DATABASE - Recreate all tables from migration SQL
+app.post('/api/rebuild-db', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const migrationSql = fs.readFileSync(path.join(__dirname, 'database', '003_xsd_migration.sql'), 'utf-8');
+        await client.query(migrationSql);
+        
+        // Also run alignment if exists
+        try {
+            const alignSql = fs.readFileSync(path.join(__dirname, 'database', '004_xsd_alignment.sql'), 'utf-8');
+            await client.query(alignSql);
+        } catch(e) {}
+        
+        // Count tables
+        const { rows } = await client.query(`
+            SELECT count(*) FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        `);
+        
+        res.json({ success: true, tables: parseInt(rows[0].count) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 app.post('/api/clear-all', async (req, res) => {
     const client = await pool.connect();
     try {
