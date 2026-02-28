@@ -1538,7 +1538,7 @@ function renderDbDesigner() {
     // Toggle button + action buttons
     let actionBtns = '';
     if (isDictMode) {
-        actionBtns = '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear</button>' +
+        actionBtns = '<button onclick="clearAll()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear All</button>' +
         '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
         '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML/ZIP</button>' +
         '<input type="file" id="xmlFileInput" accept=".xml,.xsd,.zip" style="display:none" onchange="importXmlFile(this)">';
@@ -2925,6 +2925,23 @@ function showImportReport(result) {
     html += '</tbody></table></div></div>';
     popup.innerHTML = html;
     popup.classList.add('open');
+}
+
+// Clear ALL tables in database
+async function clearAll() {
+    showLoading('Clearing all tables...');
+    try {
+        const resp = await fetch(API + '/clear-all', { method: 'POST' });
+        const result = await resp.json();
+        document.getElementById('loadingText').textContent = result.success 
+            ? '✓ All ' + result.tables_cleared + ' tables cleared'
+            : 'Error: ' + result.error;
+        document.querySelector('.loading-spinner').style.display = 'none';
+        setTimeout(() => { hideLoading(); document.querySelector('.loading-spinner').style.display = ''; renderContent(); }, 2000);
+    } catch (err) {
+        document.getElementById('loadingText').textContent = 'Error: ' + err.message;
+        setTimeout(hideLoading, 3000);
+    }
 }
 
 // Clear all CD_ dictionary tables

@@ -409,6 +409,24 @@ app.post('/api/data/:table', async (req, res) => {
 });
 
 // ============================================================================
+app.post('/api/clear-all', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { rows } = await client.query(`
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        `);
+        for (const r of rows) {
+            await client.query(`TRUNCATE TABLE ${r.table_name} CASCADE`);
+        }
+        res.json({ success: true, tables_cleared: rows.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // CLEAR DICTIONARY - Empty all CD_ tables
 // ============================================================================
 
