@@ -920,20 +920,20 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                         else if (fname === 'graphical' || fname === 'memo' || fname === 'memo_en' || fname === 'memo_nl') colType = 'bytea';
                         
                         try {
-                            await client.query(`ALTER TABLE ${tableName} ADD COLUMN ${fname} ${colType}`);
+                            await client.query(`ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${colType}`);
                             dbCols[fname] = colType;
                         } catch(e) { /* column might already exist */ }
                     }
                 }
             }
             
-            await client.query(`TRUNCATE ${tableName} CASCADE`);
+            await client.query(`TRUNCATE "${tableName}" CASCADE`);
             
             // Widen all varchar columns to text to match XSD xs:string (unlimited)
             for (const [colName, dtype] of Object.entries(dbCols)) {
                 if (dtype === 'character varying') {
                     try {
-                        await client.query(`ALTER TABLE ${tableName} ALTER COLUMN "${colName}" TYPE text`);
+                        await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${colName}" TYPE text`);
                         dbCols[colName] = 'text';
                     } catch(e) {}
                 }
@@ -964,7 +964,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 if (cols.length === 0) continue;
                 try {
                     await client.query('SAVEPOINT sp');
-                    await client.query(`INSERT INTO ${tableName} (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
                     await client.query('RELEASE SAVEPOINT sp');
                     inserted++;
                 } catch (e) {
@@ -980,7 +980,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         await client.query('COMMIT');
         for (const r of importResults) {
-            if (r.rows > 0) try { await client.query(`ANALYZE ${r.table}`); } catch(e) {}
+            if (r.rows > 0) try { await client.query(`ANALYZE "${r.table}"`); } catch(e) {}
         }
         
         invalidateSchemaCache();

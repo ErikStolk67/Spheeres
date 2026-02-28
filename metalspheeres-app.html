@@ -2933,45 +2933,72 @@ window.addEventListener('drop', async function(e) {
 }, true);
 
 async function importMultipleFiles(files) {
-    showLoading('Importing ' + files.length + ' files...');
+    showLoading('Reading ' + files.length + ' files...');
     try {
-        // Read all files and concatenate XML
         var xmlParts = [];
+        var zipFiles = [];
+        
         for (var f of files) {
             if (f.name.toLowerCase().endsWith('.zip')) {
-                // Send zip separately
-                var resp = await fetch(API + '/import-xml', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/octet-stream' },
-                    body: f
-                });
-                continue;
+                zipFiles.push(f);
+            } else if (f.name.toLowerCase().endsWith('.xml')) {
+                var text = await f.text();
+                // Strip XML declaration and any root wrapper
+                text = text.replace(/<\?xml[^?]*\?>/g, '').trim();
+                var firstTag = text.match(/^<([A-Za-z_][A-Za-z_0-9]*)[^>]*>/);
+                if (firstTag) {
+                    text = text.replace(new RegExp('</?(' + firstTag[1] + ')[^>]*>', 'gi'), '').trim();
+                }
+                xmlParts.push(text);
             }
-            var text = await f.text();
-            xmlParts.push(text);
         }
         
-        if (xmlParts.length > 0) {
-            var combined = '<IMPORT>' + xmlParts.join('\n') + '</IMPORT>';
+        // Import zips first
+        var allResults = [];
+        for (var z of zipFiles) {
+            showLoading('Importing ' + z.name + '...');
             var resp = await fetch(API + '/import-xml', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/octet-stream' },
-                body: combined
+                body: z
             });
-            var result = await resp.json();
-            hideLoading();
-            sessionStorage.removeItem('ms_schema');
-            if (result.success) {
-                showImportReport(result);
-                loadSchemaFromDB().then(function() { renderContent(); });
-            } else {
-                showImportReport({ error: result.error });
+            if (resp.ok) {
+                var r = await resp.json();
+                allResults.push(r);
             }
-        } else {
-            hideLoading();
-            sessionStorage.removeItem('ms_schema');
-            loadSchemaFromDB().then(function() { renderContent(); });
         }
+        
+        // Combine all XMLs into one request
+        if (xmlParts.length > 0) {
+            showLoading('Importing ' + xmlParts.length + ' XML files...');
+            var combined = '<IMPORT>' + xmlParts.join('\n') + '</IMPORT>';
+            var blob = new Blob([combined], { type: 'application/octet-stream' });
+            var resp = await fetch(API + '/import-xml', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: blob
+            });
+            if (resp.ok) {
+                var r = await resp.json();
+                allResults.push(r);
+            }
+        }
+        
+        hideLoading();
+        sessionStorage.removeItem('ms_schema');
+        
+        // Merge results
+        var total = { success: true, totalRows: 0, tablesProcessed: 0, details: [] };
+        for (var r of allResults) {
+            if (r.success) {
+                total.totalRows += r.totalRows || 0;
+                total.tablesProcessed += r.tablesProcessed || 0;
+                total.details = total.details.concat(r.details || []);
+            }
+        }
+        
+        showImportReport(total);
+        loadSchemaFromDB().then(function() { renderContent(); });
     } catch (err) {
         hideLoading();
         showImportReport({ error: err.message });
@@ -2987,9 +3014,13 @@ async function importDroppedFile(file) {
             headers: { 'Content-Type': 'application/octet-stream' },
             body: file
         });
-        const result = await resp.json();
+        const text = await resp.text();
         hideLoading();
-        // Invalidate schema cache
+        let result;
+        try { result = JSON.parse(text); } catch(e) {
+            showImportReport({ error: 'Server error (HTTP ' + resp.status + '): ' + text.substring(0, 200) });
+            return;
+        }
         sessionStorage.removeItem('ms_schema');
         if (result.success) {
             showImportReport(result);
