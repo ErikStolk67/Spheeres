@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/ErikStolk67/Spheeres#readme",
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.19.0"

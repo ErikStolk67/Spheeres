@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const AdmZip = require('adm-zip');
 
 const app = express();
 app.use(cors());
@@ -648,12 +649,28 @@ app.post('/api/seed', async (req, res) => {
 app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
     const client = await pool.connect();
     try {
-        const raw = req.body.toString('utf-8');
+        const buf = req.body;
         
-        // Collect all rows per table
+        // Collect XML content from file(s)
+        let xmlParts = [];
+        
+        // Detect ZIP (magic bytes PK)
+        if (buf.length > 2 && buf[0] === 0x50 && buf[1] === 0x4B) {
+            const zip = new AdmZip(buf);
+            const entries = zip.getEntries();
+            for (const entry of entries) {
+                if (entry.entryName.toLowerCase().endsWith('.xml') && !entry.isDirectory) {
+                    xmlParts.push(entry.getData().toString('utf-8'));
+                }
+            }
+        } else {
+            xmlParts.push(buf.toString('utf-8'));
+        }
+        
+        // Collect all rows per table from all XML parts
         const tableRows = {};
         
-        // Match record elements: <CD_LK_FORMATS>..fields..</CD_LK_FORMATS>
+        for (const raw of xmlParts) {
         // Strip dataset wrapper(s) like <CD_Verspaning>
         const stripped = raw.replace(/<\/?CD_[Vv]erspaning[^>]*>/g, '').trim();
         
@@ -682,6 +699,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 tableRows[tableName].push(row);
             }
         }
+        } // end xmlParts loop
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {

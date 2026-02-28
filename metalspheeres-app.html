@@ -1607,8 +1607,8 @@ function renderDbDesigner() {
     if (isDictMode) {
         actionBtns = '<button onclick="clearDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear</button>' +
         '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
-        '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML</button>' +
-        '<input type="file" id="xmlFileInput" accept=".xml,.xsd" style="display:none" onchange="importXmlFile(this)">';
+        '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML/ZIP</button>' +
+        '<input type="file" id="xmlFileInput" accept=".xml,.xsd,.zip" style="display:none" onchange="importXmlFile(this)">';
     }
     const toggleHtml = `<div class="designer-toggle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <button class="toggle-btn ${!isDictMode ? 'active-user' : ''}" onclick="designerMode='user';renderContent();">User Database</button>
@@ -3635,7 +3635,7 @@ function hideLoading() {
 async function importXmlFile(input) {
     const file = input.files[0];
     if (!file) return;
-    input.value = ''; // reset for re-upload
+    input.value = '';
     
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
     showLoading('Importing ' + file.name + ' (' + sizeMB + ' MB)...');
@@ -3648,34 +3648,74 @@ async function importXmlFile(input) {
         });
         
         const result = await resp.json();
+        hideLoading();
         
         if (result.success) {
-            let details = result.totalRows + ' records in ' + result.tablesProcessed + ' tables';
-            const errs = (result.details || []).filter(d => d.errors > 0);
-            if (errs.length > 0) {
-                details += '\n\nErrors:';
-                for (const e of errs) {
-                    details += '\n' + e.table + ': ' + e.errors + ' failed' + (e.lastError ? ' (' + e.lastError.substring(0,60) + ')' : '');
-                }
-            }
-            document.getElementById('loadingText').style.whiteSpace = 'pre-wrap';
-            document.getElementById('loadingText').textContent = '✓ Import complete\n' + details;
-            document.querySelector('.loading-spinner').style.display = 'none';
-            // Auto-hide after 3 seconds
-            setTimeout(() => {
-                hideLoading();
-                document.querySelector('.loading-spinner').style.display = '';
-                renderContent();
-            }, 3000);
+            showImportReport(result);
+            renderContent();
         } else {
-            hideLoading();
-            document.getElementById('loadingText').textContent = 'Error: ' + result.error;
-            setTimeout(hideLoading, 3000);
+            showImportReport({ error: result.error });
         }
     } catch (err) {
-        document.getElementById('loadingText').textContent = 'Error: ' + err.message;
-        setTimeout(hideLoading, 3000);
+        hideLoading();
+        showImportReport({ error: err.message });
     }
+}
+
+function showImportReport(result) {
+    const popup = document.getElementById('addFieldPopup');
+    
+    if (result.error) {
+        popup.innerHTML = '<div class="add-field-popup" style="max-width:600px;">' +
+            '<div class="fe-toolbar"><button class="fe-btn fe-btn-cancel" onclick="closeAddFieldPopup()">Close</button></div>' +
+            '<div style="padding:20px;"><h3 style="color:#DC2626;">Import Error</h3><p>' + result.error + '</p></div></div>';
+        popup.classList.add('open');
+        return;
+    }
+    
+    const details = result.details || [];
+    const ok = details.filter(d => d.rows > 0 && !d.errors);
+    const partial = details.filter(d => d.rows > 0 && d.errors > 0);
+    const failed = details.filter(d => d.rows === 0 && d.errors > 0);
+    const notFound = details.filter(d => d.error);
+    const empty = details.filter(d => d.rows === 0 && !d.errors && !d.error);
+    
+    let html = '<div class="add-field-popup" style="max-width:700px;max-height:80vh;overflow-y:auto;">' +
+        '<div class="fe-toolbar"><button class="fe-btn fe-btn-ok" onclick="closeAddFieldPopup()">OK</button></div>' +
+        '<div style="padding:20px;">' +
+        '<h3 style="margin:0 0 12px 0;font-size:18px;">Import Report</h3>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">' +
+            '<div style="background:#ECFDF5;border-radius:8px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:700;color:#047857;">' + result.totalRows + '</div><div style="font-size:11px;color:#64748B;">Records imported</div></div>' +
+            '<div style="background:#EFF6FF;border-radius:8px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:700;color:#1D4ED8;">' + result.tablesProcessed + '</div><div style="font-size:11px;color:#64748B;">Tables processed</div></div>' +
+            '<div style="background:' + (failed.length + partial.length > 0 ? '#FEF2F2' : '#F0FDF4') + ';border-radius:8px;padding:12px;text-align:center;"><div style="font-size:24px;font-weight:700;color:' + (failed.length + partial.length > 0 ? '#DC2626' : '#16A34A') + ';">' + details.reduce((s,d) => s + (d.errors||0), 0) + '</div><div style="font-size:11px;color:#64748B;">Errors</div></div>' +
+        '</div>';
+    
+    // Table details
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#F8FAFC;"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Table</th>' +
+        '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Records</th>' +
+        '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Errors</th>' +
+        '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Status</th></tr></thead><tbody>';
+    
+    for (const d of details) {
+        const status = d.error ? '⚠️ ' + d.error :
+                       d.errors > 0 && d.rows === 0 ? '❌ Failed' :
+                       d.errors > 0 ? '⚠️ Partial' : 
+                       d.rows > 0 ? '✓ OK' : '— Empty';
+        const color = d.error || (d.errors > 0 && d.rows === 0) ? '#FEF2F2' :
+                      d.errors > 0 ? '#FFFBEB' : '';
+        const errDetail = d.lastError ? '<div style="font-size:11px;color:#94A3B8;margin-top:2px;">' + d.lastError.substring(0,80) + '</div>' : '';
+        
+        html += '<tr style="background:' + color + ';">' +
+            '<td style="padding:5px 8px;border-bottom:1px solid #F1F5F9;">' + d.table + errDetail + '</td>' +
+            '<td style="padding:5px 8px;border-bottom:1px solid #F1F5F9;text-align:right;">' + d.rows + '/' + d.total + '</td>' +
+            '<td style="padding:5px 8px;border-bottom:1px solid #F1F5F9;text-align:right;color:#DC2626;">' + (d.errors || 0) + '</td>' +
+            '<td style="padding:5px 8px;border-bottom:1px solid #F1F5F9;">' + status + '</td></tr>';
+    }
+    
+    html += '</tbody></table></div></div>';
+    popup.innerHTML = html;
+    popup.classList.add('open');
 }
 
 // Clear all CD_ dictionary tables
