@@ -2870,26 +2870,17 @@ function hideLoading() {
     document.getElementById('loadingOverlay').classList.remove('active');
 }
 
-// Drag & drop import on designer
+// Drag & drop import - works on any page
 document.addEventListener('dragover', function(e) {
     e.preventDefault();
-    const overlay = document.getElementById('dropOverlay');
-    if (overlay) overlay.style.display = 'flex';
-});
-document.addEventListener('dragleave', function(e) {
-    if (e.relatedTarget === null || e.relatedTarget === document.documentElement) {
-        const overlay = document.getElementById('dropOverlay');
-        if (overlay) overlay.style.display = 'none';
-    }
+    e.dataTransfer.dropEffect = 'copy';
 });
 document.addEventListener('drop', function(e) {
     e.preventDefault();
-    const overlay = document.getElementById('dropOverlay');
-    if (overlay) overlay.style.display = 'none';
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    const ext = file.name.toLowerCase().split('.').pop();
-    if (ext === 'xml' || ext === 'zip') {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.xml') || name.endsWith('.zip')) {
         importDroppedFile(file);
     }
 });
