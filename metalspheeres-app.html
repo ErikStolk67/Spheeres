@@ -12,7 +12,7 @@
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
     const MS_VERSION = 'v0.6.2';
-    const MS_BUILD = '2026-03-01 13:20';
+    const MS_BUILD = '2026-03-01 13:25';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1194,9 +1194,22 @@ const userIconMap = {
 
 // Build SYS/User table structures dynamically from xsdFieldData
 function buildUserSchema() {
-    const allTables = Object.keys(xsdFieldData)
-        .filter(t => !t.startsWith('CD_'))
-        .sort();
+    // Combine tables from xsdFieldData AND live schema (_schemaFull)
+    const tableSet = new Set();
+    
+    // From xsdFieldData (XSD-imported metadata)
+    for (const t of Object.keys(xsdFieldData)) {
+        if (!t.startsWith('CD_')) tableSet.add(t.toUpperCase());
+    }
+    
+    // From live PostgreSQL schema
+    const schema = window._schemaFull || {};
+    for (const t of Object.keys(schema)) {
+        const upper = t.toUpperCase();
+        if (!upper.startsWith('CD_')) tableSet.add(upper);
+    }
+    
+    const allTables = [...tableSet].sort();
     
     const sysEntities = [];
     const userEntities = [];
