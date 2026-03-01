@@ -1430,66 +1430,30 @@ function getCdLookupMap() {
     return map;
 }
 
-// Designer filter state for User mode
-let userDesignerFilter = sessionStorage.getItem('ms_userDesignerFilter') || 'sys';
+// Designer search for User mode (no filter bar, just search when too many tables)
 let userDesignerSearch = '';
 
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
     
-    let allTables, rels;
-    if (isDictMode) {
-        allTables = getCdTables();
-        rels = getCdRelations();
-    } else {
-        allTables = getDbTables();
-        rels = getUserRelations();
-    }
+    let tables = isDictMode ? getCdTables() : getDbTables();
+    const rels = isDictMode ? getCdRelations() : getUserRelations();
     
-    // In User mode: filter by category since 671 tables won't fit in one matrix
-    let tables = allTables;
-    let filterHtml = '';
+    // For User mode: apply search and cap to prevent browser crash
+    let searchHtml = '';
     if (!isDictMode) {
-        const schema = getUserSchema();
-        const c = schema.counts || {};
-        const f = userDesignerFilter;
         const search = userDesignerSearch.toLowerCase();
-        
-        // Filter by category
-        if (f === 'sys') {
-            tables = allTables.filter(t => t.type === 'sys');
-        } else if (f === 'user') {
-            tables = allTables.filter(t => t.type === 'user');
-        } else {
-            tables = allTables;
-        }
-        
-        // Apply search
         if (search) {
             tables = tables.filter(t => t.name.toLowerCase().includes(search));
         }
-        
-        // Cap at 100 to prevent browser crash
-        const MAX_MATRIX = 100;
-        const totalFiltered = tables.length;
-        if (tables.length > MAX_MATRIX) tables = tables.slice(0, MAX_MATRIX);
-        
-        const btnStyle = (key) => f === key 
-            ? 'padding:5px 12px;border-radius:6px;border:2px solid #D97706;background:#FEF3C7;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;' 
-            : 'padding:5px 12px;border-radius:6px;border:1px solid #D1D5DB;background:#FFF;color:#6B7280;font-size:12px;font-weight:500;cursor:pointer;';
-        const truncMsg = totalFiltered > tables.length 
-            ? `<span style="color:#DC2626;font-size:11px;margin-left:8px;">Showing ${tables.length} of ${totalFiltered} — use search to narrow</span>` 
-            : `<span style="color:#64748B;font-size:11px;margin-left:8px;">${tables.length} tables</span>`;
-        filterHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
-            <button style="${btnStyle('sys')}" onclick="userDesignerFilter='sys';sessionStorage.setItem('ms_userDesignerFilter','sys');renderContent();">🖥 SYS (${c.sys||0})</button>
-            <button style="${btnStyle('user')}" onclick="userDesignerFilter='user';sessionStorage.setItem('ms_userDesignerFilter','user');renderContent();">📋 Entities (${c.user||0})</button>
-            <button style="${btnStyle('all')}" onclick="userDesignerFilter='all';sessionStorage.setItem('ms_userDesignerFilter','all');renderContent();">All (${c.total||0})</button>
-            <span style="margin-left:8px;color:#64748B;font-size:11px;">+ ${c.lookups||0} lookups · ${c.subs||0} subs</span>
-            <span style="flex:1;"></span>
-            <input type="text" placeholder="Search tables..." value="${userDesignerSearch}" 
-                style="padding:5px 10px;border-radius:6px;border:1px solid #D1D5DB;font-size:12px;width:180px;"
+        const MAX_MATRIX = 80;
+        const total = tables.length;
+        if (total > MAX_MATRIX) tables = tables.slice(0, MAX_MATRIX);
+        searchHtml = `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+            <input type="text" placeholder="Search ${total} tables..." value="${userDesignerSearch}" 
+                style="padding:5px 10px;border-radius:6px;border:1px solid #D1D5DB;font-size:12px;width:220px;"
                 oninput="userDesignerSearch=this.value;clearTimeout(window._dsTO);window._dsTO=setTimeout(()=>renderContent(),300);">
-            ${truncMsg}
+            ${total > tables.length ? '<span style="color:#DC2626;font-size:11px;">Showing ' + tables.length + ' of ' + total + '</span>' : '<span style="color:#64748B;font-size:11px;">' + tables.length + ' tables</span>'}
         </div>`;
     }
 
@@ -1595,32 +1559,6 @@ function renderDbDesigner() {
         <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
     </div>`;
 
-    // Category filter bar for User mode
-    let filterHtml = '';
-    if (!isDictMode) {
-        const schema = getUserSchema();
-        const c = schema.counts || {};
-        const f = userDesignerFilter;
-        const btnStyle = (key) => f === key 
-            ? 'padding:5px 12px;border-radius:6px;border:2px solid #D97706;background:#FEF3C7;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;' 
-            : 'padding:5px 12px;border-radius:6px;border:1px solid #D1D5DB;background:#FFF;color:#6B7280;font-size:12px;font-weight:500;cursor:pointer;';
-        const truncMsg = (tables._totalCount && tables._totalCount > tables.length) 
-            ? '<span style="color:#DC2626;font-size:11px;margin-left:8px;">Showing ' + tables.length + ' of ' + tables._totalCount + ' — use search to narrow</span>' 
-            : '<span style="color:#64748B;font-size:11px;margin-left:8px;">' + tables.length + ' tables in matrix</span>';
-        filterHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
-            <button style="${btnStyle('sys')}" onclick="userDesignerFilter='sys';sessionStorage.setItem('ms_userDesignerFilter','sys');renderContent();">🖥 SYS (${c.sys||0})</button>
-            <button style="${btnStyle('entity')}" onclick="userDesignerFilter='entity';sessionStorage.setItem('ms_userDesignerFilter','entity');renderContent();">📋 Entities (${c.entities||0})</button>
-            <button style="${btnStyle('lookup')}" onclick="userDesignerFilter='lookup';sessionStorage.setItem('ms_userDesignerFilter','lookup');renderContent();">📑 Lookups (${c.lookups||0})</button>
-            <button style="${btnStyle('sub')}" onclick="userDesignerFilter='sub';sessionStorage.setItem('ms_userDesignerFilter','sub');renderContent();">📎 Subs (${c.subs||0})</button>
-            <button style="${btnStyle('all')}" onclick="userDesignerFilter='all';sessionStorage.setItem('ms_userDesignerFilter','all');renderContent();">All</button>
-            <span style="flex:1;"></span>
-            <input type="text" placeholder="Search tables..." value="${userDesignerSearch}" 
-                style="padding:5px 10px;border-radius:6px;border:1px solid #D1D5DB;font-size:12px;width:180px;"
-                oninput="userDesignerSearch=this.value;clearTimeout(window._dsTO);window._dsTO=setTimeout(()=>renderContent(),300);">
-            ${truncMsg}
-        </div>`;
-    }
-
     // Legend
     const legendItems = isDictMode ? `
         <div class="designer-legend-item"><div class="designer-legend-color" style="background:#1D4ED8;"></div> nn = N:N (link table)</div>
@@ -1645,7 +1583,7 @@ function renderDbDesigner() {
     return `<div class="designer" id="designerArea">
         <h1>Database Designer</h1>
         ${toggleHtml}
-        ${filterHtml}
+        ${searchHtml}
 
         <div class="designer-legend" style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0;font-size:11px;">
             ${legendItems}
