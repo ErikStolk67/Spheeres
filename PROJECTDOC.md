@@ -341,7 +341,84 @@ Statistics cards sort **alphabetically** within each category.
 
 ---
 
-## 8. Known Issues & Gotchas
+## 8. CSS Classes & Styling Details
+
+### 8.1 Matrix Cell CSS Classes
+
+| Class | Zone | Value | Background |
+|-------|------|-------|------------|
+| `cell-nn-cd` | CD | nn | #1D4ED8 (dark blue) |
+| `cell-n-cd` | CD | n | #3B82F6 (blue) |
+| `cell-dash-cd` | CD | — | #93C5FD (light blue) |
+| `cell-nn` | SYS×SYS | nn | #D97706 (amber) |
+| `cell-n` | SYS×SYS | n | #FBBF24 (yellow) |
+| `cell-dash` | SYS×SYS | — | #FDE68A (light yellow) |
+| `cell-nn-user` | other | nn | #64748B (dark gray) |
+| `cell-n-user` | other | n | #94A3B8 (gray) |
+| `cell-dash-user` | other | — | #CBD5E1 (light gray) |
+
+### 8.2 Matrix Gridlines
+
+All matrix cells have `border-right: 2px solid #fff; border-bottom: 2px solid #fff` — white gridlines separating cells on the colored backgrounds.
+
+### 8.3 Icons
+
+- Uses Lucide icons v0.263.1 (CDN)
+- `cdIconMap`: maps CD entity base names to icons (e.g. 'FIELDS':'list', 'TABLES':'grid')
+- `userIconMap`: maps SYS/User entity names to icons (e.g. 'SYS_USERS':'users')
+- Fallback stub if Lucide CDN fails
+
+### 8.4 Designer Toggle
+
+- `designerMode` variable: `'user'` or `'dictionary'`
+- Persisted in `sessionStorage('ms_designerMode')`
+- Toggle buttons: `.active-user` (gray #64748B) and `.active-dict` (blue #3B82F6)
+
+---
+
+## 9. Screens & Navigation
+
+| Screen | Function | Trigger |
+|--------|----------|---------|
+| Dashboard | `renderDashboard()` | Click home / `navigate(null)` |
+| Database Designer | `renderDbDesigner()` | Click "Database Designer" menu item |
+| Database Statistics | `renderDbStatistics()` | Click "Statistics" menu item |
+| Dictionary Screen | `renderDictionaryScreen(item, group)` | Click CD_ item in sidebar |
+| Entity Screen | `renderEntityScreen(item, group)` | Click entity item in sidebar |
+| Entity Popup | `showTablePopup(tableName)` | Click entity name in matrix |
+
+Navigation: `activeItem` stored in sessionStorage, sidebar highlights active item.
+
+---
+
+## 10. User Schema Entity Detection
+
+In `buildUserSchema()`, entities from the live schema (`_schemaFull`) are classified:
+- Name starts with `SYS_` and has no further `_` → `type: 'sys'`
+- Name starts with `SYS_` but has `_` in remainder → subtable/link (not entity)
+- Name has no `_` at all → `type: 'user'` (business entity)
+- Name starts with `LK_` → lookup (not entity)
+
+This determines which zone each entity belongs to in the User Designer matrix.
+
+---
+
+## 11. Dependencies
+
+```json
+{
+  "express": "^5.2.1",
+  "pg": "^8.19.0",
+  "cors": "^2.8.6",
+  "adm-zip": "^0.5.16"
+}
+```
+
+Frontend: Lucide Icons v0.263.1 (CDN), no build step, no framework.
+
+---
+
+## 12. Known Issues & Gotchas
 
 | # | Issue | Detail |
 |---|-------|--------|
@@ -355,7 +432,7 @@ Statistics cards sort **alphabetically** within each category.
 
 ---
 
-## 9. Version History (key milestones)
+## 13. Version History (key milestones)
 
 | Version | Commit | Changes |
 |---------|--------|---------|
@@ -369,7 +446,7 @@ Statistics cards sort **alphabetically** within each category.
 
 ---
 
-## 10. RULES FOR AI ASSISTANTS
+## 14. RULES FOR AI ASSISTANTS
 
 ### ✅ DO:
 - Read this document FIRST before any changes
