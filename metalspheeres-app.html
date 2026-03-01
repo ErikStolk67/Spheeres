@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.9';
+    const MS_VERSION = 'v0.9.0';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1443,28 +1443,118 @@ function getCdLookupTables() { return getCdSchema().lookups; }
 
 // Lookup mappings: derive from F_ columns in entity tables
 function getCdLookupMap() {
-    const map = {};
     const schema = window._schemaFull || {};
+    const allLookups = new Set();
+    const usedLookups = new Set();
+    
+    // Collect ALL lookup tables
+    for (const tn of Object.keys(schema)) {
+        if (tn.toUpperCase().startsWith('CD_LK_') || tn.toUpperCase().startsWith('LK_')) {
+            allLookups.add(tn.toUpperCase());
+        }
+    }
+    for (const tn of Object.keys(xsdFieldData)) {
+        if (tn.toUpperCase().startsWith('CD_LK_') || tn.toUpperCase().startsWith('LK_')) {
+            allLookups.add(tn.toUpperCase());
+        }
+    }
+    
+    // Helper: find lookup for an F_ column
+    function findLookup(fColName) {
+        const fName = fColName.toLowerCase().replace('f_', '');
+        return [...allLookups].find(lk => lk.toLowerCase().includes(fName.substring(0, 4)));
+    }
+    
+    // Build categories: { label -> [lookups] }
+    const categories = {};
+    function addToCategory(cat, lk) {
+        if (!categories[cat]) categories[cat] = [];
+        if (!categories[cat].includes(lk)) categories[cat].push(lk);
+        usedLookups.add(lk);
+    }
+    
+    // Scan ALL tables (CD, SYS, User) for F_ columns pointing to lookups
     for (const [tn, info] of Object.entries(schema)) {
         const upper = tn.toUpperCase();
-        if (!upper.startsWith('CD_') || upper.startsWith('CD_LK_')) continue;
+        if (upper.startsWith('CD_LK_') || upper.startsWith('LK_')) continue;
+        
         const cols = info.columns || [];
         const lkCols = cols.filter(c => c.name.startsWith('f_') || c.name.startsWith('F_'));
-        // Each F_ column potentially references a lookup
+        
+        // Determine zone and type
+        let zone, ttype;
+        if (upper.startsWith('CD_')) {
+            zone = 'CD';
+            const base = upper.replace('CD_', '');
+            ttype = base.includes('_') ? 'sub' : 'entity';
+        } else if (upper.startsWith('SYS_')) {
+            zone = 'SYS';
+            const base = upper.replace('SYS_', '');
+            ttype = base.includes('_') ? 'sub' : 'entity';
+        } else {
+            zone = 'User';
+            ttype = upper.includes('_') || upper.includes('$') ? 'sub' : 'entity';
+        }
+        
+        const catLabel = zone + ' ' + (ttype === 'entity' ? 'Entities' : 'Subtables');
+        const entityLabel = upper;
+        
         for (const c of lkCols) {
-            const fName = c.name.toLowerCase().replace('f_', '');
-            // Find matching lookup table
-            const lk = Object.keys(xsdFieldData).find(t => 
-                t.startsWith('CD_LK_') && t.toLowerCase().includes(fName.substring(0, 4))
-            );
-            if (lk) {
-                const entityLabel = upper.replace('CD_', '');
-                if (!map[entityLabel]) map[entityLabel] = [];
-                if (!map[entityLabel].includes(lk)) map[entityLabel].push(lk);
+            const lk = findLookup(c.name);
+            if (lk) addToCategory(catLabel + '|' + entityLabel, lk);
+        }
+    }
+    
+    // Group by category, then by entity within category
+    const ordered = {};
+    const catOrder = ['CD Entities', 'CD Subtables', 'SYS Entities', 'SYS Subtables', 'User Entities', 'User Subtables'];
+    
+    for (const catPrefix of catOrder) {
+        const entries = Object.entries(categories)
+            .filter(([k]) => k.startsWith(catPrefix + '|'))
+            .map(([k, v]) => [k.split('|')[1], v])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+        
+        if (entries.length > 0) {
+            ordered['── ' + catPrefix + ' ──'] = []; // section header
+            for (const [entity, lookups] of entries) {
+                ordered[entity] = lookups.sort();
             }
         }
     }
-    return map;
+    
+    // Connected lookups: lookups linked to other lookups (via naming or known patterns)
+    const connectedLookups = [];
+    for (const lk of allLookups) {
+        // Check if this lookup has F_ columns pointing to other lookups
+        const lkInfo = schema[lk.toLowerCase()];
+        if (lkInfo) {
+            const cols = lkInfo.columns || [];
+            for (const c of cols) {
+                if (c.name.startsWith('f_') || c.name.startsWith('F_')) {
+                    const target = findLookup(c.name);
+                    if (target && target !== lk) {
+                        connectedLookups.push(lk);
+                        usedLookups.add(lk);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (connectedLookups.length > 0) {
+        ordered['── Connected Lookups ──'] = [];
+        ordered['Linked Lookups'] = connectedLookups.sort();
+    }
+    
+    // Unrelated: lookups not used by any entity
+    const unrelated = [...allLookups].filter(lk => !usedLookups.has(lk)).sort();
+    if (unrelated.length > 0) {
+        ordered['── Unrelated ──'] = [];
+        ordered['Not linked to any screen'] = unrelated;
+    }
+    
+    return ordered;
 }
 
 function renderDbDesigner() {
@@ -3729,6 +3819,11 @@ function renderLookupEditor() {
 
     let treeHtml = '';
     for (const [entity, lookups] of Object.entries(getCdLookupMap())) {
+        // Section headers start with ──
+        if (entity.startsWith('──')) {
+            treeHtml += `<div style="padding:8px 12px;font-size:11px;font-weight:700;color:#64748B;background:#F1F5F9;margin-top:8px;border-radius:4px;">${entity.replace(/──/g,'').trim()}</div>`;
+            continue;
+        }
         const icon = entityIcons[entity] || '&#9632;';
         const hasLookups = lookups.length > 0;
         treeHtml += `<div class="le-tree-entity" onclick="toggleLookupBranch(this)">
