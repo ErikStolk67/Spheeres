@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
     const MS_VERSION = 'v0.6.2';
-    const MS_BUILD = '2026-03-01 13:00';
+    const MS_BUILD = '2026-03-01 12:45';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1275,17 +1275,17 @@ function buildUserSchema() {
 // Cached result
 let _userSchema = null;
 function getUserSchema() {
-    if (!_userSchema || Object.keys(xsdFieldData).length === 0) {
+    if (!_userSchema) {
         _userSchema = buildUserSchema();
     }
     return _userSchema;
 }
 function invalidateUserSchema() { _userSchema = null; }
 
-// Backward-compatible accessors
-function getDbTables() { return getUserSchema().tableList; }
-function getUserRelations() { return getUserSchema().relations; }
-function getUserSubTables() { return getUserSchema().subs; }
+// Backward-compatible accessors - return empty arrays if schema not loaded
+function getDbTables() { return getUserSchema().tableList || []; }
+function getUserRelations() { return getUserSchema().relations || {}; }
+function getUserSubTables() { return getUserSchema().subs || {}; }
 
 // ============================================================================
 // DICTIONARY (CD_) tables - ALL derived from database schema
@@ -1421,7 +1421,7 @@ function getCdLookupMap() {
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
     const tables = isDictMode ? getCdTables() : getDbTables();
-    const rels = isDictMode ? getCdRelations() : relations;
+    const rels = isDictMode ? getCdRelations() : getUserRelations();
 
     // Colors per mode
     const mainBg = isDictMode ? '#DBEAFE' : '#FEF9C3';      // blue vs yellow headers
