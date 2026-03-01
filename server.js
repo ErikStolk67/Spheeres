@@ -271,13 +271,29 @@ app.get('/api/tables/:id/types', async (req, res) => {
 });
 
 // Bulk type counts per table (for designer Type column)
+// Counts DISTINCT f_type values in the actual data of each table
 app.get('/api/types/counts', async (req, res) => {
     try {
-        const { rows } = await pool.query(
-            'SELECT t.name, COUNT(ty.k_type) as type_count FROM cd_tables t LEFT JOIN cd_types ty ON ty.k_table = t.k_table GROUP BY t.name ORDER BY t.name'
-        );
+        // Get all table names from cd_tables
+        const { rows: tables } = await pool.query('SELECT name FROM cd_tables');
         const counts = {};
-        for (const r of rows) counts[r.name.toUpperCase()] = parseInt(r.type_count) || 0;
+        
+        for (const t of tables) {
+            const tName = t.name.toLowerCase();
+            try {
+                // Check if table exists and has f_type column
+                const colCheck = await pool.query(
+                    "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='f_type'",
+                    [tName]
+                );
+                if (colCheck.rows.length > 0) {
+                    const result = await pool.query(`SELECT COUNT(DISTINCT f_type) as cnt FROM "${tName}" WHERE f_type IS NOT NULL`);
+                    counts[t.name.toUpperCase()] = parseInt(result.rows[0].cnt) || 0;
+                }
+            } catch(e) {
+                // Table might not exist yet, skip
+            }
+        }
         res.json(counts);
     } catch(e) {
         res.status(500).json({ error: e.message });
