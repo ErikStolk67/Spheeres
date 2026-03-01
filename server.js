@@ -119,7 +119,7 @@ app.get('/api/databases', async (req, res) => {
 });
 
 app.get('/api/tables', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM cd_tables ORDER BY sort_order');
+    const { rows } = await pool.query('SELECT * FROM cd_tables ORDER BY sort');
     res.json(rows);
 });
 
@@ -133,8 +133,8 @@ app.put('/api/tables/sort', express.json(), async (req, res) => {
             await client.query('BEGIN');
             for (const item of order) {
                 await client.query(
-                    'UPDATE cd_tables SET sort_order = $1, changedate = now() WHERE UPPER(name) = UPPER($2)',
-                    [item.sort_order, item.name]
+                    'UPDATE cd_tables SET sort = $1, changedate = now() WHERE UPPER(name) = UPPER($2)',
+                    [item.sort, item.name]
                 );
             }
             await client.query('COMMIT');
@@ -152,7 +152,7 @@ app.put('/api/tables/sort', express.json(), async (req, res) => {
 
 app.get('/api/tables/:id/fields', async (req, res) => {
     const { rows } = await pool.query(
-        'SELECT * FROM cd_fields WHERE k_table = $1 ORDER BY sort_order', [req.params.id]
+        'SELECT * FROM cd_fields WHERE k_table = $1 ORDER BY sort', [req.params.id]
     );
     res.json(rows);
 });
@@ -161,7 +161,7 @@ app.get('/api/fields', async (req, res) => {
     const { rows } = await pool.query(`
         SELECT f.*, t.name as table_name, t.table_type::text
         FROM cd_fields f JOIN cd_tables t ON f.k_table = t.k_table
-        ORDER BY t.sort_order, f.sort_order
+        ORDER BY t.sort, f.sort
     `);
     res.json(rows);
 });
@@ -171,12 +171,12 @@ app.post('/api/tables/:id/fields', async (req, res) => {
     const k_table = req.params.id;
     try {
         const sortRes = await pool.query(
-            "SELECT COALESCE(MAX(sort_order), 499) + 1 as next_sort FROM cd_fields WHERE k_table = $1 AND field_group = 'C'",
+            "SELECT COALESCE(MAX(sort), 499) + 1 as next_sort FROM cd_fields WHERE k_table = $1 AND field_group = 'C'",
             [k_table]
         );
         const { rows } = await pool.query(`
             INSERT INTO cd_fields (k_field, k_table, name, alias, field_group, data_type,
-                max_length, is_required, is_system, is_primary_key, is_foreign_key, fk_table, sort_order)
+                max_length, is_required, is_system, is_primary_key, is_foreign_key, fk_table, sort)
             VALUES (gen_random_uuid(), $1, $2, $2, 'C', $3, $4, $5, false, false, $6, $7, $8)
             RETURNING *
         `, [k_table, name, data_type, max_length || null, is_required || false,
@@ -184,7 +184,7 @@ app.post('/api/tables/:id/fields', async (req, res) => {
 
         const field = rows[0];
         await pool.query(`
-            INSERT INTO cd_controls (k_control, k_field, control_type, label, is_visible, is_readonly, is_required, lookup_table, sort_order)
+            INSERT INTO cd_controls (k_control, k_field, control_type, label, is_visible, is_readonly, is_required, lookup_table, sort)
             VALUES (gen_random_uuid(), $1, $2, $3, true, false, $4, $5, $6)
         `, [field.k_field, control_type, name, is_required || false, lookup_table || null, field.sort_order]);
 
@@ -257,10 +257,10 @@ app.post('/api/tables/:id/types', async (req, res) => {
     const { name } = req.body;
     try {
         const sortRes = await pool.query(
-            'SELECT COALESCE(MAX(sort_order), 0) + 1 as next FROM cd_types WHERE k_table = $1', [req.params.id]
+            'SELECT COALESCE(MAX(sort), 0) + 1 as next FROM cd_types WHERE k_table = $1', [req.params.id]
         );
         const { rows } = await pool.query(`
-            INSERT INTO cd_types (k_type, k_table, name, alias, sort_order)
+            INSERT INTO cd_types (k_type, k_table, name, alias, sort)
             VALUES (gen_random_uuid(), $1, $2, $2, $3)
             RETURNING *
         `, [req.params.id, name || 'New Type', sortRes.rows[0].next]);

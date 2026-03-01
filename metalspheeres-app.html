@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.6';
+    const MS_VERSION = 'v0.7.7';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1469,8 +1469,10 @@ function renderDbDesigner() {
 
     for (let i = 0; i < tables.length; i++) {
         const t = tables[i];
+        const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
+        const hdrBg = isDictMode ? '#DBEAFE' : (isMain ? '#FEF9C3' : '#F1F5F9');
         colHeaders += `<th class="col-header" draggable="true" data-col-idx="${i}" 
-            style="background:#fff;cursor:grab;vertical-align:bottom;text-align:left;"
+            style="background:${hdrBg};cursor:grab;vertical-align:bottom;text-align:left;"
             ondragstart="window._dragColIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
             ondragover="event.preventDefault();event.stopPropagation();this.style.borderLeft='3px solid #3B82F6';"
             ondragleave="this.style.borderLeft='';"
@@ -1484,27 +1486,29 @@ function renderDbDesigner() {
         const row = tables[i];
 
         rows += `<tr>`;
-        // Row header - white background
+        // Row header - colored per zone
+        const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
+        const rowBg = isDictMode ? '#EFF6FF' : (isMainRow ? '#FFFEF5' : '#FAFBFC');
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
-            style="background:#fff;cursor:grab;"
+            style="background:${rowBg};cursor:grab;"
             ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
             ondragover="event.preventDefault();event.stopPropagation();this.style.borderBottom='3px solid #3B82F6';"
             ondragleave="this.style.borderBottom='';"
             ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();"
             onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
-        // Meta columns (Type, Sub, Screens) - white background
+        // Meta columns (Type, Sub, Screens) - same background as row
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
             if (m === 0) {
-                rows += `<td style="background:#fff;font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '—'}</td>`;
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '…'}</td>`;
             } else if (m === 1 && isNum) {
-                rows += `<td style="background:#fff;font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
+                rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
             } else if (m === 2 && isNum) {
-                rows += `<td style="background:#fff;font-size:10px;color:#64748B;">${v}</td>`;
+                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v}</td>`;
             } else {
-                rows += `<td style="background:#fff;font-size:10px;color:#CBD5E1;">—</td>`;
+                rows += `<td style="background:${rowBg};font-size:10px;color:#CBD5E1;">…</td>`;
             }
         }
 
@@ -1615,7 +1619,7 @@ function reorderDesignerTables(from, to) {
         const newSort = baseOffset + (i * step);
         tables[i].sortOrder = newSort;
         if (window._cdTablesSortOrder) window._cdTablesSortOrder[tables[i].name] = newSort;
-        order.push({ name: tables[i].name, sort_order: newSort });
+        order.push({ name: tables[i].name, sort: newSort });
     }
     
     // Save to cd_tables via API
@@ -1883,7 +1887,7 @@ function applySchema(schema) {
             window._cdTablesSortOrder = {};
             for (const r of rows) {
                 window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
-                window._cdTablesSortOrder[r.name.toUpperCase()] = r.sort_order || 9999;
+                window._cdTablesSortOrder[r.name.toUpperCase()] = r.sort || 9999;
             }
             invalidateCdSchema();
             invalidateUserSchema();
