@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.4';
+    const MS_VERSION = 'v0.8.5';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1480,62 +1480,55 @@ function renderDbDesigner() {
         if (rowType === 'sys' && colType === 'sys') return 'sys';
         return 'other';
     }
-    // Row zone for headers/meta columns (based on row entity only)
-    function getRowZone(rowType) {
-        if (isDictMode) return 'main';
-        return rowType === 'sys' ? 'sys' : 'other';
-    }
     const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', other: '#E2E8F0' };
     const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', other: '#CBD5E1' };
-    // Header/meta column background per zone
-    const hdrBg   = { main: '#DBEAFE', sys: '#FEF9C3', other: '#E8ECF0' };
+    // Meta columns: lighter than matrix, but tinted per zone
+    const metaBg  = { main: '#EFF6FF', sys: '#FFF9E6', other: '#F1F5F9' };
 
-    // Column headers - zone-colored background
+    // Column headers - entity names WHITE, draggable for reordering
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
-    // Meta column headers use the first entity's zone color (or main)
-    const metaHdrBg = isDictMode ? hdrBg.main : '#E8ECF0';
-    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Type</th>`;
-    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Sub</th>`;
-    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Screens</th>`;
+    // Meta column headers in top row — light tint
+    const topMetaBg = isDictMode ? metaBg.main : metaBg.other;
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${topMetaBg};">Type</th>`;
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${topMetaBg};">Sub</th>`;
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${topMetaBg};">Screens</th>`;
 
     for (let i = 0; i < tables.length; i++) {
         const t = tables[i];
-        const colZone = getRowZone(t.type);
-        colHeaders += `<th class="col-header" data-col-idx="${i}" 
-            style="background:${hdrBg[colZone]};cursor:pointer;vertical-align:bottom;text-align:left;"
-            onclick="if(!window._wasDragging)showTablePopup('${t.name}')">${t.name}</th>`;
+        colHeaders += `<th class="col-header" draggable="true" data-col-idx="${i}" 
+            style="background:#fff;cursor:grab;vertical-align:bottom;text-align:left;"
+            ondragstart="window._dragColIdx=${i};event.dataTransfer.setData('text/plain','col-${i}');event.dataTransfer.effectAllowed='move';this.style.opacity='0.4';"
+            ondragend="this.style.opacity='1';"
+            ondragover="event.preventDefault();this.style.borderLeft='3px solid #3B82F6';"
+            ondragleave="this.style.borderLeft='';"
+            ondrop="this.style.borderLeft='';handleColDrop(${i});event.preventDefault();event.stopPropagation();">${t.name}</th>`;
     }
 
     // Rows
     let rows = '';
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
+        // Determine meta background for this row (lighter than matrix)
+        const rowMetaBg = isDictMode ? metaBg.main : (row.type === 'sys' ? metaBg.sys : metaBg.other);
 
         rows += `<tr>`;
-        // Row header - zone-colored, draggable for reordering
-        const rowZone = getRowZone(row.type);
-        const rowBg = hdrBg[rowZone];
-        rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
-            style="background:${rowBg};cursor:grab;"
-            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${row.name}');event.dataTransfer.effectAllowed='move';this.style.opacity='0.4';"
-            ondragend="this.style.opacity='1';"
-            ondragover="event.preventDefault();this.parentElement.style.borderTop='3px solid #3B82F6';"
-            ondragleave="this.parentElement.style.borderTop='';"
-            ondrop="this.parentElement.style.borderTop='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
-            onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
+        // Row header - WHITE background, click opens field popup
+        rows += `<th class="row-header" data-row-idx="${i}"
+            style="background:#fff;cursor:pointer;"
+            onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
-        // Meta columns (Type, Sub, Screens) - zone-colored background
+        // Meta columns (Type, Sub, Screens) - lighter tint than matrix
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
             if (m === 0) {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '…'}</td>`;
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '…'}</td>`;
             } else if (m === 1 && isNum) {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
             } else if (m === 2 && isNum) {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v}</td>`;
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#64748B;">${v}</td>`;
             } else {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#CBD5E1;">…</td>`;
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#CBD5E1;">…</td>`;
             }
         }
 
@@ -1616,12 +1609,12 @@ function renderDbDesigner() {
     </div>`;
 }
 
-// Drag & drop reordering - drag row headers to reorder entities
-// Both axes (rows AND columns) follow the same entity order
+// Drag & drop reordering - drag COLUMN headers to reorder entities within same block
+// Row headers show fields on click (no drag)
 
-function handleRowDrop(targetIdx) {
-    const sourceIdx = window._dragRowIdx;
-    window._dragRowIdx = undefined;
+function handleColDrop(targetIdx) {
+    const sourceIdx = window._dragColIdx;
+    window._dragColIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
     window._wasDragging = true;
     setTimeout(() => window._wasDragging = false, 200);
@@ -1629,20 +1622,50 @@ function handleRowDrop(targetIdx) {
     const isDictMode = designerMode === 'dictionary';
     const tables = isDictMode ? getCdTables() : getDbTables();
     
-    // Move item from source to target position
-    const item = tables.splice(sourceIdx, 1)[0];
-    tables.splice(targetIdx, 0, item);
+    const srcTable = tables[sourceIdx];
+    const tgtTable = tables[targetIdx];
     
-    // Assign new sort values (10, 20, 30...) and update memory
-    const order = [];
+    // Only allow drag within same block (cd, sys, or user)
+    if (srcTable.type !== tgtTable.type) return;
+    
+    // Get all tables in this block
+    const blockType = srcTable.type;
+    const blockTables = tables.filter(t => t.type === blockType);
+    const blockStart = tables.findIndex(t => t.type === blockType);
+    
+    // Find source and target within block
+    const srcInBlock = sourceIdx - blockStart;
+    const tgtInBlock = targetIdx - blockStart;
+    
+    // Move within block
+    const item = blockTables.splice(srcInBlock, 1)[0];
+    blockTables.splice(tgtInBlock, 0, item);
+    
+    // Reassemble full table list: keep non-block tables in place
+    const newTables = [];
+    let blockIdx = 0;
     for (let i = 0; i < tables.length; i++) {
-        const newSort = (i + 1) * 10;
-        tables[i].sortOrder = newSort;
-        if (window._cdTablesSortOrder) {
-            window._cdTablesSortOrder[tables[i].name] = newSort;
+        if (tables[i].type === blockType) {
+            newTables.push(blockTables[blockIdx++]);
+        } else {
+            newTables.push(tables[i]);
         }
-        order.push({ name: tables[i].name, sort: newSort });
     }
+    
+    // Assign contiguous sort values (1, 2, 3...) for ALL entities and save
+    const order = [];
+    for (let i = 0; i < newTables.length; i++) {
+        const newSort = i + 1;
+        newTables[i].sortOrder = newSort;
+        if (window._cdTablesSortOrder) {
+            window._cdTablesSortOrder[newTables[i].name] = newSort;
+        }
+        order.push({ name: newTables[i].name, sort: newSort });
+    }
+    
+    // Replace cached table list
+    if (isDictMode) { invalidateCdSchema(); }
+    else { invalidateUserSchema(); }
     
     // Persist to cd_tables.sort via API
     fetch(API + '/tables/sort', {
@@ -1653,14 +1676,14 @@ function handleRowDrop(targetIdx) {
         if (d.error) console.error('Sort save failed:', d.error);
     }).catch(e => console.error('Sort save failed:', e.message));
     
-    // Re-render immediately with new order
     renderContent();
 }
 
 // Clean up drag indicators on drag end
 document.addEventListener('dragend', function() {
-    document.querySelectorAll('.row-header').forEach(el => {
-        el.style.borderTop = '';
+    document.querySelectorAll('.col-header').forEach(el => {
+        el.style.borderLeft = '';
+        el.style.opacity = '1';
     });
 });
 
