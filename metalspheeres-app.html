@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.6.1';
-    const MS_BUILD = '2026-03-01 12:30';
+    const MS_VERSION = 'v0.6.2';
+    const MS_BUILD = '2026-03-01 13:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -3160,11 +3160,28 @@ async function backupDB() {
     }
 }
 
-async function buildTables() {
-    if (!confirm('This will create SYS_ and user tables in the database based on the dictionary definitions.\\n\\nRecommend: take a backup first!\\n\\nProceed?')) return;
-    showLoading('Building tables from dictionary...');
+async function buildTables(specificTables) {
+    let filterTables = specificTables || null;
+    
+    if (!filterTables) {
+        const choice = prompt('Build tables from dictionary definitions.\\n\\nEnter table names (comma-separated) or leave empty for ALL:');
+        if (choice === null) return; // cancelled
+        if (choice.trim()) {
+            filterTables = choice.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
+        }
+    }
+    
+    const label = filterTables ? filterTables.join(', ') : 'ALL tables';
+    if (!confirm('Build ' + label + '?\\n\\nRecommend: take a backup first!')) return;
+    
+    showLoading('Building ' + label + '...');
     try {
-        const resp = await fetch(API + '/build-tables', { method: 'POST' });
+        const body = filterTables ? JSON.stringify({ tables: filterTables }) : '{}';
+        const resp = await fetch(API + '/build-tables', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body 
+        });
         const text = await resp.text();
         hideLoading();
         let result;

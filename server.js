@@ -1043,8 +1043,9 @@ app.get('/api/backup', async (req, res) => {
 // BUILD TABLES - create SYS_ and user tables from cd_tables + cd_fields
 // Reads table/field definitions from dictionary, creates PostgreSQL tables
 // ============================================================================
-app.post('/api/build-tables', async (req, res) => {
+app.post('/api/build-tables', express.json({ limit: '1mb' }), async (req, res) => {
     const client = await pool.connect();
+    const filterTables = req.body && req.body.tables ? req.body.tables.map(t => t.toUpperCase()) : null;
     try {
         // f_type mapping from cd_fields/cd_controls to PostgreSQL types
         // f_type values: 1=integer, 2=string/text, 3=boolean, 4=datetime, 5=binary, 6=uuid
@@ -1084,10 +1085,17 @@ app.post('/api/build-tables', async (req, res) => {
         
         for (const table of tablesRes.rows) {
             const tName = table.name.toLowerCase();
+            const tUpper = table.name.toUpperCase();
             const fields = fieldsByTable[table.k_table] || [];
             
             // Skip CD_ tables (they already exist as dictionary)
             if (tName.startsWith('cd_')) {
+                skipped++;
+                continue;
+            }
+            
+            // If filter specified, skip non-matching tables
+            if (filterTables && !filterTables.includes(tUpper)) {
                 skipped++;
                 continue;
             }
