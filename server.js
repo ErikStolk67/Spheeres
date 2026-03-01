@@ -1094,10 +1094,16 @@ app.post('/api/build-tables', express.json({ limit: '1mb' }), async (req, res) =
                 continue;
             }
             
-            // If filter specified, skip non-matching tables
-            if (filterTables && !filterTables.includes(tUpper)) {
-                skipped++;
-                continue;
+            // If filter specified, skip non-matching tables (supports * wildcard)
+            if (filterTables) {
+                const matches = filterTables.some(f => {
+                    if (f.includes('*')) {
+                        const regex = new RegExp('^' + f.replace(/\*/g, '.*') + '$');
+                        return regex.test(tUpper);
+                    }
+                    return f === tUpper;
+                });
+                if (!matches) { skipped++; continue; }
             }
             
             // Check if table already exists
