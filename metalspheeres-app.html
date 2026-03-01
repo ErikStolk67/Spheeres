@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.5';
+    const MS_VERSION = 'v0.7.6';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1471,10 +1471,11 @@ function renderDbDesigner() {
         const t = tables[i];
         colHeaders += `<th class="col-header" draggable="true" data-col-idx="${i}" 
             style="background:#fff;cursor:grab;vertical-align:bottom;text-align:left;"
-            ondragstart="window._dragColIdx=${i};event.dataTransfer.effectAllowed='move';"
-            ondragover="event.preventDefault();"
-            ondrop="handleColDrop(${i});event.preventDefault();"
-            onclick="showTablePopup('${t.name}')">${t.name}</th>`;
+            ondragstart="window._dragColIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
+            ondragover="event.preventDefault();event.stopPropagation();this.style.borderLeft='3px solid #3B82F6';"
+            ondragleave="this.style.borderLeft='';"
+            ondrop="this.style.borderLeft='';handleColDrop(${i});event.preventDefault();"
+            onclick="if(!window._wasDragging)showTablePopup('${t.name}')"><span style="display:inline-block;font-size:8px;color:#94A3B8;">↕</span> ${t.name}</th>`;
     }
 
     // Rows
@@ -1486,10 +1487,11 @@ function renderDbDesigner() {
         // Row header - white background
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
             style="background:#fff;cursor:grab;"
-            ondragstart="window._dragRowIdx=${i};event.dataTransfer.effectAllowed='move';"
-            ondragover="event.preventDefault();"
-            ondrop="handleRowDrop(${i});event.preventDefault();"
-            onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
+            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
+            ondragover="event.preventDefault();event.stopPropagation();this.style.borderBottom='3px solid #3B82F6';"
+            ondragleave="this.style.borderBottom='';"
+            ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();"
+            onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
         // Meta columns (Type, Sub, Screens) - white background
         for (let m = 0; m < 3; m++) {
@@ -1582,12 +1584,18 @@ let _designerOrder = { cd: null, user: null };
 
 function handleColDrop(targetIdx) {
     const sourceIdx = window._dragColIdx;
+    window._dragColIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
+    window._wasDragging = true;
+    setTimeout(() => window._wasDragging = false, 100);
     reorderDesignerTables(sourceIdx, targetIdx);
 }
 function handleRowDrop(targetIdx) {
     const sourceIdx = window._dragRowIdx;
+    window._dragRowIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
+    window._wasDragging = true;
+    setTimeout(() => window._wasDragging = false, 100);
     reorderDesignerTables(sourceIdx, targetIdx);
 }
 function reorderDesignerTables(from, to) {
