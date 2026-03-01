@@ -267,11 +267,35 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 | `/api/import-xml` | POST | Import XML data into existing tables |
 | `/api/import-schema` | POST | Import Verspaning-style schema XML |
 
+### 5.4 Schema Import (XSD/ZIP)
+
+The import processes Spheeres XSD files and:
+1. Parses table/field definitions from XML
+2. Classifies tables using `getTableFType()` in server.js:
+   - Starts with `LK_` or `CD_LK_` → f_type 2 (lookup)
+   - No `_` in base → f_type 1 (entity)
+   - 2 parts with ≤5 chars each → f_type 3 (link)
+   - Otherwise → f_type 4 (subtable)
+3. Inserts into `cd_tables` with correct f_type and sort = tableId
+4. Inserts fields into `cd_fields` + link records into `cd_tabl_fiel`
+
 ---
 
 ## 6. Frontend Data Flow
 
-### 6.1 Startup Sequence
+### 6.1 Key Functions
+
+| Function | Purpose |
+|----------|---------|
+| `buildCdSchema()` | Classifies CD_ tables into entities/links/subs/lookups via prefix matching |
+| `buildUserSchema()` | Same pattern as buildCdSchema but for SYS_ and User tables |
+| `renderDbDesigner()` | Renders the matrix for both CD and User designers |
+| `renderDbStatistics()` | Renders statistics cards with table counts |
+| `applySchema()` | Applies loaded schema data, fires table/type fetches, triggers cache invalidation |
+| `loadSchemaFromDB()` | Entry point: loads from sessionStorage cache, then fetches fresh from API |
+| `handleRowDrop()` | Drag & drop handler: reorders entities, saves sort to server |
+
+### 6.3 Startup Sequence
 
 1. Page loads → `loadSchemaFromDB()`
 2. Check sessionStorage cache → if found, `applySchema(cached)` immediately
@@ -281,7 +305,7 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 6. Chained: fetches `/api/types/counts` → populates `_typeCounts`
 7. Then: `invalidateCdSchema()` + `invalidateUserSchema()` + `renderContent()`
 
-### 6.2 Schema Caching
+### 6.4 Schema Caching
 
 | Cache | Builder | Invalidator |
 |-------|---------|-------------|
@@ -290,7 +314,7 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 
 Accessors: `getCdTables()`, `getCdRelations()`, `getDbTables()`, `getUserRelations()`, etc.
 
-### 6.3 Global State
+### 6.5 Global State
 
 | Variable | Content | Set by |
 |----------|---------|--------|
