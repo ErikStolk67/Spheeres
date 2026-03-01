@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.9';
+    const MS_VERSION = 'v0.8.0';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1500,15 +1500,16 @@ function renderDbDesigner() {
         const row = tables[i];
 
         rows += `<tr>`;
-        // Row header - light background (not colored like matrix cells)
+        // Row header - draggable for reordering (columns follow automatically)
         const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
         const rowBg = '#FAFBFC';
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
             style="background:${rowBg};cursor:grab;"
-            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','row-${i}');event.dataTransfer.effectAllowed='move';"
-            ondragover="event.preventDefault();this.style.borderBottom='3px solid #3B82F6';"
-            ondragleave="this.style.borderBottom='';"
-            ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
+            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${row.name}');event.dataTransfer.effectAllowed='move';this.style.opacity='0.4';"
+            ondragend="this.style.opacity='1';"
+            ondragover="event.preventDefault();this.parentElement.style.borderTop='3px solid #3B82F6';"
+            ondragleave="this.parentElement.style.borderTop='';"
+            ondrop="this.parentElement.style.borderTop='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
             onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
         // Meta columns (Type, Sub, Screens) - same light background
@@ -1603,54 +1604,35 @@ function renderDbDesigner() {
     </div>`;
 }
 
-// Drag & drop reordering for matrix columns/rows
-let _designerOrder = { cd: null, user: null };
+// Drag & drop reordering - drag row headers to reorder entities
+// Both axes (rows AND columns) follow the same entity order
 
-function handleColDrop(targetIdx) {
-    const sourceIdx = window._dragColIdx;
-    window._dragColIdx = undefined;
-    if (sourceIdx === undefined || sourceIdx === targetIdx) return;
-    window._wasDragging = true;
-    setTimeout(() => window._wasDragging = false, 200);
-    reorderDesignerTables(sourceIdx, targetIdx);
-}
 function handleRowDrop(targetIdx) {
     const sourceIdx = window._dragRowIdx;
     window._dragRowIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
     window._wasDragging = true;
     setTimeout(() => window._wasDragging = false, 200);
-    reorderDesignerTables(sourceIdx, targetIdx);
-}
-// Also handle via dragenter for rotated elements where drop may not fire
-document.addEventListener('dragend', function(e) {
-    // Clean up any visual indicators
-    document.querySelectorAll('.col-header, .row-header').forEach(el => {
-        el.style.borderLeft = '';
-        el.style.borderBottom = '';
-    });
-});
-function reorderDesignerTables(from, to) {
+    
     const isDictMode = designerMode === 'dictionary';
     const tables = isDictMode ? getCdTables() : getDbTables();
     
-    // Move item from index to new position
-    const item = tables.splice(from, 1)[0];
-    tables.splice(to, 0, item);
+    // Move item from source to target position
+    const item = tables.splice(sourceIdx, 1)[0];
+    tables.splice(targetIdx, 0, item);
     
-    // Assign unique sort_order values with spacing (10, 20, 30...)
-    // CD entities use range 100-9999, User/SYS entities use range 10000-99999
-    const baseOffset = isDictMode ? 100 : 10000;
-    const step = 10;
+    // Assign new sort values (10, 20, 30...) and update memory
     const order = [];
     for (let i = 0; i < tables.length; i++) {
-        const newSort = baseOffset + (i * step);
+        const newSort = (i + 1) * 10;
         tables[i].sortOrder = newSort;
-        if (window._cdTablesSortOrder) window._cdTablesSortOrder[tables[i].name] = newSort;
+        if (window._cdTablesSortOrder) {
+            window._cdTablesSortOrder[tables[i].name] = newSort;
+        }
         order.push({ name: tables[i].name, sort: newSort });
     }
     
-    // Save to cd_tables via API
+    // Persist to cd_tables.sort via API
     fetch(API + '/tables/sort', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1659,8 +1641,16 @@ function reorderDesignerTables(from, to) {
         if (d.error) console.error('Sort save failed:', d.error);
     }).catch(e => console.error('Sort save failed:', e.message));
     
+    // Re-render immediately with new order
     renderContent();
 }
+
+// Clean up drag indicators on drag end
+document.addEventListener('dragend', function() {
+    document.querySelectorAll('.row-header').forEach(el => {
+        el.style.borderTop = '';
+    });
+});
 
 function renderDashboard() {
     let cards = '';
