@@ -1143,6 +1143,9 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
         let fieldId = 1;
         const crypto = require('crypto');
         
+        // Log actual columns found for debugging
+        const colReport = { cd_tables: tabCols, cd_fields: fldCols, cd_tabl_fiel: tflCols, cd_controls: ctrlCols };
+        
         for (const table of tables) {
             const fType = getTableFType(table.name);
             
@@ -1154,10 +1157,13 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
             if (tabCols.includes('changedate')) tCols.changedate = new Date();
             
             try {
+                await client.query('SAVEPOINT sp_table');
                 const q = buildInsert('cd_tables', tCols);
                 await client.query(q.sql, q.vals);
+                await client.query('RELEASE SAVEPOINT sp_table');
                 tablesImported++;
             } catch(e) {
+                await client.query('ROLLBACK TO SAVEPOINT sp_table');
                 errors.push('cd_tables ' + table.name + ': ' + e.message);
                 tableId++;
                 continue;
@@ -1178,10 +1184,13 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
                 if (fldCols.includes('changedate')) fCols.changedate = new Date();
                 
                 try {
+                    await client.query('SAVEPOINT sp_field');
                     const q = buildInsert('cd_fields', fCols);
                     await client.query(q.sql, q.vals);
+                    await client.query('RELEASE SAVEPOINT sp_field');
                     fieldsImported++;
                 } catch(e) {
+                    await client.query('ROLLBACK TO SAVEPOINT sp_field');
                     errors.push('cd_fields ' + table.name + '.' + field.name + ': ' + e.message);
                     fieldId++; fieldSort++;
                     continue;
@@ -1196,31 +1205,48 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
                     if (tflCols.includes('changedate')) lCols.changedate = new Date();
                     
                     try {
+                        await client.query('SAVEPOINT sp_link');
                         const q = buildInsert('cd_tabl_fiel', lCols);
                         await client.query(q.sql, q.vals);
+                        await client.query('RELEASE SAVEPOINT sp_link');
                         linksCreated++;
                     } catch(e) {
+                        await client.query('ROLLBACK TO SAVEPOINT sp_link');
                         errors.push('cd_tabl_fiel ' + table.name + '.' + field.name + ': ' + e.message);
                     }
                 }
                 
-                // cd_controls
-                if (ctrlCols.length > 0) {
-                    const cCols = { k_field: fieldId };
-                    if (ctrlCols.includes('k_control')) cCols.k_control = crypto.randomUUID();
+                // cd_controls - only if it has columns we can use
+                if (ctrlCols.length > 0 && ctrlCols.includes('k_control')) {
+                    const cCols = { k_control: crypto.randomUUID() };
+                    // Only add columns that actually exist
+                    if (ctrlCols.includes('k_field')) cCols.k_field = fieldId;
                     if (ctrlCols.includes('control_type')) cCols.control_type = ctrlType;
                     if (ctrlCols.includes('label')) cCols.label = field.name;
+                    if (ctrlCols.includes('name')) cCols.name = field.name;
                     if (ctrlCols.includes('is_visible')) cCols.is_visible = true;
                     if (ctrlCols.includes('is_readonly')) cCols.is_readonly = false;
                     if (ctrlCols.includes('is_required')) cCols.is_required = isPk;
                     if (ctrlCols.includes('sort_order')) cCols.sort_order = fieldSort;
+                    if (ctrlCols.includes('sort')) cCols.sort = fieldSort;
+                    if (ctrlCols.includes('f_type')) cCols.f_type = fFieldType;
+                    if (ctrlCols.includes('createdate')) cCols.createdate = new Date();
+                    if (ctrlCols.includes('changedate')) cCols.changedate = new Date();
                     
-                    try {
-                        const q = buildInsert('cd_controls', cCols);
-                        await client.query(q.sql, q.vals);
-                        controlsCreated++;
-                    } catch(e) {
-                        errors.push('cd_controls ' + table.name + '.' + field.name + ': ' + e.message);
+                    // Must have at least 2 columns to insert
+                    if (Object.keys(cCols).length >= 2) {
+                        try {
+                            await client.query('SAVEPOINT sp_ctrl');
+                            const q = buildInsert('cd_controls', cCols);
+                            await client.query(q.sql, q.vals);
+                            await client.query('RELEASE SAVEPOINT sp_ctrl');
+                            controlsCreated++;
+                        } catch(e) {
+                            await client.query('ROLLBACK TO SAVEPOINT sp_ctrl');
+                            if (controlsCreated === 0 && errors.filter(x => x.startsWith('cd_controls')).length === 0) {
+                                errors.push('cd_controls: ' + e.message + ' (columns: ' + ctrlCols.join(',') + ')');
+                            }
+                        }
                     }
                 }
                 
