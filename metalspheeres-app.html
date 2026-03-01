@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.5';
+    const MS_VERSION = 'v0.6.6';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1206,31 +1206,62 @@ function buildUserSchema() {
     
     const allTables = [...tableSet].sort();
     
-    const entities = [];   // On both axes
-    const lookups = [];    // LK_*
-    const subs = {};       // $ subtables
-    const links = [];      // Link tables in the matrix
+    // Use f_type from cd_tables if loaded (via window._cdTablesMap)
+    const typeMap = window._cdTablesMap || {};
     
-    // Step 1: find entities and lookups
-    // Entity = no $ AND not LK_ AND no _ in base name
-    // For SYS_: entity if SYS_ + single word (SYS_USERS, SYS_LOCKS)
+    const entities = [];   // On both axes (f_type 1 or 5)
+    const lookups = [];    // f_type 2 or LK_ prefix
+    const subs = {};       // f_type 4 or $ separator
+    const links = [];      // f_type 3 = link tables
+    
+    // Classify using f_type
     for (const t of allTables) {
-        if (t.includes('$')) continue;
-        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
-            lookups.push({ name: t, type: 'lk', icon: 'list' });
-        } else if (t.startsWith('SYS_')) {
-            const afterSys = t.replace('SYS_', '');
-            if (!afterSys.includes('_')) {
-                entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
-            }
-            // Tables like SYS_ENT1_ENT2 handled in step 3
-        } else if (!t.includes('_')) {
-            entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+        if (t.includes('$')) {
+            // $ subtables: find parent
+            const parent = t.split('$')[0];
+            if (!subs[parent]) subs[parent] = [];
+            subs[parent].push(t);
+            continue;
         }
-        // Tables with _ that aren't SYS_ handled in step 3
+        
+        const fType = typeMap[t];
+        
+        if (fType) {
+            // Authoritative type from cd_tables
+            if (fType === 2) {
+                lookups.push({ name: t, type: 'lk', icon: 'list' });
+            } else if (fType === 3) {
+                // Link table - will be processed after entities are known
+                links.push({ name: t });
+            } else if (fType === 4) {
+                // Subtable - find parent from name
+                // Store temporarily, assign parent later
+                links.push({ name: t, isSub: true });
+            } else {
+                // fType 1 (entity) or 5 (sys entity)
+                if (t.startsWith('SYS_')) {
+                    entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
+                } else {
+                    entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+                }
+            }
+        } else {
+            // Fallback: classify by naming convention (same as CD pattern)
+            if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
+                lookups.push({ name: t, type: 'lk', icon: 'list' });
+            } else if (t.startsWith('SYS_')) {
+                const afterSys = t.replace('SYS_', '');
+                if (!afterSys.includes('_')) {
+                    entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
+                }
+                // SYS_X_Y handled below as potential link
+            } else if (!t.includes('_')) {
+                entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+            }
+        }
     }
     
-    // Step 2: build prefix map from entities ONLY (same as CD)
+    // Build prefix map from entities ONLY (same as CD)
     const prefixMap = {};
     for (const e of entities) {
         const base = e.name.startsWith('SYS_') ? e.name.replace('SYS_', '') : e.name;
@@ -1239,14 +1270,45 @@ function buildUserSchema() {
         if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
     }
     
-    // Step 3: classify tables with _ as links or subs (same as CD step 3)
-    for (const t of allTables) {
-        if (t.includes('$')) continue;
-        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) continue;
+    // Process link tables: resolve from/to using prefix map
+    const resolvedLinks = [];
+    for (const link of links) {
+        if (link.isSub) {
+            // Subtable: first part of name should match entity
+            const base = link.name.startsWith('SYS_') ? link.name.replace('SYS_', '') : link.name;
+            const parts = base.split('_');
+            const parent = prefixMap[parts[0]] || prefixMap[parts[0].substring(0, 4)] || prefixMap[parts[0].substring(0, 3)];
+            if (parent) {
+                if (!subs[parent]) subs[parent] = [];
+                subs[parent].push(link.name);
+            }
+            continue;
+        }
         
-        // Get base: strip SYS_ prefix if present
+        // Link table: split name to find from/to entities
+        const base = link.name.startsWith('SYS_') ? link.name.replace('SYS_', '') : link.name;
+        if (!base.includes('_')) continue;
+        
+        const parts = base.split('_');
+        const firstPrefix = parts[0];
+        const secondPart = parts.slice(1).join('_');
+        const secondPrefix = secondPart.substring(0, 4);
+        
+        const parent1 = prefixMap[firstPrefix] || prefixMap[firstPrefix.substring(0, 3)];
+        const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
+        
+        if (parent1 && parent2) {
+            resolvedLinks.push({ name: link.name, from: parent1, to: parent2 });
+        }
+    }
+    
+    // Also detect links/subs from tables without f_type that have underscores
+    for (const t of allTables) {
+        if (t.includes('$') || t.startsWith('LK_') || t.startsWith('SYS_LK_')) continue;
+        if (typeMap[t]) continue; // already classified by f_type
+        
         const base = t.startsWith('SYS_') ? t.replace('SYS_', '') : t;
-        if (!base.includes('_')) continue; // already an entity
+        if (!base.includes('_')) continue;
         
         const parts = base.split('_');
         const firstPrefix = parts[0];
@@ -1257,36 +1319,22 @@ function buildUserSchema() {
         const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
         
         if (parent1 && parent2 && parent1 !== parent2) {
-            // Link table: both parts match entities → from=row, to=column
-            links.push({ name: t, from: parent1, to: parent2 });
+            resolvedLinks.push({ name: t, from: parent1, to: parent2 });
         } else if (parent1 === parent2 && parent1) {
-            // Self-link
-            links.push({ name: t, from: parent1, to: parent1 });
+            resolvedLinks.push({ name: t, from: parent1, to: parent1 });
         } else if (parent1 && parent1 !== t) {
-            // Sub table: first part matches entity
             if (!subs[parent1]) subs[parent1] = [];
             subs[parent1].push(t);
         }
     }
     
-    // Step 4: find $ subtables
-    for (const t of allTables) {
-        if (!t.includes('$')) continue;
-        const parent = t.split('$')[0];
-        const parentEntity = entities.find(e => e.name === parent);
-        if (parentEntity) {
-            if (!subs[parentEntity.name]) subs[parentEntity.name] = [];
-            subs[parentEntity.name].push(t);
-        }
-    }
-    
-    // Step 5: derive relations from links (identical to CD)
+    // Derive relations from links (identical to CD)
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
         if (!rels[row][col]) rels[row][col] = val;
     }
-    for (const link of links) {
+    for (const link of resolvedLinks) {
         if (link.from === link.to) {
             setRel(link.from, link.to, 'nn');
         } else {
@@ -1295,13 +1343,13 @@ function buildUserSchema() {
         }
     }
     
-    // Step 6: build tableList — ONLY entities on axes
+    // Build tableList — ONLY entities on axes
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         return { ...e, cols: ['—', subCount || '—', '—'] };
     });
     
-    return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
+    return { entities, lookups, subs, links: resolvedLinks, relations: rels, tableList, prefixMap };
 }
 
 // Cached result
@@ -1846,6 +1894,18 @@ function applySchema(schema) {
     invalidateUserSchema();
     updateCdTableTypes();
     updateUserTableTypes();
+    
+    // Load cd_tables f_type map for entity/link/sub/lookup classification
+    if (!window._cdTablesMap) {
+        fetch(API + '/tables').then(r => r.ok ? r.json() : []).then(rows => {
+            window._cdTablesMap = {};
+            for (const r of rows) {
+                window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
+            }
+            invalidateUserSchema();
+            console.log('cd_tables type map loaded:', Object.keys(window._cdTablesMap).length, 'entries');
+        }).catch(() => {});
+    }
 }
 
 
@@ -4074,19 +4134,41 @@ function renderDbStatistics() {
                 if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
             }
             
-            // Categorize
+            // Categorize using f_type from cd_tables (1=entity, 2=lookup, 3=link, 4=subtable, 5=sys entity)
+            // Fetch cd_tables to get the authoritative type for each table
+            let cdTablesMap = {};
+            try {
+                const tResp = await fetch(API + '/tables');
+                if (tResp.ok) {
+                    const tRows = await tResp.json();
+                    for (const r of tRows) {
+                        cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
+                    }
+                }
+            } catch(e) { console.warn('Could not load cd_tables types:', e.message); }
+            
             const cats = { cd:{entities:[],lookups:[],links:[],subtables:[]}, sys:{entities:[],lookups:[],links:[],subtables:[]}, user:{entities:[],lookups:[],links:[],subtables:[]} };
             for (const [tn, info] of Object.entries(schema)) {
                 const t = tn.toUpperCase();
                 let zone = t.startsWith('CD_') ? 'cd' : (t.startsWith('SYS_') ? 'sys' : 'user');
                 const fields = info.columns.length;
                 const count = info.count || 0;
-                const base = t.replace(/^CD_|^SYS_/, '');
                 const item = {name:t, fields, count};
-                if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
-                else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
-                else if (base.includes('_')) cats[zone].subtables.push(item);
-                else cats[zone].entities.push(item);
+                
+                // Use f_type from cd_tables if available
+                const fType = cdTablesMap[t];
+                if (fType) {
+                    if (fType === 2) cats[zone].lookups.push(item);
+                    else if (fType === 3) cats[zone].links.push(item);
+                    else if (fType === 4) cats[zone].subtables.push(item);
+                    else cats[zone].entities.push(item); // 1 or 5
+                } else {
+                    // Fallback for tables not in cd_tables (e.g. CD_ dictionary tables themselves)
+                    const base = t.replace(/^CD_|^SYS_/, '');
+                    if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
+                    else if (!base.includes('_') || (t.startsWith('SYS_') && !t.replace('SYS_','').includes('_'))) cats[zone].entities.push(item);
+                    else cats[zone].links.push(item);
+                }
             }
             
             function cardHtml(type, items, cardIcon, cardColor) {
