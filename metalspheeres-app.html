@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.8';
+    const MS_VERSION = 'v0.8.9';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -2199,39 +2199,65 @@ async function showRawData(tableName) {
     popup.id = 'rawDataPopup';
     popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
     popup.onclick = (e) => { if (e.target === popup) popup.remove(); };
-    popup.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;max-width:92vw;max-height:90vh;overflow:auto;min-width:500px;display:flex;flex-direction:column;">' +
+    popup.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;max-width:92vw;max-height:90vh;min-width:500px;display:flex;flex-direction:column;overflow:hidden;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
         '<h3 style="margin:0;font-size:16px;" id="rawTitle">' + tableName + ' — Loading...</h3>' +
         '<button onclick="this.closest(\'#rawDataPopup\').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748B;">✕</button></div>' +
-        '<div id="rawPager" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;font-size:12px;"></div>' +
-        '<div id="rawDataContent" style="overflow:auto;flex:1;max-height:calc(90vh - 120px);">Loading...</div></div>';
+        '<div id="rawPager" style="margin-bottom:8px;display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap;"></div>' +
+        '<div id="rawDataContent" style="overflow:auto;flex:1;">Loading...</div></div>';
     document.body.appendChild(popup);
     window._rawTable = tableName;
     window._rawPage = 0;
-    window._rawPageSize = 500;
+    window._rawPageSize = 50;
     await loadRawPage();
 }
 async function loadRawPage() {
     const tableName = window._rawTable;
-    const offset = window._rawPage * window._rawPageSize;
+    const ps = window._rawPageSize;
+    const offset = window._rawPage * ps;
     try {
-        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName.toLowerCase()) + '?limit=' + window._rawPageSize + '&offset=' + offset);
+        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName.toLowerCase()) + '?limit=' + ps + '&offset=' + offset);
         if (!res.ok) throw new Error('API error ' + res.status);
         const data = await res.json();
         const rows = data.rows || data;
         const total = data.total || rows.length;
-        const totalPages = Math.ceil(total / window._rawPageSize);
+        const totalPages = Math.ceil(total / ps);
+        const curPage = window._rawPage;
         document.getElementById('rawTitle').textContent = tableName + ' — ' + total + ' records';
-        // Pager
-        let pagerHtml = '';
+        
+        // Build pager with page numbers
+        let p = '';
         if (totalPages > 1) {
-            pagerHtml += '<button onclick="window._rawPage=0;loadRawPage()" ' + (window._rawPage === 0 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">◀◀</button>';
-            pagerHtml += '<button onclick="window._rawPage=Math.max(0,window._rawPage-1);loadRawPage()" ' + (window._rawPage === 0 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">◀</button>';
-            pagerHtml += '<span>Page ' + (window._rawPage + 1) + ' / ' + totalPages + ' (' + (offset + 1) + '-' + Math.min(offset + window._rawPageSize, total) + ' of ' + total + ')</span>';
-            pagerHtml += '<button onclick="window._rawPage=Math.min(' + (totalPages-1) + ',window._rawPage+1);loadRawPage()" ' + (window._rawPage >= totalPages-1 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">▶</button>';
-            pagerHtml += '<button onclick="window._rawPage=' + (totalPages-1) + ';loadRawPage()" ' + (window._rawPage >= totalPages-1 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">▶▶</button>';
+            const btnStyle = 'padding:4px 8px;font-size:11px;cursor:pointer;border:1px solid #E2E8F0;border-radius:4px;background:#fff;';
+            const activeStyle = 'padding:4px 8px;font-size:11px;cursor:default;border:1px solid #3B82F6;border-radius:4px;background:#3B82F6;color:#fff;font-weight:600;';
+            const disStyle = 'padding:4px 8px;font-size:11px;border:1px solid #E2E8F0;border-radius:4px;background:#F8FAFC;color:#CBD5E1;cursor:default;';
+            
+            p += '<button onclick="window._rawPage=0;loadRawPage()" style="' + (curPage === 0 ? disStyle : btnStyle) + '" ' + (curPage === 0 ? 'disabled' : '') + '>◀◀</button>';
+            p += '<button onclick="window._rawPage=Math.max(0,window._rawPage-1);loadRawPage()" style="' + (curPage === 0 ? disStyle : btnStyle) + '" ' + (curPage === 0 ? 'disabled' : '') + '>◀</button>';
+            
+            // Show page numbers: always show first, last, and nearby pages
+            const pages = [];
+            for (let i = 0; i < totalPages; i++) {
+                if (i === 0 || i === totalPages - 1 || (i >= curPage - 2 && i <= curPage + 2)) {
+                    pages.push(i);
+                } else if (pages.length > 0 && pages[pages.length-1] !== -1) {
+                    pages.push(-1); // ellipsis
+                }
+            }
+            for (const pg of pages) {
+                if (pg === -1) {
+                    p += '<span style="font-size:11px;color:#94A3B8;">…</span>';
+                } else {
+                    p += '<button onclick="window._rawPage=' + pg + ';loadRawPage()" style="' + (pg === curPage ? activeStyle : btnStyle) + '">' + (pg + 1) + '</button>';
+                }
+            }
+            
+            p += '<button onclick="window._rawPage=Math.min(' + (totalPages-1) + ',window._rawPage+1);loadRawPage()" style="' + (curPage >= totalPages-1 ? disStyle : btnStyle) + '" ' + (curPage >= totalPages-1 ? 'disabled' : '') + '>▶</button>';
+            p += '<button onclick="window._rawPage=' + (totalPages-1) + ';loadRawPage()" style="' + (curPage >= totalPages-1 ? disStyle : btnStyle) + '" ' + (curPage >= totalPages-1 ? 'disabled' : '') + '>▶▶</button>';
+            p += '<span style="margin-left:8px;color:#94A3B8;font-size:11px;">' + (offset+1) + '–' + Math.min(offset+ps,total) + ' of ' + total + '</span>';
         }
-        document.getElementById('rawPager').innerHTML = pagerHtml;
+        document.getElementById('rawPager').innerHTML = p;
+        
         if (!rows.length) { document.getElementById('rawDataContent').innerHTML = '<em>No records</em>'; return; }
         const cols = Object.keys(rows[0]);
         let html = '<table style="border-collapse:collapse;font-size:11px;width:100%;"><thead><tr>';
