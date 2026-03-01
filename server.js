@@ -119,7 +119,7 @@ app.get('/api/databases', async (req, res) => {
 });
 
 app.get('/api/tables', async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM cd_tables ORDER BY CAST(NULLIF(sort, \'\') AS INTEGER) NULLS LAST');
+    const { rows } = await pool.query('SELECT * FROM cd_tables ORDER BY sort');
     res.json(rows);
 });
 
