@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.4';
+    const MS_VERSION = 'v0.6.5';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1194,9 +1194,7 @@ const userIconMap = {
 
 // Build SYS/User table structures dynamically from xsdFieldData
 function buildUserSchema() {
-    // Combine tables from xsdFieldData AND live schema (_schemaFull)
     const tableSet = new Set();
-    
     for (const t of Object.keys(xsdFieldData)) {
         if (!t.startsWith('CD_')) tableSet.add(t.toUpperCase());
     }
@@ -1208,91 +1206,66 @@ function buildUserSchema() {
     
     const allTables = [...tableSet].sort();
     
-    const entities = [];    // Main entities (no $, no LK_, not a link table)
-    const lookups = [];     // LK_* tables
-    const subs = {};        // Tables with $ separator
-    const links = [];       // Link tables: ENT1_ENT2 or SYS_ENT1_ENT2
+    const entities = [];   // On both axes
+    const lookups = [];    // LK_*
+    const subs = {};       // $ subtables
+    const links = [];      // Link tables in the matrix
     
-    // Step 1: find entities and lookups (skip $ subtables, skip LK_)
-    const candidateEntities = [];
+    // Step 1: find entities and lookups
+    // Entity = no $ AND not LK_ AND no _ in base name
+    // For SYS_: entity if SYS_ + single word (SYS_USERS, SYS_LOCKS)
     for (const t of allTables) {
         if (t.includes('$')) continue;
         if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
             lookups.push({ name: t, type: 'lk', icon: 'list' });
-        } else {
-            candidateEntities.push(t);
+        } else if (t.startsWith('SYS_')) {
+            const afterSys = t.replace('SYS_', '');
+            if (!afterSys.includes('_')) {
+                entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
+            }
+            // Tables like SYS_ENT1_ENT2 handled in step 3
+        } else if (!t.includes('_')) {
+            entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
         }
+        // Tables with _ that aren't SYS_ handled in step 3
     }
     
-    // Step 2: build entity name set — entities are tables whose name doesn't 
-    // combine two other entity names with _ separator
-    // First pass: collect all potential entity names
-    const entityNames = new Set();
-    for (const t of candidateEntities) {
-        // SYS_ entities: strip SYS_ prefix for matching
-        // User entities: use full name
-        entityNames.add(t);
-    }
-    
-    // Step 3: detect link tables by checking if a table name = ENT1_ENT2 
-    // where both ENT1 and ENT2 are entity names.
-    // For SYS_ tables: SYS_ENT1_ENT2 where ENT1 and ENT2 match entities
-    // Build prefix map from candidate entities (like CD does with 4-char prefixes)
+    // Step 2: build prefix map from entities ONLY (same as CD)
     const prefixMap = {};
-    for (const t of candidateEntities) {
-        const base = t.startsWith('SYS_') ? t.replace('SYS_', '') : t;
-        // Map full name
-        prefixMap[base] = t;
-        // Map 4-char prefix
-        if (base.length >= 4) prefixMap[base.substring(0, 4)] = t;
-        // Map 3-char prefix for longer names
-        if (base.length > 4) prefixMap[base.substring(0, 3)] = t;
+    for (const e of entities) {
+        const base = e.name.startsWith('SYS_') ? e.name.replace('SYS_', '') : e.name;
+        prefixMap[base] = e.name;
+        if (base.length >= 4) prefixMap[base.substring(0, 4)] = e.name;
+        if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
     }
     
-    const linkTableNames = new Set();
-    
-    for (const t of candidateEntities) {
-        // Strip SYS_ if present to get the base for splitting
-        const isSys = t.startsWith('SYS_');
-        const base = isSys ? t.replace('SYS_', '') : t;
+    // Step 3: classify tables with _ as links or subs (same as CD step 3)
+    for (const t of allTables) {
+        if (t.includes('$')) continue;
+        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) continue;
         
-        if (!base.includes('_')) continue; // no _ means not a link table
+        // Get base: strip SYS_ prefix if present
+        const base = t.startsWith('SYS_') ? t.replace('SYS_', '') : t;
+        if (!base.includes('_')) continue; // already an entity
         
-        // Try splitting at each _ position to find ENT1_ENT2
         const parts = base.split('_');
-        let foundLink = false;
+        const firstPrefix = parts[0];
+        const secondPart = parts.slice(1).join('_');
+        const secondPrefix = secondPart.substring(0, 4);
         
-        for (let i = 1; i < parts.length; i++) {
-            const firstPart = parts.slice(0, i).join('_');
-            const secondPart = parts.slice(i).join('_');
-            
-            // Match against prefixes (same logic as CD)
-            const parent1 = prefixMap[firstPart] || prefixMap[firstPart.substring(0, 4)] || prefixMap[firstPart.substring(0, 3)];
-            const parent2 = prefixMap[secondPart] || prefixMap[secondPart.substring(0, 4)] || prefixMap[secondPart.substring(0, 3)];
-            
-            if (parent1 && parent2 && parent1 !== t && parent2 !== t) {
-                if (parent1 === parent2) {
-                    // Self-link
-                    links.push({ name: t, from: parent1, to: parent1 });
-                } else {
-                    // Link table: from=ENT1 (row), to=ENT2 (column)
-                    links.push({ name: t, from: parent1, to: parent2 });
-                }
-                linkTableNames.add(t);
-                foundLink = true;
-                break;
-            }
-        }
+        const parent1 = prefixMap[firstPrefix] || prefixMap[firstPrefix.substring(0, 3)];
+        const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
         
-        // If not a link, check if it's a sub table
-        if (!foundLink) {
-            const firstPart = parts[0];
-            const parent = prefixMap[firstPart] || prefixMap[firstPart.substring(0, 4)] || prefixMap[firstPart.substring(0, 3)];
-            if (parent && parent !== t) {
-                if (!subs[parent]) subs[parent] = [];
-                subs[parent].push(t);
-                linkTableNames.add(t); // exclude from entities
-            }
+        if (parent1 && parent2 && parent1 !== parent2) {
+            // Link table: both parts match entities → from=row, to=column
+            links.push({ name: t, from: parent1, to: parent2 });
+        } else if (parent1 === parent2 && parent1) {
+            // Self-link
+            links.push({ name: t, from: parent1, to: parent1 });
+        } else if (parent1 && parent1 !== t) {
+            // Sub table: first part matches entity
+            if (!subs[parent1]) subs[parent1] = [];
+            subs[parent1].push(t);
         }
     }
     
@@ -1300,23 +1273,14 @@ function buildUserSchema() {
     for (const t of allTables) {
         if (!t.includes('$')) continue;
         const parent = t.split('$')[0];
-        if (entityNames.has(parent)) {
-            if (!subs[parent]) subs[parent] = [];
-            subs[parent].push(t);
+        const parentEntity = entities.find(e => e.name === parent);
+        if (parentEntity) {
+            if (!subs[parentEntity.name]) subs[parentEntity.name] = [];
+            subs[parentEntity.name].push(t);
         }
     }
     
-    // Step 5: entities = candidates that are NOT link tables and NOT sub tables
-    for (const t of candidateEntities) {
-        if (linkTableNames.has(t)) continue;
-        if (t.startsWith('SYS_')) {
-            entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
-        } else {
-            entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
-        }
-    }
-    
-    // Step 6: derive relations from links (identical to CD pattern)
+    // Step 5: derive relations from links (identical to CD)
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
@@ -1331,7 +1295,7 @@ function buildUserSchema() {
         }
     }
     
-    // Step 7: build tableList — ONLY entities on axes
+    // Step 6: build tableList — ONLY entities on axes
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         return { ...e, cols: ['—', subCount || '—', '—'] };
