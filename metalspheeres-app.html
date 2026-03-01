@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.6';
+    const MS_VERSION = 'v0.6.7';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -4134,8 +4134,9 @@ function renderDbStatistics() {
                 if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
             }
             
-            // Categorize using f_type from cd_tables (1=entity, 2=lookup, 3=link, 4=subtable, 5=sys entity)
-            // Fetch cd_tables to get the authoritative type for each table
+            // Categorize tables
+            // For SYS/User: use f_type from cd_tables (1=entity, 2=lookup, 3=link, 4=subtable, 5=sys entity)
+            // For CD: use original name-pattern logic (which was working correctly)
             let cdTablesMap = {};
             try {
                 const tResp = await fetch(API + '/tables');
@@ -4144,6 +4145,7 @@ function renderDbStatistics() {
                     for (const r of tRows) {
                         cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
                     }
+                    window._cdTablesMap = cdTablesMap;
                 }
             } catch(e) { console.warn('Could not load cd_tables types:', e.message); }
             
@@ -4153,21 +4155,30 @@ function renderDbStatistics() {
                 let zone = t.startsWith('CD_') ? 'cd' : (t.startsWith('SYS_') ? 'sys' : 'user');
                 const fields = info.columns.length;
                 const count = info.count || 0;
+                const base = t.replace(/^CD_|^SYS_/, '');
                 const item = {name:t, fields, count};
                 
-                // Use f_type from cd_tables if available
-                const fType = cdTablesMap[t];
-                if (fType) {
-                    if (fType === 2) cats[zone].lookups.push(item);
-                    else if (fType === 3) cats[zone].links.push(item);
-                    else if (fType === 4) cats[zone].subtables.push(item);
-                    else cats[zone].entities.push(item); // 1 or 5
-                } else {
-                    // Fallback for tables not in cd_tables (e.g. CD_ dictionary tables themselves)
-                    const base = t.replace(/^CD_|^SYS_/, '');
+                if (zone === 'cd') {
+                    // CD tables: use original name-pattern logic (proven working)
                     if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
-                    else if (!base.includes('_') || (t.startsWith('SYS_') && !t.replace('SYS_','').includes('_'))) cats[zone].entities.push(item);
-                    else cats[zone].links.push(item);
+                    else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
+                    else if (base.includes('_')) cats[zone].subtables.push(item);
+                    else cats[zone].entities.push(item);
+                } else {
+                    // SYS/User: use f_type from cd_tables if available
+                    const fType = cdTablesMap[t];
+                    if (fType) {
+                        if (fType === 2) cats[zone].lookups.push(item);
+                        else if (fType === 3) cats[zone].links.push(item);
+                        else if (fType === 4) cats[zone].subtables.push(item);
+                        else cats[zone].entities.push(item);
+                    } else {
+                        // Fallback for SYS/User without f_type
+                        if (base.startsWith('LK_')) cats[zone].lookups.push(item);
+                        else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
+                        else if (base.includes('_') && !(!base.replace(t.startsWith('SYS_')?'':'_','').includes('_'))) cats[zone].subtables.push(item);
+                        else cats[zone].entities.push(item);
+                    }
                 }
             }
             
