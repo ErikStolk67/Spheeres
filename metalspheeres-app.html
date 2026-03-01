@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.7';
+    const MS_VERSION = 'v0.7.8';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1276,14 +1276,15 @@ function buildUserSchema() {
         else { setRel(link.from, link.to, 'n'); setRel(link.to, link.from, '—'); }
     }
 
-    // Step 6: tableList — entities only, sorted by sort_order (SYS_ first)
+    // Step 6: tableList — entities only, SYS_ first then User, each sorted by sort
     const sortOrder = window._cdTablesSortOrder || {};
     const typeCounts = window._typeCounts || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
-        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
-    }).sort((a, b) => a.sortOrder - b.sortOrder);
+        const isSys = e.type === 'sys' ? 0 : 1; // SYS=0 first, User=1 second
+        return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
+    }).sort((a, b) => a.groupOrder - b.groupOrder || a.sortOrder - b.sortOrder);
 
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
@@ -1455,11 +1456,19 @@ function renderDbDesigner() {
     const tables = isDictMode ? getCdTables() : getDbTables();
     const rels = isDictMode ? getCdRelations() : getUserRelations();
 
-    // Zone background colors for empty cells
-    const zoneMainEmpty = isDictMode ? '#DBEAFE' : '#FEF9C3';   // light blue / light yellow
-    const zoneCrossEmpty = isDictMode ? '#EFF6FF' : '#F8FAFC';  // lighter blue / near white
-    const zoneDiag = isDictMode ? '#BFDBFE' : '#FDE68A';        // medium blue / medium yellow
-    const zoneDiagCross = isDictMode ? '#E2E8F0' : '#E2E8F0';
+    // Zone background colors for empty cells and diagonal
+    // CD mode: one zone (all blue)
+    // User mode: three zones - SYS×SYS (yellow), User×User (gray), Cross (very light)
+    function getZone(rowType, colType) {
+        if (isDictMode) return 'main'; // all CD entities are same zone
+        const rSys = rowType === 'sys';
+        const cSys = colType === 'sys';
+        if (rSys && cSys) return 'sys';
+        if (!rSys && !cSys) return 'user';
+        return 'cross';
+    }
+    const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', user: '#F1F5F9', cross: '#FAFBFC' };
+    const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', user: '#E2E8F0', cross: '#F1F5F9' };
 
     // Column headers - white background, bottom-aligned, text at bottom of rotated header
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
@@ -1471,13 +1480,9 @@ function renderDbDesigner() {
         const t = tables[i];
         const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
         const hdrBg = isDictMode ? '#DBEAFE' : (isMain ? '#FEF9C3' : '#F1F5F9');
-        colHeaders += `<th class="col-header" draggable="true" data-col-idx="${i}" 
-            style="background:${hdrBg};cursor:grab;vertical-align:bottom;text-align:left;"
-            ondragstart="window._dragColIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
-            ondragover="event.preventDefault();event.stopPropagation();this.style.borderLeft='3px solid #3B82F6';"
-            ondragleave="this.style.borderLeft='';"
-            ondrop="this.style.borderLeft='';handleColDrop(${i});event.preventDefault();"
-            onclick="if(!window._wasDragging)showTablePopup('${t.name}')"><span style="display:inline-block;font-size:8px;color:#94A3B8;">↕</span> ${t.name}</th>`;
+        colHeaders += `<th class="col-header" data-col-idx="${i}" 
+            style="background:${hdrBg};cursor:pointer;vertical-align:bottom;text-align:left;"
+            onclick="if(!window._wasDragging)showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
     // Rows
@@ -1486,15 +1491,15 @@ function renderDbDesigner() {
         const row = tables[i];
 
         rows += `<tr>`;
-        // Row header - colored per zone
+        // Row header - drag source for reordering (columns follow)
         const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
         const rowBg = isDictMode ? '#EFF6FF' : (isMainRow ? '#FFFEF5' : '#FAFBFC');
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
             style="background:${rowBg};cursor:grab;"
-            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${i}');event.dataTransfer.effectAllowed='move';"
-            ondragover="event.preventDefault();event.stopPropagation();this.style.borderBottom='3px solid #3B82F6';"
+            ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','row-${i}');event.dataTransfer.effectAllowed='move';"
+            ondragover="event.preventDefault();this.style.borderBottom='3px solid #3B82F6';"
             ondragleave="this.style.borderBottom='';"
-            ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();"
+            ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
             onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
         // Meta columns (Type, Sub, Screens) - same background as row
@@ -1515,35 +1520,41 @@ function renderDbDesigner() {
         // Relationship cells - colored by zone
         for (let j = 0; j < tables.length; j++) {
             const col = tables[j];
-            const isMainR = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-            const isMainC = isDictMode ? (col.type === 'cd') : (col.type === 'sys');
-            const isMainZone = isMainR && isMainC;
+            const zone = getZone(row.type, col.type);
+            const isSysZone = zone === 'sys' || zone === 'main';
 
             if (row.name === col.name) {
                 // Diagonal
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
                 if (val === 'nn') {
-                    const cellClass = isDictMode ? 'cell-nn-cd' : (isMainZone ? 'cell-nn' : 'cell-nn-user');
+                    let cellClass;
+                    if (isDictMode) cellClass = 'cell-nn-cd';
+                    else if (zone === 'sys') cellClass = 'cell-nn';
+                    else cellClass = 'cell-nn-user';
                     rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name} (self)" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
                 } else {
-                    rows += `<td style="background:${isMainZone ? zoneDiag : zoneDiagCross};"></td>`;
+                    rows += `<td style="background:${diagBg[zone]};"></td>`;
                 }
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
                 if (val) {
                     let cellClass;
                     if (isDictMode) {
-                        if (val === 'nn') cellClass = isMainZone ? 'cell-nn-cd' : 'cell-nn-lk';
-                        else if (val === 'n') cellClass = isMainZone ? 'cell-n-cd' : 'cell-n-lk';
-                        else cellClass = isMainZone ? 'cell-dash-cd' : 'cell-dash-lk';
+                        if (val === 'nn') cellClass = 'cell-nn-cd';
+                        else if (val === 'n') cellClass = 'cell-n-cd';
+                        else cellClass = 'cell-dash-cd';
+                    } else if (isSysZone) {
+                        if (val === 'nn') cellClass = 'cell-nn';
+                        else if (val === 'n') cellClass = 'cell-n';
+                        else cellClass = 'cell-dash';
                     } else {
-                        if (val === 'nn') cellClass = isMainZone ? 'cell-nn' : 'cell-nn-user';
-                        else if (val === 'n') cellClass = isMainZone ? 'cell-n' : 'cell-n-user';
-                        else cellClass = isMainZone ? 'cell-dash' : 'cell-dash-user';
+                        if (val === 'nn') cellClass = 'cell-nn-user';
+                        else if (val === 'n') cellClass = 'cell-n-user';
+                        else cellClass = 'cell-dash-user';
                     }
                     rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
                 } else {
-                    rows += `<td style="background:${isMainZone ? zoneMainEmpty : zoneCrossEmpty};" title="${row.name} ↔ ${col.name}"></td>`;
+                    rows += `<td style="background:${emptyBg[zone]};" title="${row.name} ↔ ${col.name}"></td>`;
                 }
             }
         }
@@ -1591,7 +1602,7 @@ function handleColDrop(targetIdx) {
     window._dragColIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
     window._wasDragging = true;
-    setTimeout(() => window._wasDragging = false, 100);
+    setTimeout(() => window._wasDragging = false, 200);
     reorderDesignerTables(sourceIdx, targetIdx);
 }
 function handleRowDrop(targetIdx) {
@@ -1599,9 +1610,17 @@ function handleRowDrop(targetIdx) {
     window._dragRowIdx = undefined;
     if (sourceIdx === undefined || sourceIdx === targetIdx) return;
     window._wasDragging = true;
-    setTimeout(() => window._wasDragging = false, 100);
+    setTimeout(() => window._wasDragging = false, 200);
     reorderDesignerTables(sourceIdx, targetIdx);
 }
+// Also handle via dragenter for rotated elements where drop may not fire
+document.addEventListener('dragend', function(e) {
+    // Clean up any visual indicators
+    document.querySelectorAll('.col-header, .row-header').forEach(el => {
+        el.style.borderLeft = '';
+        el.style.borderBottom = '';
+    });
+});
 function reorderDesignerTables(from, to) {
     const isDictMode = designerMode === 'dictionary';
     const tables = isDictMode ? getCdTables() : getDbTables();
