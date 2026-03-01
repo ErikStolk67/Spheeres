@@ -1016,241 +1016,215 @@ const PORT = process.env.PORT || 3000;
 
 
 // ============================================================================
-// SCHEMA XML IMPORT - imports database schema definition into CD_ tables
-// Uses EXISTING cd_tables, cd_fields, cd_tabl_fiel, cd_controls structure
-// Creates controls for each field automatically
+// SCHEMA XML IMPORT - imports Verspaning-style schema into CD_ tables
+// Structure: cd_tables + cd_fields + cd_tabl_fiel + cd_controls + cd_fiel_cntr
 // ============================================================================
 app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
     const client = await pool.connect();
     try {
         let xml = req.body.toString('utf-8').replace(/\r/g, '');
-        
-        // Parse XML - tags are <Name> not <n>
         const lines = xml.split('\n').map(l => l.trim());
         
-        let dbName = null;
-        let inTables = false;
-        let tableName = null;
-        let tables = [];
-        let fields = [];
-        let fieldName = null;
+        // Parse XML
+        let dbName = null, inTables = false, tableName = null;
+        let tables = [], fields = [], fieldName = null;
         
         for (const s of lines) {
             const nameMatch = s.match(/^<Name>(.+)<\/Name>$/i);
             const typeMatch = s.match(/^<Type>(.+)<\/Type>$/i);
-            
-            if (s === '<Tables>') {
-                inTables = true;
-                tableName = null;
-                fields = [];
-            } else if (s === '</Tables>') {
-                if (tableName) tables.push({ name: tableName, fields: [...fields] });
-                inTables = false;
-            } else if (nameMatch) {
-                const val = nameMatch[1];
-                if (!inTables && !dbName) {
-                    dbName = val;
-                } else if (inTables && !tableName) {
-                    tableName = val;
-                } else if (inTables) {
-                    fieldName = val;
-                }
-            } else if (typeMatch && fieldName && inTables) {
-                fields.push({ name: fieldName, type: typeMatch[1] });
-                fieldName = null;
+            if (s === '<Tables>') { inTables = true; tableName = null; fields = []; }
+            else if (s === '</Tables>') { if (tableName) tables.push({ name: tableName, fields: [...fields] }); inTables = false; }
+            else if (nameMatch) {
+                if (!inTables && !dbName) dbName = nameMatch[1];
+                else if (inTables && !tableName) tableName = nameMatch[1];
+                else if (inTables) fieldName = nameMatch[1];
             }
+            else if (typeMatch && fieldName && inTables) { fields.push({ name: fieldName, type: typeMatch[1] }); fieldName = null; }
         }
         
-        if (tables.length === 0) {
-            return res.json({ success: false, error: 'No tables found in schema XML' });
-        }
+        if (tables.length === 0) return res.json({ success: false, error: 'No tables found in schema XML' });
         
-        // Check which columns actually exist in each CD_ table
-        async function getCols(table) {
-            const r = await client.query(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [table]
-            );
+        // Check columns in each CD_ table
+        async function getCols(t) {
+            const r = await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [t]);
             return r.rows.map(r => r.column_name);
         }
         const tabCols = await getCols('cd_tables');
         const fldCols = await getCols('cd_fields');
         const tflCols = await getCols('cd_tabl_fiel');
         const ctrlCols = await getCols('cd_controls');
+        const fcCols = await getCols('cd_fiel_cntr');
         
-        // Control type mapping: XML Type -> control_type name
-        const ctrlTypeMap = {
-            'PKey': 'integer', 'Text': 'text', 'Integer': 'integer', 'Decimal': 'decimal',
-            'Currency': 'decimal', 'YesNo': 'checkbox', 'Date': 'date', 'DateTime': 'datetime',
-            'Time': 'text', 'TimeSpan': 'text', 'Lookup': 'lookup', 'Reference': 'lookup',
-            'Memo': 'text', 'Image': 'text', 'Document': 'text', 'Guid': 'text',
-            'Password': 'text', 'Alias': 'text', 'Sort': 'integer', 'Color': 'text',
-            'Property': 'text', 'MultiSelect': 'text', 'SPIM': 'text',
-        };
-        
-        // f_type mapping for cd_fields
-        const fTypeMap = {
-            'Text': 2, 'Integer': 1, 'Decimal': 2, 'Currency': 2, 'YesNo': 3,
-            'Date': 4, 'DateTime': 4, 'Lookup': 2, 'Reference': 2, 'PKey': 1,
-            'Memo': 2, 'Image': 5, 'Document': 5, 'Guid': 6, 'Password': 2,
-            'Alias': 2, 'Sort': 1, 'Color': 2, 'Property': 2, 'MultiSelect': 2,
-            'Time': 4, 'TimeSpan': 2, 'SPIM': 2,
+        // Control f_type mapping: XML Type -> integer
+        const ctrlFTypeMap = {
+            'PKey': 1, 'Text': 2, 'Integer': 1, 'Decimal': 2, 'Currency': 2,
+            'YesNo': 3, 'Date': 4, 'DateTime': 4, 'Time': 4, 'TimeSpan': 2,
+            'Lookup': 2, 'Reference': 2, 'Memo': 2, 'Image': 5, 'Document': 5,
+            'Guid': 6, 'Password': 2, 'Alias': 2, 'Sort': 1, 'Color': 2,
+            'Property': 2, 'MultiSelect': 2, 'SPIM': 2,
         };
         
         // Table f_type: 1=entity, 2=lookup, 3=link, 4=subtable
         function getTableFType(name) {
             if (name.startsWith('CD_LK_') || name.startsWith('LK_')) return 2;
             const base = name.replace(/^(CD_|SYS_)/, '');
-            if (base.includes('_')) {
-                const parts = base.split('_');
-                if (parts.length === 2 && parts[0].length <= 5 && parts[1].length <= 5) return 3;
-                return 4;
-            }
-            return 1;
+            if (!base.includes('_')) return 1;
+            const parts = base.split('_');
+            if (parts.length === 2 && parts[0].length <= 5 && parts[1].length <= 5) return 3;
+            return 4;
         }
         
-        // Helper: insert with only existing columns
         function buildInsert(table, colMap) {
-            const cols = [], vals = [], phs = [];
-            let pi = 1;
-            for (const [col, val] of Object.entries(colMap)) {
-                cols.push(col); vals.push(val); phs.push('$' + pi++);
-            }
-            return { sql: `INSERT INTO ${table} (${cols.join(',')}) VALUES (${phs.join(',')})`, vals };
+            const cols = [], vals = [], phs = []; let pi = 1;
+            for (const [col, val] of Object.entries(colMap)) { cols.push('"'+col+'"'); vals.push(val); phs.push('$'+pi++); }
+            return { sql: `INSERT INTO "${table}" (${cols.join(',')}) VALUES (${phs.join(',')})`, vals };
         }
         
         await client.query('BEGIN');
         
         const errors = [];
-        let tablesImported = 0, fieldsImported = 0, linksCreated = 0, controlsCreated = 0;
+        let tablesImported = 0, fieldsImported = 0, linksCreated = 0, controlsCreated = 0, fielCntrCreated = 0;
         
-        // Drop PK constraints to allow clean insert
+        // Drop PK constraints
         const constraints = await client.query(`
             SELECT tc.constraint_name, tc.table_name FROM information_schema.table_constraints tc
-            WHERE tc.table_schema = 'public' AND tc.table_name IN ('cd_tables','cd_fields','cd_tabl_fiel','cd_controls')
-            AND tc.constraint_type = 'PRIMARY KEY'
-        `);
+            WHERE tc.table_schema='public' AND tc.table_name IN ('cd_tables','cd_fields','cd_tabl_fiel','cd_controls','cd_fiel_cntr')
+            AND tc.constraint_type='PRIMARY KEY'`);
         for (const c of constraints.rows) {
             try { await client.query(`ALTER TABLE "${c.table_name}" DROP CONSTRAINT IF EXISTS "${c.constraint_name}"`); } catch(e) {}
         }
         
-        // Clear existing data
-        if (ctrlCols.length > 0) try { await client.query('DELETE FROM cd_controls'); } catch(e) { errors.push('clear cd_controls: ' + e.message); }
-        if (tflCols.length > 0) try { await client.query('DELETE FROM cd_tabl_fiel'); } catch(e) { errors.push('clear cd_tabl_fiel: ' + e.message); }
-        try { await client.query('DELETE FROM cd_fields'); } catch(e) { errors.push('clear cd_fields: ' + e.message); }
-        try { await client.query('DELETE FROM cd_tables'); } catch(e) { errors.push('clear cd_tables: ' + e.message); }
+        // Clear
+        if (fcCols.length > 0) try { await client.query('DELETE FROM cd_fiel_cntr'); } catch(e) {}
+        if (ctrlCols.length > 0) try { await client.query('DELETE FROM cd_controls'); } catch(e) {}
+        if (tflCols.length > 0) try { await client.query('DELETE FROM cd_tabl_fiel'); } catch(e) {}
+        try { await client.query('DELETE FROM cd_fields'); } catch(e) {}
+        try { await client.query('DELETE FROM cd_tables'); } catch(e) {}
         
-        let tableId = 1;
-        let fieldId = 1;
-        const crypto = require('crypto');
-        
-        // Log actual columns found for debugging
-        const colReport = { cd_tables: tabCols, cd_fields: fldCols, cd_tabl_fiel: tflCols, cd_controls: ctrlCols };
+        let tableId = 1, fieldId = 1, controlId = 1;
         
         for (const table of tables) {
             const fType = getTableFType(table.name);
             
-            // Build cd_tables insert
-            const tCols = { k_table: tableId, name: table.name };
-            if (tabCols.includes('f_type')) tCols.f_type = fType;
-            if (tabCols.includes('sort')) tCols.sort = tableId;
-            if (tabCols.includes('createdate')) tCols.createdate = new Date();
-            if (tabCols.includes('changedate')) tCols.changedate = new Date();
+            // cd_tables
+            const tMap = { k_table: tableId };
+            if (tabCols.includes('name')) tMap.name = table.name;
+            if (tabCols.includes('f_type')) tMap.f_type = fType;
+            if (tabCols.includes('sort')) tMap.sort = tableId;
+            if (tabCols.includes('createdate')) tMap.createdate = new Date();
+            if (tabCols.includes('changedate')) tMap.changedate = new Date();
             
             try {
-                await client.query('SAVEPOINT sp_table');
-                const q = buildInsert('cd_tables', tCols);
+                await client.query('SAVEPOINT sp');
+                const q = buildInsert('cd_tables', tMap);
                 await client.query(q.sql, q.vals);
-                await client.query('RELEASE SAVEPOINT sp_table');
+                await client.query('RELEASE SAVEPOINT sp');
                 tablesImported++;
             } catch(e) {
-                await client.query('ROLLBACK TO SAVEPOINT sp_table');
+                await client.query('ROLLBACK TO SAVEPOINT sp');
                 errors.push('cd_tables ' + table.name + ': ' + e.message);
-                tableId++;
-                continue;
+                tableId++; continue;
             }
             
-            // Insert fields
             let fieldSort = 1;
             for (const field of table.fields) {
-                const fFieldType = fTypeMap[field.type] || 2;
+                const fFieldType = ctrlFTypeMap[field.type] || 2;
                 const isPk = field.name.startsWith('K_') && fieldSort <= 3;
-                const ctrlType = ctrlTypeMap[field.type] || 'text';
                 
                 // cd_fields
-                const fCols = { k_field: fieldId, name: field.name };
-                if (fldCols.includes('f_type')) fCols.f_type = fFieldType;
-                if (fldCols.includes('sort')) fCols.sort = fieldSort;
-                if (fldCols.includes('createdate')) fCols.createdate = new Date();
-                if (fldCols.includes('changedate')) fCols.changedate = new Date();
+                const fMap = { k_field: fieldId };
+                if (fldCols.includes('name')) fMap.name = field.name;
+                if (fldCols.includes('f_type')) fMap.f_type = fFieldType;
+                if (fldCols.includes('sort')) fMap.sort = fieldSort;
+                if (fldCols.includes('createdate')) fMap.createdate = new Date();
+                if (fldCols.includes('changedate')) fMap.changedate = new Date();
                 
                 try {
-                    await client.query('SAVEPOINT sp_field');
-                    const q = buildInsert('cd_fields', fCols);
-                    await client.query(q.sql, q.vals);
-                    await client.query('RELEASE SAVEPOINT sp_field');
+                    await client.query('SAVEPOINT sp');
+                    await client.query(buildInsert('cd_fields', fMap).sql, buildInsert('cd_fields', fMap).vals);
+                    await client.query('RELEASE SAVEPOINT sp');
                     fieldsImported++;
                 } catch(e) {
-                    await client.query('ROLLBACK TO SAVEPOINT sp_field');
+                    await client.query('ROLLBACK TO SAVEPOINT sp');
                     errors.push('cd_fields ' + table.name + '.' + field.name + ': ' + e.message);
-                    fieldId++; fieldSort++;
-                    continue;
+                    fieldId++; fieldSort++; continue;
                 }
                 
                 // cd_tabl_fiel
                 if (tflCols.length > 0) {
-                    const lCols = { k_fiel: fieldId, k_tabl: tableId };
-                    if (tflCols.includes('k_seq')) lCols.k_seq = fieldSort;
-                    if (tflCols.includes('main')) lCols.main = isPk;
-                    if (tflCols.includes('createdate')) lCols.createdate = new Date();
-                    if (tflCols.includes('changedate')) lCols.changedate = new Date();
+                    const lMap = {};
+                    if (tflCols.includes('k_fiel')) lMap.k_fiel = fieldId;
+                    if (tflCols.includes('k_tabl')) lMap.k_tabl = tableId;
+                    if (tflCols.includes('k_seq')) lMap.k_seq = fieldSort;
+                    if (tflCols.includes('main')) lMap.main = isPk;
+                    if (tflCols.includes('createdate')) lMap.createdate = new Date();
+                    if (tflCols.includes('changedate')) lMap.changedate = new Date();
                     
-                    try {
-                        await client.query('SAVEPOINT sp_link');
-                        const q = buildInsert('cd_tabl_fiel', lCols);
-                        await client.query(q.sql, q.vals);
-                        await client.query('RELEASE SAVEPOINT sp_link');
-                        linksCreated++;
-                    } catch(e) {
-                        await client.query('ROLLBACK TO SAVEPOINT sp_link');
-                        errors.push('cd_tabl_fiel ' + table.name + '.' + field.name + ': ' + e.message);
-                    }
-                }
-                
-                // cd_controls - only if it has columns we can use
-                if (ctrlCols.length > 0 && ctrlCols.includes('k_control')) {
-                    const cCols = { k_control: crypto.randomUUID() };
-                    // Only add columns that actually exist
-                    if (ctrlCols.includes('k_field')) cCols.k_field = fieldId;
-                    if (ctrlCols.includes('control_type')) cCols.control_type = ctrlType;
-                    if (ctrlCols.includes('label')) cCols.label = field.name;
-                    if (ctrlCols.includes('name')) cCols.name = field.name;
-                    if (ctrlCols.includes('is_visible')) cCols.is_visible = true;
-                    if (ctrlCols.includes('is_readonly')) cCols.is_readonly = false;
-                    if (ctrlCols.includes('is_required')) cCols.is_required = isPk;
-                    if (ctrlCols.includes('sort_order')) cCols.sort_order = fieldSort;
-                    if (ctrlCols.includes('sort')) cCols.sort = fieldSort;
-                    if (ctrlCols.includes('f_type')) cCols.f_type = fFieldType;
-                    if (ctrlCols.includes('createdate')) cCols.createdate = new Date();
-                    if (ctrlCols.includes('changedate')) cCols.changedate = new Date();
-                    
-                    // Must have at least 2 columns to insert
-                    if (Object.keys(cCols).length >= 2) {
+                    if (Object.keys(lMap).length >= 2) {
                         try {
-                            await client.query('SAVEPOINT sp_ctrl');
-                            const q = buildInsert('cd_controls', cCols);
+                            await client.query('SAVEPOINT sp');
+                            const q = buildInsert('cd_tabl_fiel', lMap);
                             await client.query(q.sql, q.vals);
-                            await client.query('RELEASE SAVEPOINT sp_ctrl');
-                            controlsCreated++;
+                            await client.query('RELEASE SAVEPOINT sp');
+                            linksCreated++;
                         } catch(e) {
-                            await client.query('ROLLBACK TO SAVEPOINT sp_ctrl');
-                            if (controlsCreated === 0 && errors.filter(x => x.startsWith('cd_controls')).length === 0) {
-                                errors.push('cd_controls: ' + e.message + ' (columns: ' + ctrlCols.join(',') + ')');
-                            }
+                            await client.query('ROLLBACK TO SAVEPOINT sp');
+                            errors.push('cd_tabl_fiel ' + table.name + '.' + field.name + ': ' + e.message);
                         }
                     }
                 }
                 
-                fieldId++; fieldSort++;
+                // cd_controls (one per field)
+                if (ctrlCols.length > 0) {
+                    const cMap = {};
+                    if (ctrlCols.includes('k_control')) cMap.k_control = controlId;
+                    if (ctrlCols.includes('name')) cMap.name = field.name;
+                    if (ctrlCols.includes('f_type')) cMap.f_type = fFieldType;
+                    if (ctrlCols.includes('sort')) cMap.sort = fieldSort;
+                    if (ctrlCols.includes('createdate')) cMap.createdate = new Date();
+                    if (ctrlCols.includes('changedate')) cMap.changedate = new Date();
+                    
+                    if (Object.keys(cMap).length >= 2) {
+                        try {
+                            await client.query('SAVEPOINT sp');
+                            const q = buildInsert('cd_controls', cMap);
+                            await client.query(q.sql, q.vals);
+                            await client.query('RELEASE SAVEPOINT sp');
+                            controlsCreated++;
+                        } catch(e) {
+                            await client.query('ROLLBACK TO SAVEPOINT sp');
+                            if (controlsCreated === 0 && errors.filter(x => x.startsWith('cd_controls')).length === 0)
+                                errors.push('cd_controls: ' + e.message + ' (cols: ' + ctrlCols.join(',') + ')');
+                        }
+                    }
+                }
+                
+                // cd_fiel_cntr (link field to control)
+                if (fcCols.length > 0 && controlsCreated > 0) {
+                    const fcMap = {};
+                    if (fcCols.includes('k_fiel')) fcMap.k_fiel = fieldId;
+                    if (fcCols.includes('k_cntr')) fcMap.k_cntr = controlId;
+                    if (fcCols.includes('main')) fcMap.main = true;
+                    if (fcCols.includes('sort')) fcMap.sort = fieldSort;
+                    if (fcCols.includes('createdate')) fcMap.createdate = new Date();
+                    if (fcCols.includes('changedate')) fcMap.changedate = new Date();
+                    
+                    if (Object.keys(fcMap).length >= 2) {
+                        try {
+                            await client.query('SAVEPOINT sp');
+                            const q = buildInsert('cd_fiel_cntr', fcMap);
+                            await client.query(q.sql, q.vals);
+                            await client.query('RELEASE SAVEPOINT sp');
+                            fielCntrCreated++;
+                        } catch(e) {
+                            await client.query('ROLLBACK TO SAVEPOINT sp');
+                            if (fielCntrCreated === 0 && errors.filter(x => x.startsWith('cd_fiel_cntr')).length === 0)
+                                errors.push('cd_fiel_cntr: ' + e.message + ' (cols: ' + fcCols.join(',') + ')');
+                        }
+                    }
+                }
+                
+                controlId++; fieldId++; fieldSort++;
             }
             tableId++;
         }
@@ -1261,22 +1235,20 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
         try { await client.query('ANALYZE cd_fields'); } catch(e) {}
         try { await client.query('ANALYZE cd_tabl_fiel'); } catch(e) {}
         try { await client.query('ANALYZE cd_controls'); } catch(e) {}
+        try { await client.query('ANALYZE cd_fiel_cntr'); } catch(e) {}
         
         invalidateSchemaCache();
         res.json({ 
-            success: true, 
-            database: dbName,
-            tablesImported, 
-            fieldsImported,
-            linksCreated,
-            controlsCreated,
+            success: true, database: dbName,
+            tablesImported, fieldsImported, linksCreated, controlsCreated, fielCntrCreated,
             errors: errors.length,
             errorList: errors.slice(0, 50),
             breakdown: {
                 sys: tables.filter(t => t.name.startsWith('SYS_')).length,
                 user: tables.filter(t => !t.name.startsWith('SYS_') && !t.name.startsWith('CD_')).length,
                 cd: tables.filter(t => t.name.startsWith('CD_')).length,
-            }
+            },
+            columnsUsed: { cd_tables: tabCols, cd_fields: fldCols, cd_controls: ctrlCols, cd_fiel_cntr: fcCols }
         });
     } catch (err) {
         try { await client.query('ROLLBACK'); } catch(e) {}
@@ -1287,4 +1259,3 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
-

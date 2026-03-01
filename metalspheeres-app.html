@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.5.2';
-    const MS_BUILD = '2026-03-01 11:00';
+    const MS_VERSION = 'v0.5.3';
+    const MS_BUILD = '2026-03-01 11:30';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -3041,6 +3041,7 @@ async function importDroppedFile(file) {
                     { table: 'cd_fields', rows: result.fieldsImported, total: result.fieldsImported, errors: 0 },
                     { table: 'cd_tabl_fiel', rows: result.linksCreated || 0, total: result.linksCreated || 0, errors: 0 },
                     { table: 'cd_controls', rows: result.controlsCreated || 0, total: result.controlsCreated || 0, errors: 0 },
+                    { table: 'cd_fiel_cntr', rows: result.fielCntrCreated || 0, total: result.fielCntrCreated || 0, errors: 0 },
                 ];
                 if (result.errorList && result.errorList.length > 0) {
                     for (const e of result.errorList) {
@@ -3049,8 +3050,8 @@ async function importDroppedFile(file) {
                 }
                 showImportReport({
                     success: true,
-                    totalRows: result.tablesImported + result.fieldsImported + (result.linksCreated||0) + (result.controlsCreated||0),
-                    tablesProcessed: 4,
+                    totalRows: result.tablesImported + result.fieldsImported + (result.linksCreated||0) + (result.controlsCreated||0) + (result.fielCntrCreated||0),
+                    tablesProcessed: 5,
                     details,
                     extra: result.breakdown ? 
                         `Database: ${result.database || '?'} — SYS: ${result.breakdown.sys}, User: ${result.breakdown.user}, CD: ${result.breakdown.cd}` +
