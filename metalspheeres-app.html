@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.9';
+    const MS_VERSION = 'v0.7.0';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -4194,10 +4194,10 @@ function renderDbStatistics() {
                         else if (fType === 4) cats[zone].subtables.push(item);
                         else cats[zone].entities.push(item);
                     } else {
-                        // Fallback for SYS/User without f_type
+                        // Fallback: same pattern as CD (proven working)
                         if (base.startsWith('LK_')) cats[zone].lookups.push(item);
                         else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
-                        else if (base.includes('_') && !(!base.replace(t.startsWith('SYS_')?'':'_','').includes('_'))) cats[zone].subtables.push(item);
+                        else if (base.includes('_')) cats[zone].subtables.push(item);
                         else cats[zone].entities.push(item);
                     }
                 }
