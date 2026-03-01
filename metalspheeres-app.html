@@ -1215,14 +1215,14 @@ function buildUserSchema() {
     const userEntities = [];
     const subs = {};
     const links = [];
+    const lookups = [];
     
-    // Step 1: find entities (tables without $ or _ separators indicating sub/link)
-    // In user DB: subtables use $ separator (e.g. CONT$TESTSPREADSHEETSUBTABLE)
-    // or naming convention with parent prefix
+    // Step 1: classify all tables (same pattern as buildCdSchema)
     for (const t of allTables) {
-        if (t.includes('$')) continue; // skip subtables with $ separator
-        if (t.startsWith('LK_')) continue; // skip user lookups
-        if (t.startsWith('SYS_')) {
+        if (t.includes('$')) continue; // subtables handled in step 2
+        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
+            lookups.push({ name: t, type: 'lk', icon: 'list' });
+        } else if (t.startsWith('SYS_')) {
             sysEntities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
         } else {
             userEntities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
@@ -1232,8 +1232,7 @@ function buildUserSchema() {
     // Step 2: find subtables ($ separator)
     for (const t of allTables) {
         if (!t.includes('$')) continue;
-        const parts = t.split('$');
-        const parent = parts[0];
+        const parent = t.split('$')[0];
         const parentEntity = [...sysEntities, ...userEntities].find(e => e.name === parent);
         if (parentEntity) {
             if (!subs[parent]) subs[parent] = [];
@@ -1241,19 +1240,13 @@ function buildUserSchema() {
         }
     }
     
-    // Step 3: find user lookups
-    const lookups = allTables
-        .filter(t => t.startsWith('LK_'))
-        .map(t => ({ name: t, type: 'lk', icon: 'list' }));
-    
-    // Step 4: derive relations from F_ columns (foreign keys)
+    // Step 3: derive relations from F_ columns (like CD uses link tables)
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
         if (!rels[row][col]) rels[row][col] = val;
     }
     
-    // Check F_ columns in each table to find relationships
     const entityNames = [...sysEntities, ...userEntities].map(e => e.name);
     
     for (const entity of [...sysEntities, ...userEntities]) {
@@ -1263,9 +1256,7 @@ function buildUserSchema() {
         for (const col of info.columns) {
             const cn = col.name.toUpperCase();
             if (!cn.startsWith('F_')) continue;
-            // Try to match F_XXXX to a table name
             const ref = cn.replace('F_', '');
-            // Match against entity names
             const target = entityNames.find(e => {
                 const eName = e.replace('SYS_', '');
                 return eName === ref || eName === ref + 'S' || eName + 'S' === ref || 
@@ -1277,27 +1268,16 @@ function buildUserSchema() {
         }
     }
     
-    // Step 5: build table list with sub counts — include ALL categories
+    // Step 4: build tableList — ONLY entities on axes (identical to CD pattern)
+    // SYS entities first (like CD_ entities), then user entities (like CD lookups)
     const allEntities = [...sysEntities, ...userEntities];
-    const entityList = allEntities.map(e => {
+    const tableList = allEntities.map(e => {
         const subCount = (subs[e.name] || []).length;
-        return { ...e, category: e.type === 'sys' ? 'sys' : 'entity', cols: ['—', subCount || '—', '—'] };
+        return { ...e, cols: ['—', subCount || '—', '—'] };
     });
-    const lookupList = lookups.map(l => ({ ...l, category: 'lookup', cols: ['—', '—', '—'] }));
-    
-    // Subtables as flat list
-    const subList = [];
-    for (const [parent, subNames] of Object.entries(subs)) {
-        for (const s of subNames) {
-            subList.push({ name: s, type: 'sub', category: 'sub', icon: 'layers', cols: ['—', '—', '—'] });
-        }
-    }
-    
-    const tableList = [...entityList, ...lookupList, ...subList];
     
     return { entities: allEntities, lookups, subs, links, relations: rels, tableList,
-             entityList, lookupList, subList,
-             counts: { sys: sysEntities.length, entities: userEntities.length, lookups: lookups.length, subs: subList.length } };
+             counts: { sys: sysEntities.length, user: userEntities.length, lookups: lookups.length, subs: Object.values(subs).flat().length, total: allEntities.length } };
 }
 
 // Cached result
@@ -1457,45 +1437,60 @@ let userDesignerSearch = '';
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
     
-    let tables, rels;
+    let allTables, rels;
     if (isDictMode) {
-        tables = getCdTables();
+        allTables = getCdTables();
         rels = getCdRelations();
     } else {
+        allTables = getDbTables();
+        rels = getUserRelations();
+    }
+    
+    // In User mode: filter by category since 671 tables won't fit in one matrix
+    let tables = allTables;
+    let filterHtml = '';
+    if (!isDictMode) {
         const schema = getUserSchema();
-        rels = schema.relations || {};
-        const filter = userDesignerFilter;
+        const c = schema.counts || {};
+        const f = userDesignerFilter;
         const search = userDesignerSearch.toLowerCase();
         
-        // Filter tables by category
-        let filtered;
-        if (filter === 'all') {
-            filtered = schema.tableList;
-        } else if (filter === 'sys') {
-            filtered = schema.tableList.filter(t => t.category === 'sys');
-        } else if (filter === 'entity') {
-            filtered = schema.tableList.filter(t => t.category === 'entity');
-        } else if (filter === 'lookup') {
-            filtered = schema.tableList.filter(t => t.category === 'lookup');
-        } else if (filter === 'sub') {
-            filtered = schema.tableList.filter(t => t.category === 'sub');
+        // Filter by category
+        if (f === 'sys') {
+            tables = allTables.filter(t => t.type === 'sys');
+        } else if (f === 'user') {
+            tables = allTables.filter(t => t.type === 'user');
         } else {
-            filtered = schema.entityList || [];
+            tables = allTables;
         }
         
-        // Apply search filter
+        // Apply search
         if (search) {
-            filtered = filtered.filter(t => t.name.toLowerCase().includes(search));
+            tables = tables.filter(t => t.name.toLowerCase().includes(search));
         }
         
-        // Limit to prevent browser crash (max 100 in matrix)
+        // Cap at 100 to prevent browser crash
         const MAX_MATRIX = 100;
-        const total = filtered.length;
-        if (filtered.length > MAX_MATRIX) {
-            filtered = filtered.slice(0, MAX_MATRIX);
-        }
-        tables = filtered;
-        tables._totalCount = total;
+        const totalFiltered = tables.length;
+        if (tables.length > MAX_MATRIX) tables = tables.slice(0, MAX_MATRIX);
+        
+        const btnStyle = (key) => f === key 
+            ? 'padding:5px 12px;border-radius:6px;border:2px solid #D97706;background:#FEF3C7;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;' 
+            : 'padding:5px 12px;border-radius:6px;border:1px solid #D1D5DB;background:#FFF;color:#6B7280;font-size:12px;font-weight:500;cursor:pointer;';
+        const truncMsg = totalFiltered > tables.length 
+            ? `<span style="color:#DC2626;font-size:11px;margin-left:8px;">Showing ${tables.length} of ${totalFiltered} — use search to narrow</span>` 
+            : `<span style="color:#64748B;font-size:11px;margin-left:8px;">${tables.length} tables</span>`;
+        filterHtml = `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
+            <button style="${btnStyle('sys')}" onclick="userDesignerFilter='sys';sessionStorage.setItem('ms_userDesignerFilter','sys');renderContent();">🖥 SYS (${c.sys||0})</button>
+            <button style="${btnStyle('user')}" onclick="userDesignerFilter='user';sessionStorage.setItem('ms_userDesignerFilter','user');renderContent();">📋 Entities (${c.user||0})</button>
+            <button style="${btnStyle('all')}" onclick="userDesignerFilter='all';sessionStorage.setItem('ms_userDesignerFilter','all');renderContent();">All (${c.total||0})</button>
+            <span style="margin-left:8px;color:#64748B;font-size:11px;">+ ${c.lookups||0} lookups · ${c.subs||0} subs</span>
+            <span style="flex:1;"></span>
+            <input type="text" placeholder="Search tables..." value="${userDesignerSearch}" 
+                style="padding:5px 10px;border-radius:6px;border:1px solid #D1D5DB;font-size:12px;width:180px;"
+                oninput="userDesignerSearch=this.value;clearTimeout(window._dsTO);window._dsTO=setTimeout(()=>renderContent(),300);">
+            ${truncMsg}
+        </div>`;
     }
 
     // Colors per mode
@@ -1503,10 +1498,6 @@ function renderDbDesigner() {
     const mainRowBg = isDictMode ? '#F0F7FF' : '#FFFEF5';
     const secBg = isDictMode ? '#F1F5F9' : '#F1F5F9';       // lookup/user tables
     const secRowBg = isDictMode ? '#FAFBFC' : '#FAFBFC';
-    
-    // User mode category colors
-    const catBg = { sys: '#FEF9C3', entity: '#ECFDF5', lookup: '#F3E8FF', sub: '#F1F5F9' };
-    const catRowBg = { sys: '#FFFEF5', entity: '#F0FDF4', lookup: '#FAF5FF', sub: '#FAFBFC' };
 
     // Column headers
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
@@ -1515,9 +1506,8 @@ function renderDbDesigner() {
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
 
     for (const t of tables) {
-        const bg = isDictMode 
-            ? (t.type === 'cd' ? mainBg : secBg) 
-            : (catBg[t.category] || secBg);
+        const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
+        const bg = isMain ? mainBg : secBg;
         colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;vertical-align:bottom;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1526,9 +1516,7 @@ function renderDbDesigner() {
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
         const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-        const rowBg = isDictMode 
-            ? (isMainRow ? mainRowBg : secRowBg)
-            : (catRowBg[row.category] || secRowBg);
+        const rowBg = isMainRow ? mainRowBg : secRowBg;
 
         rows += `<tr>`;
         rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
