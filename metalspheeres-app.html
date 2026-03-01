@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.4';
+    const MS_VERSION = 'v0.7.5';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1598,12 +1598,16 @@ function reorderDesignerTables(from, to) {
     const item = tables.splice(from, 1)[0];
     tables.splice(to, 0, item);
     
-    // Update sort_order in memory and persist to server
+    // Assign unique sort_order values with spacing (10, 20, 30...)
+    // CD entities use range 100-9999, User/SYS entities use range 10000-99999
+    const baseOffset = isDictMode ? 100 : 10000;
+    const step = 10;
     const order = [];
     for (let i = 0; i < tables.length; i++) {
-        tables[i].sortOrder = i + 1;
-        if (window._cdTablesSortOrder) window._cdTablesSortOrder[tables[i].name] = i + 1;
-        order.push({ name: tables[i].name, sort_order: i + 1 });
+        const newSort = baseOffset + (i * step);
+        tables[i].sortOrder = newSort;
+        if (window._cdTablesSortOrder) window._cdTablesSortOrder[tables[i].name] = newSort;
+        order.push({ name: tables[i].name, sort_order: newSort });
     }
     
     // Save to cd_tables via API
@@ -4128,7 +4132,7 @@ function renderDbStatistics() {
             }
             
             function cardHtml(type, items, cardIcon, cardColor) {
-                const sorted = [...items].sort((a,b) => b.fields - a.fields);
+                const sorted = [...items].sort((a,b) => a.name.localeCompare(b.name));
                 let list = sorted.map(t =>
                     '<div class="ds-table-row" onclick="showTablePopup(\x27' + t.name + '\x27)" title="' + t.name + '">' +
                     '<span class="ds-table-name" style="color:' + cardColor + ';">' + t.name + '</span>' +
