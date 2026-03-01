@@ -12,7 +12,7 @@
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
     const MS_VERSION = 'v0.6.2';
-    const MS_BUILD = '2026-03-01 13:05';
+    const MS_BUILD = '2026-03-01 13:15';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1977,17 +1977,21 @@ function lookupFields(name) {
 const tableTypes = {};
 // Add CD_ tables to tableTypes (will be populated after schema loads)
 function updateCdTableTypes() {
-    const schema = getCdSchema();
-    for (const e of schema.entities) tableTypes[e.name] = 'entity';
-    for (const l of schema.lookups) tableTypes[l.name] = 'lookup';
+    try {
+        const schema = getCdSchema();
+        for (const e of (schema.entities || [])) tableTypes[e.name] = 'entity';
+        for (const l of (schema.lookups || [])) tableTypes[l.name] = 'lookup';
+    } catch(e) { console.warn('updateCdTableTypes:', e.message); }
 }
 function updateUserTableTypes() {
-    const schema = getUserSchema();
-    for (const e of schema.entities) tableTypes[e.name] = e.type === 'sys' ? 'sys' : 'entity';
-    for (const l of schema.lookups) tableTypes[l.name] = 'lookup';
+    try {
+        const schema = getUserSchema();
+        for (const e of (schema.entities || [])) tableTypes[e.name] = e.type === 'sys' ? 'sys' : 'entity';
+        for (const l of (schema.lookups || [])) tableTypes[l.name] = 'lookup';
+    } catch(e) { console.warn('updateUserTableTypes:', e.message); }
 }
 // Run once at init, re-run after schema loads
-if (Object.keys(xsdFieldData).length > 0) { updateCdTableTypes(); updateUserTableTypes(); }
+try { if (Object.keys(xsdFieldData).length > 0) { updateCdTableTypes(); updateUserTableTypes(); } } catch(e) { console.warn('init types:', e.message); }
 
 // ============================================================================
 // CUSTOM FIELDS STORAGE (in-memory per table)
