@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.2';
+    const MS_VERSION = 'v0.8.3';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1474,17 +1474,14 @@ function renderDbDesigner() {
 
     // Zone background colors for empty cells and diagonal
     // CD mode: one zone (all blue)
-    // User mode: three zones - SYS×SYS (yellow), User×User (gray), Cross (very light)
+    // User mode: TWO zones only - SYS×SYS (yellow), everything else (gray)
     function getZone(rowType, colType) {
-        if (isDictMode) return 'main'; // all CD entities are same zone
-        const rSys = rowType === 'sys';
-        const cSys = colType === 'sys';
-        if (rSys && cSys) return 'sys';
-        if (!rSys && !cSys) return 'user';
-        return 'cross';
+        if (isDictMode) return 'main';
+        if (rowType === 'sys' && colType === 'sys') return 'sys';
+        return 'other'; // anything involving a non-SYS entity is gray
     }
-    const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', user: '#F1F5F9', cross: '#FAFBFC' };
-    const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', user: '#E2E8F0', cross: '#F1F5F9' };
+    const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', other: '#F1F5F9' };
+    const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', other: '#E2E8F0' };
 
     // Column headers - white background, bottom-aligned, text at bottom of rotated header
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
