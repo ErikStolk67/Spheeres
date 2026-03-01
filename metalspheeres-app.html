@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.3';
+    const MS_VERSION = 'v0.8.4';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1478,21 +1478,31 @@ function renderDbDesigner() {
     function getZone(rowType, colType) {
         if (isDictMode) return 'main';
         if (rowType === 'sys' && colType === 'sys') return 'sys';
-        return 'other'; // anything involving a non-SYS entity is gray
+        return 'other';
     }
-    const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', other: '#F1F5F9' };
-    const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', other: '#E2E8F0' };
+    // Row zone for headers/meta columns (based on row entity only)
+    function getRowZone(rowType) {
+        if (isDictMode) return 'main';
+        return rowType === 'sys' ? 'sys' : 'other';
+    }
+    const emptyBg = { main: '#DBEAFE', sys: '#FEF9C3', other: '#E2E8F0' };
+    const diagBg  = { main: '#BFDBFE', sys: '#FDE68A', other: '#CBD5E1' };
+    // Header/meta column background per zone
+    const hdrBg   = { main: '#DBEAFE', sys: '#FEF9C3', other: '#E8ECF0' };
 
-    // Column headers - white background, bottom-aligned, text at bottom of rotated header
+    // Column headers - zone-colored background
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
-    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Type</th>';
-    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Sub</th>';
-    colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
+    // Meta column headers use the first entity's zone color (or main)
+    const metaHdrBg = isDictMode ? hdrBg.main : '#E8ECF0';
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Type</th>`;
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Sub</th>`;
+    colHeaders += `<th class="col-header meta-cols" style="font-size:9px;background:${metaHdrBg};">Screens</th>`;
 
     for (let i = 0; i < tables.length; i++) {
         const t = tables[i];
+        const colZone = getRowZone(t.type);
         colHeaders += `<th class="col-header" data-col-idx="${i}" 
-            style="background:#F8FAFC;cursor:pointer;vertical-align:bottom;text-align:left;"
+            style="background:${hdrBg[colZone]};cursor:pointer;vertical-align:bottom;text-align:left;"
             onclick="if(!window._wasDragging)showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1502,9 +1512,9 @@ function renderDbDesigner() {
         const row = tables[i];
 
         rows += `<tr>`;
-        // Row header - draggable for reordering (columns follow automatically)
-        const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-        const rowBg = '#FAFBFC';
+        // Row header - zone-colored, draggable for reordering
+        const rowZone = getRowZone(row.type);
+        const rowBg = hdrBg[rowZone];
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
             style="background:${rowBg};cursor:grab;"
             ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','${row.name}');event.dataTransfer.effectAllowed='move';this.style.opacity='0.4';"
@@ -1514,7 +1524,7 @@ function renderDbDesigner() {
             ondrop="this.parentElement.style.borderTop='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
             onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
-        // Meta columns (Type, Sub, Screens) - same light background
+        // Meta columns (Type, Sub, Screens) - zone-colored background
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
@@ -2159,6 +2169,46 @@ async function loadFieldsFromDB(tableId) {
 // ============================================================================
 // POPUP FUNCTIONS
 // ============================================================================
+async function showRawData(tableName) {
+    const popup = document.createElement('div');
+    popup.id = 'rawDataPopup';
+    popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    popup.onclick = (e) => { if (e.target === popup) popup.remove(); };
+    popup.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;max-width:90vw;max-height:85vh;overflow:auto;min-width:400px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+        '<h3 style="margin:0;font-size:16px;">' + tableName + ' — Records</h3>' +
+        '<button onclick="this.closest(\'#rawDataPopup\').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748B;">✕</button></div>' +
+        '<div id="rawDataContent" style="color:#64748B;">Loading...</div></div>';
+    document.body.appendChild(popup);
+    try {
+        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName.toLowerCase()));
+        if (!res.ok) throw new Error('API error ' + res.status);
+        const data = await res.json();
+        const rows = data.rows || data;
+        if (!rows.length) { document.getElementById('rawDataContent').innerHTML = '<em>No records found</em>'; return; }
+        const cols = Object.keys(rows[0]);
+        let html = '<table style="border-collapse:collapse;font-size:11px;width:100%;"><thead><tr>';
+        for (const c of cols) html += '<th style="border:1px solid #E2E8F0;padding:4px 8px;background:#F8FAFC;white-space:nowrap;text-align:left;">' + c + '</th>';
+        html += '</tr></thead><tbody>';
+        for (const row of rows.slice(0, 200)) {
+            html += '<tr>';
+            for (const c of cols) {
+                let v = row[c];
+                if (v === null) v = '<span style="color:#CBD5E1;">NULL</span>';
+                else if (typeof v === 'object') v = JSON.stringify(v).substring(0, 50);
+                else v = String(v).substring(0, 80);
+                html += '<td style="border:1px solid #E2E8F0;padding:3px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + v + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        if (rows.length > 200) html += '<div style="margin-top:8px;color:#94A3B8;font-size:11px;">Showing 200 of ' + rows.length + ' records</div>';
+        document.getElementById('rawDataContent').innerHTML = html;
+    } catch(e) {
+        document.getElementById('rawDataContent').innerHTML = '<span style="color:#EF4444;">Error: ' + e.message + '</span>';
+    }
+}
+
 function showTablePopup(tableName) {
     // Find in user tables, CD main tables, or recognize as sub/link/lookup table
     let table = getDbTables().find(t => t.name === tableName) || getCdTables().find(t => t.name === tableName);
@@ -4166,10 +4216,10 @@ function renderDbStatistics() {
             function cardHtml(type, items, cardIcon, cardColor) {
                 const sorted = [...items].sort((a,b) => a.name.localeCompare(b.name));
                 let list = sorted.map(t =>
-                    '<div class="ds-table-row" onclick="showTablePopup(\x27' + t.name + '\x27)" title="' + t.name + '">' +
-                    '<span class="ds-table-name" style="color:' + cardColor + ';">' + t.name + '</span>' +
-                    '<span class="ds-table-count" style="min-width:55px;text-align:right;">' + t.count + '</span>' +
-                    '<span class="ds-table-count" style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;">' + t.fields + '</span></div>'
+                    '<div class="ds-table-row" title="' + t.name + '">' +
+                    '<span class="ds-table-name" style="color:' + cardColor + ';cursor:pointer;" onclick="alert(\'Klik op Records of Fields voor ' + t.name + '\')">' + t.name + '</span>' +
+                    '<span class="ds-table-count" style="min-width:55px;text-align:right;cursor:pointer;color:#3B82F6;" onclick="showRawData(\x27' + t.name + '\x27)" title="Show records">' + t.count + '</span>' +
+                    '<span class="ds-table-count" style="min-width:45px;text-align:right;padding-left:12px;border-left:1px solid #E2E8F0;cursor:pointer;color:#8B5CF6;" onclick="showTablePopup(\x27' + t.name + '\x27)" title="Show fields">' + t.fields + '</span></div>'
                 ).join('');
                 const totalRec = items.reduce((s,t) => s + t.count, 0);
                 return '<div class="ds-card"><div class="ds-card-header"><span class="ds-card-title">' + type + '</span>' +
