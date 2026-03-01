@@ -9,7 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
     const MS_VERSION = 'v0.6.2';
-    const MS_BUILD = '2026-03-01 12:45';
+    const MS_BUILD = '2026-03-01 13:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -4290,15 +4290,29 @@ function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 // ============================================================================
 // INIT
 // ============================================================================
-renderSidebar();
-renderContent(); // Show page immediately
+try {
+    renderSidebar();
+    renderContent(); // Show page immediately
+} catch(e) {
+    console.error('INIT ERROR:', e);
+    document.body.innerHTML = '<div style="padding:40px;color:#EF4444;font-family:sans-serif;"><h2>Startup Error</h2><pre>' + e.message + '\n' + e.stack + '</pre></div>';
+}
 
 // Load schema in background for popups/statistics
 (async () => {
-    await loadSchemaFromDB();
-    await loadTableMap();
-    // If on statistics page, re-render now that schema is loaded
-    if (activeItem === 'db_statistics') renderContent();
+    try {
+        await loadSchemaFromDB();
+        await loadTableMap();
+        invalidateCdSchema();
+        invalidateUserSchema();
+        updateCdTableTypes();
+        updateUserTableTypes();
+        // Re-render with schema data
+        renderSidebar();
+        renderContent();
+    } catch(e) {
+        console.error('Schema load error:', e);
+    }
 })();
 </script>
 </body>
