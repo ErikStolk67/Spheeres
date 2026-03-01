@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.4.0';
-    const MS_BUILD = '2026-02-28 22:10';
+    const MS_VERSION = 'v0.5.0';
+    const MS_BUILD = '2026-03-01 10:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -3007,9 +3007,19 @@ async function importMultipleFiles(files) {
 
 async function importDroppedFile(file) {
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    showLoading('Importing ' + file.name + ' (' + sizeMB + ' MB)...');
+    showLoading('Reading ' + file.name + ' (' + sizeMB + ' MB)...');
     try {
-        const resp = await fetch(API + '/import-xml', {
+        // Detect file type: schema XML has <Database>...<Tables> structure
+        let endpoint = '/import-xml';
+        if (file.name.toLowerCase().endsWith('.xml')) {
+            const preview = await file.slice(0, 2000).text();
+            if (preview.includes('<Database>') && preview.includes('<Tables>')) {
+                endpoint = '/import-schema';
+            }
+        }
+        
+        showLoading('Importing ' + file.name + '...');
+        const resp = await fetch(API + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/octet-stream' },
             body: file
@@ -3023,7 +3033,21 @@ async function importDroppedFile(file) {
         }
         sessionStorage.removeItem('ms_schema');
         if (result.success) {
-            showImportReport(result);
+            if (result.tablesImported) {
+                // Schema import - show custom report
+                showImportReport({
+                    success: true,
+                    totalRows: result.fieldsImported,
+                    tablesProcessed: result.tablesImported,
+                    details: [
+                        { table: 'cd_tables', rows: result.tablesImported, total: result.tablesImported, errors: 0 },
+                        { table: 'cd_fields', rows: result.fieldsImported, total: result.fieldsImported, errors: 0 },
+                    ],
+                    schemaInfo: result
+                });
+            } else {
+                showImportReport(result);
+            }
             loadSchemaFromDB().then(() => renderContent());
         } else {
             showImportReport({ error: result.error });

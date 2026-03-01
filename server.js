@@ -1013,4 +1013,157 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
 });
 
 const PORT = process.env.PORT || 3000;
+
+// ============================================================================
+// SCHEMA XML IMPORT - imports database schema definition into CD_ tables
+// Format: <Database><Name>...</Name><Tables><Name>TABLE</Name><Fields><Name>FIELD</Name><Type>TYPE</Type></Fields>...</Tables>...</Database>
+// ============================================================================
+app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        let xml = req.body.toString('utf-8').replace(/\r/g, '');
+        
+        // Parse XML
+        const lines = xml.split('\n').map(l => l.trim());
+        
+        let dbName = null;
+        let inTables = false;
+        let tableName = null;
+        let tables = [];
+        let fields = [];
+        let fieldName = null;
+        
+        for (const s of lines) {
+            if (s.startsWith('<N') && s.includes('>') && s.endsWith('</N') === false) {
+                // Handle <Name>value</Name> tag
+            }
+            const nameMatch = s.match(/^<Name>(.+)<\/Name>$/i) || s.match(/^<n>(.+)<\/n>$/i);
+            const typeMatch = s.match(/^<Type>(.+)<\/Type>$/i);
+            
+            if (s === '<Tables>' || s === '<tables>') {
+                inTables = true;
+                tableName = null;
+                fields = [];
+            } else if (s === '</Tables>' || s === '</tables>') {
+                if (tableName) tables.push({ name: tableName, fields: [...fields] });
+                inTables = false;
+            } else if (nameMatch) {
+                const val = nameMatch[1];
+                if (!inTables && !dbName) {
+                    dbName = val;
+                } else if (inTables && !tableName) {
+                    tableName = val;
+                } else if (inTables) {
+                    fieldName = val;
+                }
+            } else if (typeMatch && fieldName && inTables) {
+                fields.push({ name: fieldName, type: typeMatch[1] });
+                fieldName = null;
+            }
+        }
+        
+        if (tables.length === 0) {
+            return res.json({ success: false, error: 'No tables found in schema XML' });
+        }
+        
+        // Type mapping: Schema XML type -> PostgreSQL type + MetalSpheeres control type
+        const typeMap = {
+            'PKey':       { pg: 'integer', ctrl: 'pkey' },
+            'Text':       { pg: 'text', ctrl: 'text' },
+            'Integer':    { pg: 'integer', ctrl: 'integer' },
+            'Decimal':    { pg: 'numeric', ctrl: 'decimal' },
+            'Currency':   { pg: 'numeric', ctrl: 'currency' },
+            'YesNo':      { pg: 'boolean', ctrl: 'checkbox' },
+            'Date':       { pg: 'date', ctrl: 'date' },
+            'DateTime':   { pg: 'timestamptz', ctrl: 'datetime' },
+            'Time':       { pg: 'time', ctrl: 'time' },
+            'TimeSpan':   { pg: 'interval', ctrl: 'timespan' },
+            'Lookup':     { pg: 'integer', ctrl: 'lookup' },
+            'Reference':  { pg: 'integer', ctrl: 'reference' },
+            'Memo':       { pg: 'text', ctrl: 'memo' },
+            'Image':      { pg: 'bytea', ctrl: 'image' },
+            'Document':   { pg: 'bytea', ctrl: 'document' },
+            'Guid':       { pg: 'uuid', ctrl: 'guid' },
+            'Password':   { pg: 'text', ctrl: 'password' },
+            'Alias':      { pg: 'text', ctrl: 'alias' },
+            'Sort':       { pg: 'integer', ctrl: 'sort' },
+            'Color':      { pg: 'text', ctrl: 'color' },
+            'Property':   { pg: 'text', ctrl: 'property' },
+            'MultiSelect':{ pg: 'text', ctrl: 'multiselect' },
+            'SPIM':       { pg: 'text', ctrl: 'spim' },
+        };
+        
+        await client.query('BEGIN');
+        
+        // Ensure cd_databases has a record for this database
+        let dbId = 1;
+        if (dbName) {
+            const dbCheck = await client.query('SELECT k_database FROM cd_databases WHERE name = $1', [dbName]);
+            if (dbCheck.rows.length > 0) {
+                dbId = dbCheck.rows[0].k_database;
+            } else {
+                const maxDb = await client.query('SELECT COALESCE(MAX(k_database), 0) + 1 as next FROM cd_databases');
+                dbId = maxDb.rows[0].next;
+                await client.query('INSERT INTO cd_databases (k_database, name) VALUES ($1, $2)', [dbId, dbName]);
+            }
+        }
+        
+        // Clear existing table/field records for this database
+        await client.query('DELETE FROM cd_fields WHERE k_table IN (SELECT k_table FROM cd_tables WHERE k_database = $1)', [dbId]);
+        await client.query('DELETE FROM cd_tables WHERE k_database = $1', [dbId]);
+        
+        let tablesImported = 0;
+        let fieldsImported = 0;
+        
+        for (let ti = 0; ti < tables.length; ti++) {
+            const table = tables[ti];
+            const tableId = ti + 1;
+            
+            // Determine table category
+            let zone = 'user';
+            if (table.name.startsWith('SYS_')) zone = 'sys';
+            else if (table.name.startsWith('CD_')) zone = 'cd';
+            
+            // Insert into cd_tables
+            await client.query(
+                `INSERT INTO cd_tables (k_table, k_database, name, sort_order) VALUES ($1, $2, $3, $4)`,
+                [tableId, dbId, table.name, ti + 1]
+            );
+            tablesImported++;
+            
+            // Insert fields
+            for (let fi = 0; fi < table.fields.length; fi++) {
+                const field = table.fields[fi];
+                const tm = typeMap[field.type] || { pg: 'text', ctrl: 'text' };
+                
+                await client.query(
+                    `INSERT INTO cd_fields (k_field, k_table, name, sort_order) VALUES ($1, $2, $3, $4)`,
+                    [(tableId * 1000) + fi + 1, tableId, field.name, fi + 1]
+                );
+                fieldsImported++;
+            }
+        }
+        
+        await client.query('COMMIT');
+        
+        invalidateSchemaCache();
+        res.json({ 
+            success: true, 
+            database: dbName,
+            tablesImported, 
+            fieldsImported,
+            breakdown: {
+                sys: tables.filter(t => t.name.startsWith('SYS_')).length,
+                user: tables.filter(t => !t.name.startsWith('SYS_') && !t.name.startsWith('CD_')).length,
+                cd: tables.filter(t => t.name.startsWith('CD_')).length,
+            }
+        });
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch(e) {}
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
