@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.0';
+    const MS_VERSION = 'v0.8.1';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1276,15 +1276,18 @@ function buildUserSchema() {
         else { setRel(link.from, link.to, 'n'); setRel(link.to, link.from, '—'); }
     }
 
-    // Step 6: tableList — entities only, SYS_ first then User, each sorted by sort
+    // Step 6: tableList — entities only, SYS_ first then User, each sorted by sort field
     const sortOrder = window._cdTablesSortOrder || {};
+    const hasSortData = Object.keys(sortOrder).length > 0;
     const typeCounts = window._typeCounts || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
-        const isSys = e.type === 'sys' ? 0 : 1; // SYS=0 first, User=1 second
+        const isSys = e.type === 'sys' ? 0 : 1;
         return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
-    }).sort((a, b) => a.groupOrder - b.groupOrder || a.sortOrder - b.sortOrder);
+    });
+    // Always SYS first; within groups sort by sort field if available
+    tableList.sort((a, b) => a.groupOrder - b.groupOrder || (hasSortData ? a.sortOrder - b.sortOrder : 0));
 
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
@@ -1406,14 +1409,16 @@ function buildCdSchema() {
         }
     }
     
-    // Step 5: build table list with sub/type counts for matrix, sorted by sort_order
+    // Step 5: build table list with sub/type counts for matrix, sorted by sort field
     const sortOrder = window._cdTablesSortOrder || {};
+    const hasSortData = Object.keys(sortOrder).length > 0;
     const typeCounts = window._typeCounts || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
         return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
-    }).sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+    if (hasSortData) tableList.sort((a, b) => a.sortOrder - b.sortOrder);
     
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
@@ -1904,8 +1909,11 @@ function applySchema(schema) {
         window._cdTablesSortOrder = {};
         for (const r of rows) {
             window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
-            window._cdTablesSortOrder[r.name.toUpperCase()] = typeof r.sort === 'number' ? r.sort : 9999;
+            const sortVal = parseInt(r.sort, 10);
+            window._cdTablesSortOrder[r.name.toUpperCase()] = isNaN(sortVal) ? 9999 : sortVal;
         }
+        console.log('Sort data loaded:', Object.keys(window._cdTablesSortOrder).length, 'tables. Sample:', 
+            Object.entries(window._cdTablesSortOrder).slice(0,5).map(([k,v]) => k+'='+v).join(', '));
         // Also load type counts
         return fetch(API + '/types/counts').then(r2 => r2.ok ? r2.json() : {});
     }).then(counts => {
