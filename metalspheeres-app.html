@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.8.6';
+    const MS_VERSION = 'v0.8.7';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -2199,35 +2199,56 @@ async function showRawData(tableName) {
     popup.id = 'rawDataPopup';
     popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
     popup.onclick = (e) => { if (e.target === popup) popup.remove(); };
-    popup.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;max-width:90vw;max-height:85vh;overflow:auto;min-width:400px;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-        '<h3 style="margin:0;font-size:16px;">' + tableName + ' — Records</h3>' +
+    popup.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;max-width:92vw;max-height:90vh;overflow:auto;min-width:500px;display:flex;flex-direction:column;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+        '<h3 style="margin:0;font-size:16px;" id="rawTitle">' + tableName + ' — Loading...</h3>' +
         '<button onclick="this.closest(\'#rawDataPopup\').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748B;">✕</button></div>' +
-        '<div id="rawDataContent" style="color:#64748B;">Loading...</div></div>';
+        '<div id="rawPager" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;font-size:12px;"></div>' +
+        '<div id="rawDataContent" style="overflow:auto;flex:1;max-height:calc(90vh - 120px);">Loading...</div></div>';
     document.body.appendChild(popup);
+    window._rawTable = tableName;
+    window._rawPage = 0;
+    window._rawPageSize = 500;
+    await loadRawPage();
+}
+async function loadRawPage() {
+    const tableName = window._rawTable;
+    const offset = window._rawPage * window._rawPageSize;
     try {
-        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName.toLowerCase()));
+        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName.toLowerCase()) + '?limit=' + window._rawPageSize + '&offset=' + offset);
         if (!res.ok) throw new Error('API error ' + res.status);
         const data = await res.json();
         const rows = data.rows || data;
-        if (!rows.length) { document.getElementById('rawDataContent').innerHTML = '<em>No records found</em>'; return; }
+        const total = data.total || rows.length;
+        const totalPages = Math.ceil(total / window._rawPageSize);
+        document.getElementById('rawTitle').textContent = tableName + ' — ' + total + ' records';
+        // Pager
+        let pagerHtml = '';
+        if (totalPages > 1) {
+            pagerHtml += '<button onclick="window._rawPage=0;loadRawPage()" ' + (window._rawPage === 0 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">◀◀</button>';
+            pagerHtml += '<button onclick="window._rawPage=Math.max(0,window._rawPage-1);loadRawPage()" ' + (window._rawPage === 0 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">◀</button>';
+            pagerHtml += '<span>Page ' + (window._rawPage + 1) + ' / ' + totalPages + ' (' + (offset + 1) + '-' + Math.min(offset + window._rawPageSize, total) + ' of ' + total + ')</span>';
+            pagerHtml += '<button onclick="window._rawPage=Math.min(' + (totalPages-1) + ',window._rawPage+1);loadRawPage()" ' + (window._rawPage >= totalPages-1 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">▶</button>';
+            pagerHtml += '<button onclick="window._rawPage=' + (totalPages-1) + ';loadRawPage()" ' + (window._rawPage >= totalPages-1 ? 'disabled' : '') + ' style="padding:3px 8px;font-size:11px;cursor:pointer;">▶▶</button>';
+        }
+        document.getElementById('rawPager').innerHTML = pagerHtml;
+        if (!rows.length) { document.getElementById('rawDataContent').innerHTML = '<em>No records</em>'; return; }
         const cols = Object.keys(rows[0]);
         let html = '<table style="border-collapse:collapse;font-size:11px;width:100%;"><thead><tr>';
-        for (const c of cols) html += '<th style="border:1px solid #E2E8F0;padding:4px 8px;background:#F8FAFC;white-space:nowrap;text-align:left;">' + c + '</th>';
+        for (const c of cols) html += '<th style="border:1px solid #E2E8F0;padding:4px 8px;background:#F8FAFC;white-space:nowrap;text-align:left;position:sticky;top:0;">' + c + '</th>';
         html += '</tr></thead><tbody>';
-        for (const row of rows.slice(0, 200)) {
+        for (const row of rows) {
             html += '<tr>';
             for (const c of cols) {
                 let v = row[c];
-                if (v === null) v = '<span style="color:#CBD5E1;">NULL</span>';
-                else if (typeof v === 'object') v = JSON.stringify(v).substring(0, 50);
-                else v = String(v).substring(0, 80);
-                html += '<td style="border:1px solid #E2E8F0;padding:3px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + v + '</td>';
+                if (v === null || v === undefined) v = '<span style="color:#CBD5E1;">NULL</span>';
+                else if (typeof v === 'object') v = JSON.stringify(v).substring(0, 60);
+                else v = String(v).substring(0, 100);
+                html += '<td style="border:1px solid #E2E8F0;padding:3px 6px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + v + '</td>';
             }
             html += '</tr>';
         }
         html += '</tbody></table>';
-        if (rows.length > 200) html += '<div style="margin-top:8px;color:#94A3B8;font-size:11px;">Showing 200 of ' + rows.length + ' records</div>';
         document.getElementById('rawDataContent').innerHTML = html;
     } catch(e) {
         document.getElementById('rawDataContent').innerHTML = '<span style="color:#EF4444;">Error: ' + e.message + '</span>';
