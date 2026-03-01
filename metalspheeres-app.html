@@ -548,14 +548,17 @@
         }
         .le-tree-entity {
             padding: 6px 12px; font-size: 13px; font-weight: 600; color: #334155;
-            cursor: pointer; display: flex; align-items: center; gap: 8px;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+            white-space: nowrap; overflow: hidden;
         }
         .le-tree-entity:hover { background: #F1F5F9; }
-        .le-tree-entity .le-expand { width: 16px; font-size: 12px; color: #94A3B8; cursor: pointer; text-align: center; }
-        .le-tree-entity .le-icon { font-size: 14px; }
+        .le-tree-entity .le-expand { width: 16px; min-width: 16px; font-size: 12px; color: #94A3B8; cursor: pointer; text-align: center; flex-shrink: 0; }
+        .le-tree-entity .le-icon { width: 16px; min-width: 16px; font-size: 14px; text-align: center; flex-shrink: 0; }
+        .le-tree-entity .le-name { overflow: hidden; text-overflow: ellipsis; }
         .le-tree-lookup {
             padding: 5px 12px 5px 40px; font-size: 12px; color: #64748B;
             cursor: pointer; display: flex; align-items: center; gap: 6px;
+            white-space: nowrap; overflow: hidden;
         }
         .le-tree-lookup:hover { background: #E0F2FE; color: #0369A1; }
         .le-tree-lookup.active { background: #DBEAFE; color: #1D4ED8; font-weight: 600; }
@@ -3823,7 +3826,7 @@ function renderLookupEditor() {
         treeHtml += `<div class="le-tree-entity" onclick="toggleLookupBranch(this)">
             <span class="le-expand">${hasLookups ? '+' : ''}</span>
             <span class="le-icon">${icon}</span>
-            ${entity}
+            <span class="le-name">${entity}</span>
         </div>`;
         if (hasLookups) {
             treeHtml += `<div class="le-tree-children">`;
