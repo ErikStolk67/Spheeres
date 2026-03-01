@@ -104,6 +104,39 @@ Link tables connect two entities via 4-letter abbreviations:
 | OF | Optional Footer | Memo field |
 | F | Footer | Audit trail: lifestatus, owner, created/changed by/date |
 
+### 2.6 Standard Field Template per Table Type
+
+Each table type has a standard set of fields. When creating/seeding tables, these fields must be present:
+
+| Group | Field | Entity | Link | Sub | Lookup |
+|-------|-------|--------|------|-----|--------|
+| H | Key | K_\<entityname\> | K_\<4chars_A\> | K_\<entityname\> | K_\<lookupname\> |
+| H | Key 2 | | K_\<4chars_B\> | | |
+| H | Key optional | | K_SEQ | K_SEQ | K_SEQ |
+| H | Keys optional | | K_\<optional\> | | |
+| H | Alias per type | Alias | | | |
+| H | Type | | F_Type | | |
+| OH | Main | | Main | | |
+| OH | Name | Name | | | Name |
+| C | *(custom)* | | | | |
+| OF | Memo | Memo | Memo | Memo | |
+| F | F_LifeStatus | F_LifeStatus | | | |
+| F | Owner | F_Owner | | | |
+| F | CreatedBy | F_CreatedBy | F_CreatedBy | F_CreatedBy | F_CreatedBy |
+| F | CreateDate | CreateDate | CreateDate | CreateDate | CreateDate |
+| F | ChangedBy | F_ChangedBy | F_ChangedBy | F_ChangedBy | F_ChangedBy |
+| F | ChangeDate | ChangeDate | ChangeDate | ChangeDate | ChangeDate |
+
+**Key naming conventions:**
+- Entity: `K_<ENTITYNAME>` (e.g. K_TABLE, K_FIELD)
+- Link: `K_<4CHAR_A>` + `K_<4CHAR_B>` (e.g. K_TABL + K_FIEL)
+- Sub: `K_<PARENT_ENTITY>` (foreign key to parent)
+- Lookup: `K_<LOOKUPNAME>` (e.g. K_COUNTRY)
+
+**Footer fields** (F_CreatedBy, CreateDate, F_ChangedBy, ChangeDate) are present on ALL table types.
+**F_LifeStatus and F_Owner** are only on Entity tables.
+**F_Type** is only on Link tables (references cd_types).
+
 ---
 
 ## 3. Database Designer (Matrix)
