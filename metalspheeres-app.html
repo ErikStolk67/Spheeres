@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.0';
+    const MS_VERSION = 'v0.9.1';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1447,93 +1447,87 @@ function getCdLookupMap() {
     const allLookups = new Set();
     const usedLookups = new Set();
     
-    // Collect ALL lookup tables
+    // Collect ALL LK_ lookup tables
     for (const tn of Object.keys(schema)) {
-        if (tn.toUpperCase().startsWith('CD_LK_') || tn.toUpperCase().startsWith('LK_')) {
-            allLookups.add(tn.toUpperCase());
-        }
+        const u = tn.toUpperCase();
+        if (u.startsWith('CD_LK_') || u.startsWith('LK_') || u.startsWith('SYS_LK_')) allLookups.add(u);
     }
     for (const tn of Object.keys(xsdFieldData)) {
-        if (tn.toUpperCase().startsWith('CD_LK_') || tn.toUpperCase().startsWith('LK_')) {
-            allLookups.add(tn.toUpperCase());
-        }
+        const u = tn.toUpperCase();
+        if (u.startsWith('CD_LK_') || u.startsWith('LK_') || u.startsWith('SYS_LK_')) allLookups.add(u);
     }
     
-    // Helper: find lookup for an F_ column
+    // Helper: find lookup for an F_ column name
     function findLookup(fColName) {
         const fName = fColName.toLowerCase().replace('f_', '');
-        return [...allLookups].find(lk => lk.toLowerCase().includes(fName.substring(0, 4)));
+        if (fName.length < 3) return null;
+        return [...allLookups].find(lk => {
+            const lkBase = lk.replace('CD_LK_','').replace('SYS_LK_','').replace('LK_','').toLowerCase();
+            return lkBase.startsWith(fName) || fName.startsWith(lkBase.substring(0, Math.min(4, lkBase.length)));
+        });
     }
     
-    // Build categories: { label -> [lookups] }
-    const categories = {};
-    function addToCategory(cat, lk) {
-        if (!categories[cat]) categories[cat] = [];
-        if (!categories[cat].includes(lk)) categories[cat].push(lk);
-        usedLookups.add(lk);
-    }
+    // Scan all non-lookup tables for F_ columns → find which lookups they use
+    const catEntries = {}; // "CD Entities|CD_TABLES" -> [lookups]
     
-    // Scan ALL tables (CD, SYS, User) for F_ columns pointing to lookups
     for (const [tn, info] of Object.entries(schema)) {
         const upper = tn.toUpperCase();
-        if (upper.startsWith('CD_LK_') || upper.startsWith('LK_')) continue;
+        // Skip lookup tables themselves
+        if (upper.startsWith('CD_LK_') || upper.startsWith('LK_') || upper.startsWith('SYS_LK_')) continue;
         
         const cols = info.columns || [];
-        const lkCols = cols.filter(c => c.name.startsWith('f_') || c.name.startsWith('F_'));
+        const fCols = cols.filter(c => c.name.toLowerCase().startsWith('f_'));
+        const foundLookups = [];
+        for (const c of fCols) {
+            const lk = findLookup(c.name);
+            if (lk && !foundLookups.includes(lk)) foundLookups.push(lk);
+        }
+        if (foundLookups.length === 0) continue;
         
         // Determine zone and type
-        let zone, ttype;
+        let catPrefix;
         if (upper.startsWith('CD_')) {
-            zone = 'CD';
             const base = upper.replace('CD_', '');
-            ttype = base.includes('_') ? 'sub' : 'entity';
+            catPrefix = base.includes('_') ? 'CD Subtables' : 'CD Entities';
         } else if (upper.startsWith('SYS_')) {
-            zone = 'SYS';
             const base = upper.replace('SYS_', '');
-            ttype = base.includes('_') ? 'sub' : 'entity';
+            catPrefix = base.includes('_') ? 'SYS Subtables' : 'SYS Entities';
         } else {
-            zone = 'User';
-            ttype = upper.includes('_') || upper.includes('$') ? 'sub' : 'entity';
+            catPrefix = (upper.includes('_') || upper.includes('$')) ? 'User Subtables' : 'User Entities';
         }
         
-        const catLabel = zone + ' ' + (ttype === 'entity' ? 'Entities' : 'Subtables');
-        const entityLabel = upper;
-        
-        for (const c of lkCols) {
-            const lk = findLookup(c.name);
-            if (lk) addToCategory(catLabel + '|' + entityLabel, lk);
-        }
+        catEntries[catPrefix + '|' + upper] = foundLookups.sort();
+        foundLookups.forEach(lk => usedLookups.add(lk));
     }
     
-    // Group by category, then by entity within category
+    // Build ordered result
     const ordered = {};
     const catOrder = ['CD Entities', 'CD Subtables', 'SYS Entities', 'SYS Subtables', 'User Entities', 'User Subtables'];
     
     for (const catPrefix of catOrder) {
-        const entries = Object.entries(categories)
+        const entries = Object.entries(catEntries)
             .filter(([k]) => k.startsWith(catPrefix + '|'))
             .map(([k, v]) => [k.split('|')[1], v])
             .sort((a, b) => a[0].localeCompare(b[0]));
         
         if (entries.length > 0) {
-            ordered['── ' + catPrefix + ' ──'] = []; // section header
+            ordered['── ' + catPrefix + ' ──'] = [];
             for (const [entity, lookups] of entries) {
-                ordered[entity] = lookups.sort();
+                ordered[entity] = lookups;
             }
         }
     }
     
-    // Connected lookups: lookups linked to other lookups (via naming or known patterns)
+    // Connected lookups: LK_ tables that have F_ columns pointing to other LK_ tables
     const connectedLookups = [];
     for (const lk of allLookups) {
-        // Check if this lookup has F_ columns pointing to other lookups
         const lkInfo = schema[lk.toLowerCase()];
         if (lkInfo) {
             const cols = lkInfo.columns || [];
             for (const c of cols) {
-                if (c.name.startsWith('f_') || c.name.startsWith('F_')) {
+                if (c.name.toLowerCase().startsWith('f_')) {
                     const target = findLookup(c.name);
-                    if (target && target !== lk) {
+                    if (target && target !== lk && !connectedLookups.includes(lk)) {
                         connectedLookups.push(lk);
                         usedLookups.add(lk);
                         break;
@@ -1544,10 +1538,10 @@ function getCdLookupMap() {
     }
     if (connectedLookups.length > 0) {
         ordered['── Connected Lookups ──'] = [];
-        ordered['Linked Lookups'] = connectedLookups.sort();
+        ordered['Linked to other lookups'] = connectedLookups.sort();
     }
     
-    // Unrelated: lookups not used by any entity
+    // Unrelated: LK_ tables not referenced by any non-lookup table
     const unrelated = [...allLookups].filter(lk => !usedLookups.has(lk)).sort();
     if (unrelated.length > 0) {
         ordered['── Unrelated ──'] = [];
