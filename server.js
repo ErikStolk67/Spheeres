@@ -125,7 +125,7 @@ app.get('/api/tables', async (req, res) => {
 
 // Update sort_order for multiple tables at once (after drag & drop reorder)
 app.put('/api/tables/sort', express.json(), async (req, res) => {
-    const { order } = req.body; // array of { name, sort_order }
+    const { order } = req.body; // array of { name, sort }
     if (!Array.isArray(order)) return res.status(400).json({ error: 'order array required' });
     try {
         const client = await pool.connect();
@@ -139,6 +139,37 @@ app.put('/api/tables/sort', express.json(), async (req, res) => {
             }
             await client.query('COMMIT');
             res.json({ ok: true, updated: order.length });
+        } catch(e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Initialize NULL sort values — fills gaps with sequential numbers
+app.post('/api/tables/sort/init', async (req, res) => {
+    try {
+        const client = await pool.connect();
+        try {
+            // Get all tables ordered by: existing sort first (numeric), then name
+            const { rows } = await client.query(
+                "SELECT k_table, name, sort FROM cd_tables ORDER BY CASE WHEN sort IS NULL OR sort = '' THEN 1 ELSE 0 END, CAST(NULLIF(sort, '') AS INTEGER) NULLS LAST, name"
+            );
+            await client.query('BEGIN');
+            let changed = 0;
+            for (let i = 0; i < rows.length; i++) {
+                const newSort = String(i + 1);
+                if (rows[i].sort !== newSort) {
+                    await client.query('UPDATE cd_tables SET sort = $1 WHERE k_table = $2', [newSort, rows[i].k_table]);
+                    changed++;
+                }
+            }
+            await client.query('COMMIT');
+            res.json({ ok: true, total: rows.length, changed });
         } catch(e) {
             await client.query('ROLLBACK');
             throw e;
