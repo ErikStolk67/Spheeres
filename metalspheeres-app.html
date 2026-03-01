@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.5.0';
-    const MS_BUILD = '2026-03-01 10:00';
+    const MS_VERSION = 'v0.5.1';
+    const MS_BUILD = '2026-03-01 10:30';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -3032,18 +3032,29 @@ async function importDroppedFile(file) {
             return;
         }
         sessionStorage.removeItem('ms_schema');
+        invalidateCdSchema();
         if (result.success) {
-            if (result.tablesImported) {
-                // Schema import - show custom report
+            if (result.tablesImported !== undefined) {
+                // Schema import report
+                const details = [
+                    { table: 'cd_tables', rows: result.tablesImported, total: result.tablesImported, errors: 0 },
+                    { table: 'cd_fields', rows: result.fieldsImported, total: result.fieldsImported, errors: 0 },
+                    { table: 'cd_tabl_fiel', rows: result.linksCreated || 0, total: result.linksCreated || 0, errors: 0 },
+                    { table: 'cd_controls', rows: result.controlsCreated || 0, total: result.controlsCreated || 0, errors: 0 },
+                ];
+                if (result.errorList && result.errorList.length > 0) {
+                    for (const e of result.errorList) {
+                        details.push({ table: '⚠ Error', rows: 0, total: 0, errors: 1, lastError: e });
+                    }
+                }
                 showImportReport({
                     success: true,
-                    totalRows: result.fieldsImported,
-                    tablesProcessed: result.tablesImported,
-                    details: [
-                        { table: 'cd_tables', rows: result.tablesImported, total: result.tablesImported, errors: 0 },
-                        { table: 'cd_fields', rows: result.fieldsImported, total: result.fieldsImported, errors: 0 },
-                    ],
-                    schemaInfo: result
+                    totalRows: result.tablesImported + result.fieldsImported + (result.linksCreated||0) + (result.controlsCreated||0),
+                    tablesProcessed: 4,
+                    details,
+                    extra: result.breakdown ? 
+                        `Database: ${result.database || '?'} — SYS: ${result.breakdown.sys}, User: ${result.breakdown.user}, CD: ${result.breakdown.cd}` +
+                        (result.errors > 0 ? ` — ${result.errors} errors` : '') : ''
                 });
             } else {
                 showImportReport(result);
@@ -3120,6 +3131,9 @@ function showImportReport(result) {
         '</div>';
     
     // Table details
+    if (result.extra) {
+        html += '<div style="padding:6px 12px;margin-bottom:8px;background:#F8FAFC;border-radius:6px;font-size:12px;color:#475569;">' + result.extra + '</div>';
+    }
     html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
         '<thead><tr style="background:#F8FAFC;"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Table</th>' +
         '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #E2E8F0;">Records</th>' +

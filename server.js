@@ -1014,16 +1014,18 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
 
 const PORT = process.env.PORT || 3000;
 
+
 // ============================================================================
 // SCHEMA XML IMPORT - imports database schema definition into CD_ tables
-// Format: <Database><Name>...</Name><Tables><Name>TABLE</Name><Fields><Name>FIELD</Name><Type>TYPE</Type></Fields>...</Tables>...</Database>
+// Uses EXISTING cd_tables, cd_fields, cd_tabl_fiel, cd_controls structure
+// Creates controls for each field automatically
 // ============================================================================
 app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
     const client = await pool.connect();
     try {
         let xml = req.body.toString('utf-8').replace(/\r/g, '');
         
-        // Parse XML
+        // Parse XML - tags are <Name> not <n>
         const lines = xml.split('\n').map(l => l.trim());
         
         let dbName = null;
@@ -1034,17 +1036,14 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
         let fieldName = null;
         
         for (const s of lines) {
-            if (s.startsWith('<N') && s.includes('>') && s.endsWith('</N') === false) {
-                // Handle <Name>value</Name> tag
-            }
-            const nameMatch = s.match(/^<Name>(.+)<\/Name>$/i) || s.match(/^<n>(.+)<\/n>$/i);
+            const nameMatch = s.match(/^<Name>(.+)<\/Name>$/i);
             const typeMatch = s.match(/^<Type>(.+)<\/Type>$/i);
             
-            if (s === '<Tables>' || s === '<tables>') {
+            if (s === '<Tables>') {
                 inTables = true;
                 tableName = null;
                 fields = [];
-            } else if (s === '</Tables>' || s === '</tables>') {
+            } else if (s === '</Tables>') {
                 if (tableName) tables.push({ name: tableName, fields: [...fields] });
                 inTables = false;
             } else if (nameMatch) {
@@ -1066,85 +1065,176 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
             return res.json({ success: false, error: 'No tables found in schema XML' });
         }
         
-        // Type mapping: Schema XML type -> PostgreSQL type + MetalSpheeres control type
-        const typeMap = {
-            'PKey':       { pg: 'integer', ctrl: 'pkey' },
-            'Text':       { pg: 'text', ctrl: 'text' },
-            'Integer':    { pg: 'integer', ctrl: 'integer' },
-            'Decimal':    { pg: 'numeric', ctrl: 'decimal' },
-            'Currency':   { pg: 'numeric', ctrl: 'currency' },
-            'YesNo':      { pg: 'boolean', ctrl: 'checkbox' },
-            'Date':       { pg: 'date', ctrl: 'date' },
-            'DateTime':   { pg: 'timestamptz', ctrl: 'datetime' },
-            'Time':       { pg: 'time', ctrl: 'time' },
-            'TimeSpan':   { pg: 'interval', ctrl: 'timespan' },
-            'Lookup':     { pg: 'integer', ctrl: 'lookup' },
-            'Reference':  { pg: 'integer', ctrl: 'reference' },
-            'Memo':       { pg: 'text', ctrl: 'memo' },
-            'Image':      { pg: 'bytea', ctrl: 'image' },
-            'Document':   { pg: 'bytea', ctrl: 'document' },
-            'Guid':       { pg: 'uuid', ctrl: 'guid' },
-            'Password':   { pg: 'text', ctrl: 'password' },
-            'Alias':      { pg: 'text', ctrl: 'alias' },
-            'Sort':       { pg: 'integer', ctrl: 'sort' },
-            'Color':      { pg: 'text', ctrl: 'color' },
-            'Property':   { pg: 'text', ctrl: 'property' },
-            'MultiSelect':{ pg: 'text', ctrl: 'multiselect' },
-            'SPIM':       { pg: 'text', ctrl: 'spim' },
+        // Check which columns actually exist in each CD_ table
+        async function getCols(table) {
+            const r = await client.query(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [table]
+            );
+            return r.rows.map(r => r.column_name);
+        }
+        const tabCols = await getCols('cd_tables');
+        const fldCols = await getCols('cd_fields');
+        const tflCols = await getCols('cd_tabl_fiel');
+        const ctrlCols = await getCols('cd_controls');
+        
+        // Control type mapping: XML Type -> control_type name
+        const ctrlTypeMap = {
+            'PKey': 'integer', 'Text': 'text', 'Integer': 'integer', 'Decimal': 'decimal',
+            'Currency': 'decimal', 'YesNo': 'checkbox', 'Date': 'date', 'DateTime': 'datetime',
+            'Time': 'text', 'TimeSpan': 'text', 'Lookup': 'lookup', 'Reference': 'lookup',
+            'Memo': 'text', 'Image': 'text', 'Document': 'text', 'Guid': 'text',
+            'Password': 'text', 'Alias': 'text', 'Sort': 'integer', 'Color': 'text',
+            'Property': 'text', 'MultiSelect': 'text', 'SPIM': 'text',
         };
+        
+        // f_type mapping for cd_fields
+        const fTypeMap = {
+            'Text': 2, 'Integer': 1, 'Decimal': 2, 'Currency': 2, 'YesNo': 3,
+            'Date': 4, 'DateTime': 4, 'Lookup': 2, 'Reference': 2, 'PKey': 1,
+            'Memo': 2, 'Image': 5, 'Document': 5, 'Guid': 6, 'Password': 2,
+            'Alias': 2, 'Sort': 1, 'Color': 2, 'Property': 2, 'MultiSelect': 2,
+            'Time': 4, 'TimeSpan': 2, 'SPIM': 2,
+        };
+        
+        // Table f_type: 1=entity, 2=lookup, 3=link, 4=subtable
+        function getTableFType(name) {
+            if (name.startsWith('CD_LK_') || name.startsWith('LK_')) return 2;
+            const base = name.replace(/^(CD_|SYS_)/, '');
+            if (base.includes('_')) {
+                const parts = base.split('_');
+                if (parts.length === 2 && parts[0].length <= 5 && parts[1].length <= 5) return 3;
+                return 4;
+            }
+            return 1;
+        }
+        
+        // Helper: insert with only existing columns
+        function buildInsert(table, colMap) {
+            const cols = [], vals = [], phs = [];
+            let pi = 1;
+            for (const [col, val] of Object.entries(colMap)) {
+                cols.push(col); vals.push(val); phs.push('$' + pi++);
+            }
+            return { sql: `INSERT INTO ${table} (${cols.join(',')}) VALUES (${phs.join(',')})`, vals };
+        }
         
         await client.query('BEGIN');
         
-        // Ensure cd_databases has a record for this database
-        let dbId = 1;
-        if (dbName) {
-            const dbCheck = await client.query('SELECT k_database FROM cd_databases WHERE name = $1', [dbName]);
-            if (dbCheck.rows.length > 0) {
-                dbId = dbCheck.rows[0].k_database;
-            } else {
-                const maxDb = await client.query('SELECT COALESCE(MAX(k_database), 0) + 1 as next FROM cd_databases');
-                dbId = maxDb.rows[0].next;
-                await client.query('INSERT INTO cd_databases (k_database, name) VALUES ($1, $2)', [dbId, dbName]);
-            }
+        const errors = [];
+        let tablesImported = 0, fieldsImported = 0, linksCreated = 0, controlsCreated = 0;
+        
+        // Drop PK constraints to allow clean insert
+        const constraints = await client.query(`
+            SELECT tc.constraint_name, tc.table_name FROM information_schema.table_constraints tc
+            WHERE tc.table_schema = 'public' AND tc.table_name IN ('cd_tables','cd_fields','cd_tabl_fiel','cd_controls')
+            AND tc.constraint_type = 'PRIMARY KEY'
+        `);
+        for (const c of constraints.rows) {
+            try { await client.query(`ALTER TABLE "${c.table_name}" DROP CONSTRAINT IF EXISTS "${c.constraint_name}"`); } catch(e) {}
         }
         
-        // Clear existing table/field records for this database
-        await client.query('DELETE FROM cd_fields WHERE k_table IN (SELECT k_table FROM cd_tables WHERE k_database = $1)', [dbId]);
-        await client.query('DELETE FROM cd_tables WHERE k_database = $1', [dbId]);
+        // Clear existing data
+        if (ctrlCols.length > 0) try { await client.query('DELETE FROM cd_controls'); } catch(e) { errors.push('clear cd_controls: ' + e.message); }
+        if (tflCols.length > 0) try { await client.query('DELETE FROM cd_tabl_fiel'); } catch(e) { errors.push('clear cd_tabl_fiel: ' + e.message); }
+        try { await client.query('DELETE FROM cd_fields'); } catch(e) { errors.push('clear cd_fields: ' + e.message); }
+        try { await client.query('DELETE FROM cd_tables'); } catch(e) { errors.push('clear cd_tables: ' + e.message); }
         
-        let tablesImported = 0;
-        let fieldsImported = 0;
+        let tableId = 1;
+        let fieldId = 1;
+        const crypto = require('crypto');
         
-        for (let ti = 0; ti < tables.length; ti++) {
-            const table = tables[ti];
-            const tableId = ti + 1;
+        for (const table of tables) {
+            const fType = getTableFType(table.name);
             
-            // Determine table category
-            let zone = 'user';
-            if (table.name.startsWith('SYS_')) zone = 'sys';
-            else if (table.name.startsWith('CD_')) zone = 'cd';
+            // Build cd_tables insert
+            const tCols = { k_table: tableId, name: table.name };
+            if (tabCols.includes('f_type')) tCols.f_type = fType;
+            if (tabCols.includes('sort')) tCols.sort = tableId;
+            if (tabCols.includes('createdate')) tCols.createdate = new Date();
+            if (tabCols.includes('changedate')) tCols.changedate = new Date();
             
-            // Insert into cd_tables
-            await client.query(
-                `INSERT INTO cd_tables (k_table, k_database, name, sort_order) VALUES ($1, $2, $3, $4)`,
-                [tableId, dbId, table.name, ti + 1]
-            );
-            tablesImported++;
+            try {
+                const q = buildInsert('cd_tables', tCols);
+                await client.query(q.sql, q.vals);
+                tablesImported++;
+            } catch(e) {
+                errors.push('cd_tables ' + table.name + ': ' + e.message);
+                tableId++;
+                continue;
+            }
             
             // Insert fields
-            for (let fi = 0; fi < table.fields.length; fi++) {
-                const field = table.fields[fi];
-                const tm = typeMap[field.type] || { pg: 'text', ctrl: 'text' };
+            let fieldSort = 1;
+            for (const field of table.fields) {
+                const fFieldType = fTypeMap[field.type] || 2;
+                const isPk = field.name.startsWith('K_') && fieldSort <= 3;
+                const ctrlType = ctrlTypeMap[field.type] || 'text';
                 
-                await client.query(
-                    `INSERT INTO cd_fields (k_field, k_table, name, sort_order) VALUES ($1, $2, $3, $4)`,
-                    [(tableId * 1000) + fi + 1, tableId, field.name, fi + 1]
-                );
-                fieldsImported++;
+                // cd_fields
+                const fCols = { k_field: fieldId, name: field.name };
+                if (fldCols.includes('f_type')) fCols.f_type = fFieldType;
+                if (fldCols.includes('sort')) fCols.sort = fieldSort;
+                if (fldCols.includes('createdate')) fCols.createdate = new Date();
+                if (fldCols.includes('changedate')) fCols.changedate = new Date();
+                
+                try {
+                    const q = buildInsert('cd_fields', fCols);
+                    await client.query(q.sql, q.vals);
+                    fieldsImported++;
+                } catch(e) {
+                    errors.push('cd_fields ' + table.name + '.' + field.name + ': ' + e.message);
+                    fieldId++; fieldSort++;
+                    continue;
+                }
+                
+                // cd_tabl_fiel
+                if (tflCols.length > 0) {
+                    const lCols = { k_fiel: fieldId, k_tabl: tableId };
+                    if (tflCols.includes('k_seq')) lCols.k_seq = fieldSort;
+                    if (tflCols.includes('main')) lCols.main = isPk;
+                    if (tflCols.includes('createdate')) lCols.createdate = new Date();
+                    if (tflCols.includes('changedate')) lCols.changedate = new Date();
+                    
+                    try {
+                        const q = buildInsert('cd_tabl_fiel', lCols);
+                        await client.query(q.sql, q.vals);
+                        linksCreated++;
+                    } catch(e) {
+                        errors.push('cd_tabl_fiel ' + table.name + '.' + field.name + ': ' + e.message);
+                    }
+                }
+                
+                // cd_controls
+                if (ctrlCols.length > 0) {
+                    const cCols = { k_field: fieldId };
+                    if (ctrlCols.includes('k_control')) cCols.k_control = crypto.randomUUID();
+                    if (ctrlCols.includes('control_type')) cCols.control_type = ctrlType;
+                    if (ctrlCols.includes('label')) cCols.label = field.name;
+                    if (ctrlCols.includes('is_visible')) cCols.is_visible = true;
+                    if (ctrlCols.includes('is_readonly')) cCols.is_readonly = false;
+                    if (ctrlCols.includes('is_required')) cCols.is_required = isPk;
+                    if (ctrlCols.includes('sort_order')) cCols.sort_order = fieldSort;
+                    
+                    try {
+                        const q = buildInsert('cd_controls', cCols);
+                        await client.query(q.sql, q.vals);
+                        controlsCreated++;
+                    } catch(e) {
+                        errors.push('cd_controls ' + table.name + '.' + field.name + ': ' + e.message);
+                    }
+                }
+                
+                fieldId++; fieldSort++;
             }
+            tableId++;
         }
         
         await client.query('COMMIT');
+        
+        try { await client.query('ANALYZE cd_tables'); } catch(e) {}
+        try { await client.query('ANALYZE cd_fields'); } catch(e) {}
+        try { await client.query('ANALYZE cd_tabl_fiel'); } catch(e) {}
+        try { await client.query('ANALYZE cd_controls'); } catch(e) {}
         
         invalidateSchemaCache();
         res.json({ 
@@ -1152,6 +1242,10 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
             database: dbName,
             tablesImported, 
             fieldsImported,
+            linksCreated,
+            controlsCreated,
+            errors: errors.length,
+            errorList: errors.slice(0, 50),
             breakdown: {
                 sys: tables.filter(t => t.name.startsWith('SYS_')).length,
                 user: tables.filter(t => !t.name.startsWith('SYS_') && !t.name.startsWith('CD_')).length,
@@ -1167,3 +1261,4 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
+
