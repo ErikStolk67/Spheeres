@@ -1,220 +1,377 @@
 # MetalSpheeres — Project Documentation
 
+> **Read this FIRST before making any changes.**
+
 ## 1. Overview
 
 MetalSpheeres is a production management SaaS for manufacturing companies.
-Single-page app architecture: one HTML file (`metalspheeres-app.html` ~4400 lines) + Node.js backend (`server.js` ~1450 lines).
+Single-page app: one HTML file + Node.js backend.
 
-- **Database**: PostgreSQL on Neon (cloud)
-- **Hosting**: Render.com free tier (auto-deploy from GitHub main branch)
-- **URL**: https://spheeres.onrender.com
-- **Repo**: https://github.com/ErikStolk67/Spheeres
+| Item | Value |
+|------|-------|
+| Frontend | `metalspheeres-app.html` (~4400 lines, HTML + CSS + JS) |
+| Backend | `server.js` (~1500 lines, Node.js/Express) |
+| Database | PostgreSQL on Neon (cloud) |
+| Hosting | Render.com free tier, auto-deploy from GitHub `main` |
+| URL | https://spheeres.onrender.com |
+| Repo | https://github.com/ErikStolk67/Spheeres |
+
+### 1.1 File Structure
+
+```
+metalspheeres-app.html  — Single-page app (ALL frontend code)
+server.js               — Express API server
+package.json            — Dependencies (express, pg)
+database/
+  003_xsd_migration.sql — Table DDL (original schema)
+  004_xsd_alignment.sql — ALTER TABLE additions
+  migrations/           — Older migration files
+PROJECTDOC.md           — THIS FILE (read it!)
+README.md               — Brief overview
+```
+
+### 1.2 Deployment
+
+- Push to `main` → auto-deploy on Render (2-3 min)
+- Render free tier: server sleeps after inactivity, cold start 30-60s
+- GitHub PAT stored in Claude memory for push
+
+### 1.3 Network Access
+
+Claude's environment **cannot reach** spheeres.onrender.com (blocked by proxy).
+This means: **no live API testing possible**. All changes must be verified by syntax
+checking and logical reasoning. Ask the user to add it to allowed domains if needed.
+
+---
 
 ## 2. Database Architecture
 
 ### 2.1 Dictionary-Driven (Metadata-Driven)
 
 All database structures are self-describing via `cd_tables` and `cd_fields`.
-The `f_type` column in `cd_tables` is the **single source of truth** for table classification:
 
-| f_type | Category     | Description |
-|--------|-------------|-------------|
-| 1      | Entity      | Core business objects |
-| 2      | Lookup      | Dropdown/reference tables (LK_ prefix) |
-| 3      | Link        | N:N junction tables connecting two entities |
-| 4      | Subtable    | 1:N child tables ($ separator or naming convention) |
-| 5      | Sys Entity  | System infrastructure entities (SYS_ prefix) |
+**cd_tables** key columns:
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| k_table | integer | Primary key |
+| name | varchar | Table name (e.g. "CD_FIELDS", "SYS_USERS", "CONTACTS") |
+| f_type | integer | Table classification (see 2.3) |
+| sort | varchar(500) | Display order in designer matrix |
+
+> ⚠️ **CRITICAL**: The `sort` column is **varchar(500)**, not integer!
+> The migration (003) creates it as integer, but `004_xsd_alignment.sql` alters it to varchar.
+> Always use `parseInt()` when reading. Never use `typeof r.sort === 'number'`.
+> Do NOT try to ALTER the column or CAST in queries. Just read the string and parseInt.
 
 ### 2.2 Table Groups (3 zones)
 
-| Prefix   | Zone   | Color   | Description |
-|----------|--------|---------|-------------|
-| `CD_`    | Dictionary | Blue (#DBEAFE) | Metadata tables describing the data model |
-| `SYS_`   | System | Yellow (#FEF9C3) | Application infrastructure |
-| *(none)* | User   | Gray (#F8FAFC) | Business data entities |
+| Prefix | Zone | Description |
+|--------|------|-------------|
+| `CD_` | Dictionary | Metadata tables describing the data model |
+| `SYS_` | System | Application infrastructure (users, sessions, queues) |
+| *(none)* | User | Business data entities (Contacts, Companies, Projects) |
 
-### 2.3 Four Table Types
+### 2.3 Four Table Types (f_type)
 
-| Type       | Naming Pattern | Key Structure | Example |
-|-----------|----------------|---------------|---------|
-| **Entity** | No `_` in base name, or `SYS_` + single word | `K_<entity>`, Alias, Name | `CONTACTS`, `SYS_USERS` |
-| **Link**   | `ENT1_ENT2` (4-letter prefixes) | `K_<4chars_A>`, `K_<4chars_B>`, K_SEQ | `CONT_COMP` |
-| **Sub**    | `$` separator or entity prefix + `_` + suffix | `K_<entity>`, K_SEQ | `CONT$ADDRESSES` |
-| **Lookup** | `LK_` prefix | `K_<lookup>`, K_SEQ, Name | `LK_COUNTRIES` |
+| f_type | Type | Naming Pattern | Example |
+|--------|------|----------------|---------|
+| 1 | Entity | No `_` in base name | `CD_FIELDS`, `CONTACTS` |
+| 2 | Lookup | `LK_` prefix | `CD_LK_KINDS`, `LK_COUNTRIES` |
+| 3 | Link | Two 4-letter entity prefixes joined by `_` | `CD_TABL_FIEL`, `CONT_COMP` |
+| 4 | Subtable | `$` separator or prefix + `_` + suffix | `CONT$ADDRESSES` |
+| 5 | Sys Entity | `SYS_` + single word | `SYS_USERS`, `SYS_LOCKS` |
 
-### 2.4 Link Table Convention
+### 2.4 Link Table Conventions
 
-Link tables connect two entities using their 4-letter prefixes:
-- `CONT_COMP` = Contacts ↔ Companies
+Link tables connect two entities via 4-letter abbreviations:
 - `CD_TABL_FIEL` = CD_TABLES ↔ CD_FIELDS
+- `CONT_COMP` = CONTACTS ↔ COMPANIES
 
-**Rules:**
-- Every `n` (link) in the matrix has a reciprocal `—` (reverse reference)
-- Self-links appear as `nn` on the matrix diagonal
-- The total link count = nn count + n count (the `—` are just reciprocals)
+**Matrix rules:**
+- Each link table produces: `n` at [from, to] AND `—` at [to, from]
+- Self-links (e.g. `CD_FIEL_FIEL`) produce `nn` on the diagonal
+- Count of `n` cells = count of `—` cells (always paired)
+- Total link tables = nn count + n count
 
-### 2.5 Field Groups
+### 2.5 Field Groups (column ordering)
 
-| Group | Name             | Description |
-|-------|-----------------|-------------|
-| H     | Header          | System keys, type, main flag |
-| OH    | Optional Header | Name and other optional identifiers |
-| C     | Custom          | Tenant-defined custom fields |
-| OF    | Optional Footer | Memo field |
-| F     | Footer          | Audit trail: lifestatus, owner, created/changed by/date |
+| Group | Name | Description |
+|-------|------|-------------|
+| H | Header | System keys, type, main flag |
+| OH | Optional Header | Name and other optional identifiers |
+| C | Custom | Tenant-defined custom fields |
+| OF | Optional Footer | Memo field |
+| F | Footer | Audit trail: lifestatus, owner, created/changed by/date |
 
-## 3. Frontend Architecture
+---
 
-### 3.1 File Structure
+## 3. Database Designer (Matrix)
+
+### 3.1 What It Shows
+
+A **cross-matrix** with entities on BOTH axes. Only entities appear (not links, subs, or lookups). Cells show relationships detected from link tables.
+
+### 3.2 Cell Values
+
+| Value | Meaning | Color (CD) | Color (SYS×SYS) | Color (all other) |
+|-------|---------|-----------|-----------------|---------------|
+| `nn` | Self-link (diagonal) | #1D4ED8 dark blue | #D97706 amber | #64748B dark gray |
+| `n` | Link from row→col | #3B82F6 blue | #FBBF24 yellow | #94A3B8 gray |
+| `—` | Reciprocal of n | #93C5FD light blue | #FDE68A light yellow | #CBD5E1 light gray |
+| empty | No relationship | #DBEAFE | #FEF9C3 | #F1F5F9 |
+| diagonal (no link) | Self | #BFDBFE | #FDE68A | #E2E8F0 |
+
+### 3.3 Color Zones — READ CAREFULLY
+
+**CD Designer**: One zone — everything blue.
+
+**User Designer**: Two zones ONLY:
+- **SYS×SYS** (BOTH row AND column entity are SYS_): yellow/amber
+- **Everything else** (any cell where at least one entity is NOT SYS_): **GRAY**
+
+> ⚠️ There is NO separate "User×User" zone or "Cross" zone. Only SYS×SYS is yellow.
+> All other combinations (SYS×User, User×SYS, User×User) are GRAY. This was
+> fixed multiple times — do not introduce a third zone again.
+
+### 3.4 Header Styling
+
+- **Row headers**: Light gray background (#FAFBFC), NOT zone-colored
+- **Column headers**: Light gray background (#F8FAFC), NOT zone-colored
+- **Column text**: Rotated (writing-mode: vertical-lr, transform: rotate(180deg)), left-aligned at bottom, height 150px
+- **Meta columns**: Same light background as row header
+- Only **matrix cells** have zone colors. Headers and entity names are NEVER colored.
+
+### 3.5 Meta Columns
+
+| Column | Content | Source |
+|--------|---------|--------|
+| Type | Number of types per entity | `GET /api/types/counts` (counts from cd_types table) |
+| Sub | Number of subtables | Counted from schema detection |
+| Screens | Number of screens | TBD |
+
+### 3.6 Entity Ordering (Sort)
+
+- Entities are ordered by the `sort` field in `cd_tables`
+- The `sort` field is **varchar** storing numeric strings ("10", "20", ...)
+- Frontend reads via `parseInt(r.sort, 10)`, fallback 9999 if NaN
+- In User Designer: SYS_ entities always first (groupOrder=0), then User (groupOrder=1), each sub-group sorted by `sort`
+- Sorting only applies when `_cdTablesSortOrder` has data (avoid flash of unsorted content)
+
+### 3.7 Drag & Drop Reordering
+
+- **Drag row headers** (entity names on the left) to reorder
+- Column order follows automatically (same entity list on both axes)
+- On drop: assigns new sort values (10, 20, 30...) and saves via `PUT /api/tables/sort`
+- Request body: `{ order: [{ name: "CD_TABLES", sort: 10 }, ...] }`
+- Server updates `cd_tables SET sort = $1 WHERE UPPER(name) = UPPER($2)`
+- Visual: dragged row fades to 40% opacity, blue border-top shows insertion point
+- Column headers are NOT draggable (rotated CSS breaks browser drag events)
+- Works identically in both CD and User designers
+
+### 3.8 Features NOT Present (by design)
+
+- No legend bar
+- No search/filter fields
+- No column header dragging
+- No F_ column scanning for relationships
+
+---
+
+## 4. Link Detection Algorithm
+
+### 4.1 Prefix Map (CRITICAL — Many bugs were caused here)
+
+The prefix map is built from **entities only**, sorted by **name length (shortest first)**:
 
 ```
-metalspheeres-app.html   — Single-page app (HTML + CSS + JS, ~4400 lines)
-server.js                — Node.js/Express backend (~1450 lines)
-package.json             — Dependencies
-README.md                — Brief overview
-PROJECTDOC.md            — This file (comprehensive docs)
+CD_ROLES (short) claims ROLE, ROL
+CD_FIELDS claims FIEL, FIE
+CD_DICTIONARIES claims DICT, DIC  ← gets priority over DICTIONARYCOMPONENTS!
+CD_DICTIONARYCOMPARISONS → DICT already taken, so no 4-char prefix for this one
 ```
 
-### 3.2 Key Functions
+If entities are NOT sorted by length, DICTIONARYCOMPONENTS overwrites DICTIONARIES
+for the DICT prefix, and CD_DICT_TABL incorrectly links to DICTIONARYCOMPONENTS.
 
-| Function | Purpose |
-|---------|---------|
-| `buildCdSchema()` | Classifies CD_ tables into entities/links/subs/lookups using prefix matching |
-| `buildUserSchema()` | Same as buildCdSchema but for SYS_ and User tables |
-| `renderDbDesigner()` | Renders the matrix for both CD and User designers |
-| `renderDbStatistics()` | Renders statistics cards with table counts |
-| `applySchema()` | Applies loaded schema data, triggers cache invalidation |
+**Additional abbreviation aliases** (hardcoded because they don't follow the 4-char rule):
+- `CNTR` → same as `CONT` (for CD_FIEL_CNTR → CD_FIELDS ↔ CD_CONTROLS)
+- `DICO` → same as `DICT` (for CD_DICO_DICO → CD_DICTIONARIES self-link)
+- `DATA` → CD_DATABASES (for CD_DATA_FIEL, CD_DATA_CONT)
 
-### 3.3 Database Designer (Matrix)
+### 4.2 Table Sources
 
-The designer renders a **cross-matrix** where:
-- **Both axes** show ONLY entities (not links, subs, or lookups)
-- **Matrix cells** show relationships derived from link tables:
-  - `nn` = N:N self-link (on diagonal) — darkest color
-  - `n` = link exists (from row entity → column entity) — medium color
-  - `—` = reciprocal reference (reverse of an `n`) — lightest color
-  - Empty = no relationship — zone background color
+Tables come from TWO sources (union):
+- `xsdFieldData` — loaded from XSD seed / import
+- `window._schemaFull` — live database schema from `/api/schema/full`
 
-#### 3.3.1 Zone Colors
+Both must be checked, otherwise tables present in the DB but not in the XSD (like CD_CANVASES) will be missing from the designer.
 
-| Zone | Empty cell | Diagonal | nn | n | — |
-|------|-----------|----------|-----|---|---|
-| **CD (blue)** | #DBEAFE | #BFDBFE | #1D4ED8 | #3B82F6 | #93C5FD |
-| **SYS (yellow)** | #FEF9C3 | #FDE68A | #D97706 | #FBBF24 | #FDE68A |
-| **User (gray)** | #F8FAFC | #E2E8F0 | #64748B | #94A3B8 | #CBD5E1 |
+### 4.3 Classification Order
 
-#### 3.3.2 Header Styling
+For tables with `_` in base name, check in this EXACT order:
+1. Both parts match **different** entities → **Link table**
+2. Both parts match **same** entity → **Self-link** (nn on diagonal)
+3. Only first part matches → **Subtable**
 
-- **Row headers**: White background, icon + entity name, left-aligned
-- **Column headers**: White background, rotated text (writing-mode: vertical-lr + rotate 180deg)
-- **Column text alignment**: Left-aligned at bottom (text starts at the bottom of the rotated column, NOT centered in the text length)
-- Entity names are NOT colored — only the matrix cells have zone colors
+> ⚠️ Self-link check (step 2) MUST come BEFORE sub check (step 3).
+> If reversed, CD_DICO_DICO gets classified as subtable of CD_DICTIONARIES
+> instead of self-link. This bug was fixed in v0.7.2.
 
-#### 3.3.3 Meta Columns
+### 4.4 Expected CD Link Count
 
-| Column | Content | Notes |
-|--------|---------|-------|
-| Type   | Number of types for this entity (from cd_types table) | Clickable → opens types editor |
-| Sub    | Number of subtables | Clickable → opens sub dropdown |
-| Screens| Number of screens | Display only |
+CD Designer should show **24 link tables** (verified v0.7.9):
 
-#### 3.3.4 Features
+**6 self-links (nn on diagonal):**
+TRAN_TRAN, DICO_DICO, FIEL_FIEL, FORM_FORM, FUNC_FUNC, ROLE_ROLE
 
-- **No legend bar** — removed, was inaccurate
-- **Drag & drop**: Column headers are draggable to reorder. Row order follows column order.
-- **Toggle**: Switch between CD Designer and User Database Designer
+**18 cross-links (n + — pair each):**
+CANV_CONT, CANV_FUNC, CANV_LIFE, CONT_FIEL, CONT_FORM, DATA_CONT,
+DATA_FIEL, DICT_TABL, FIEL_CNTR, FORM_CONT, LIFE_CANV, LIFE_LICE,
+ROLE_CANV, TABL_CONT, TABL_FIEL, TABL_FORM, TABL_TYPE, TYPE_FOLD
 
-### 3.4 Link Detection Algorithm (buildCdSchema / buildUserSchema)
+If the statistics page says 24 links but the matrix shows fewer, the prefix map is wrong.
 
-Both use the same pattern:
+---
 
-1. **Collect** all tables from `xsdFieldData` + `_schemaFull`
-2. **Classify entities**: tables with no `_` in base name (after stripping CD_/SYS_ prefix)
-3. **Build prefix map** from entities ONLY (4-char and 3-char prefixes → entity name)
-4. **Classify remaining** tables with `_` in base name:
-   - Split on `_`, try matching first part + second part against prefix map
-   - Both match different entities → **Link table** (from=first, to=second)
-   - Both match same entity → **Self-link** (nn on diagonal)
-   - Only first matches → **Subtable**
-5. **Derive relations**: each link produces `n` at [from, to] and `—` at [to, from]
-6. **Build tableList**: only entities, with sub count in SUB column
+## 5. API Endpoints
 
-**CRITICAL**: The prefix map must be built from entities ONLY. Including all tables causes false matches.
+### 5.1 Schema & Tables
 
-### 3.5 Statistics Page
+| Endpoint | Method | Returns |
+|----------|--------|---------|
+| `/api/schema/full` | GET | Full PostgreSQL schema (tables, columns, types) |
+| `/api/tables` | GET | All cd_tables rows ORDER BY sort |
+| `/api/tables/sort` | PUT | Bulk update sort: `{ order: [{name, sort}] }` |
+| `/api/tables/:id/fields` | GET | Fields for a table |
+| `/api/fields` | GET | All fields joined with tables |
+| `/api/tables/:id/types` | GET/POST | Types for a table |
+| `/api/types/counts` | GET | Type count per table name (for Type column) |
 
-Categorizes all tables into zones (CD/SYS/User) and types (Entity/Link/Sub/Lookup).
-Each zone shows 4 cards with table counts, field counts, and record counts.
+### 5.2 Data & Stats
 
-**Classification rules** (same for all zones):
-- `$` in name → subtable
-- `_LK_` in name or base starts with `LK_` → lookup
-- Base has exactly 2 parts with each ≤5 chars → link
-- Base has `_` (other) → subtable
-- No `_` in base → entity
+| Endpoint | Method | Returns |
+|----------|--------|---------|
+| `/api/stats/counts` | GET | Record counts per table |
+| `/api/raw/:table` | GET | Raw table data |
+| `/api/data/:table` | POST | Insert/update data |
 
-## 4. Backend Architecture
-
-### 4.1 API Endpoints
+### 5.3 Admin
 
 | Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/seed` | POST | Seed dictionary |
+| `/api/seed-xsd` | POST | Seed from XSD field data |
+| `/api/build-tables` | POST | Create PostgreSQL tables from dictionary |
+| `/api/migrate` | POST | Run migrations |
+| `/api/import-xml` | POST | Import XML data into existing tables |
+| `/api/import-schema` | POST | Import Verspaning-style schema XML |
+
+---
+
+## 6. Frontend Data Flow
+
+### 6.1 Startup Sequence
+
+1. Page loads → `loadSchemaFromDB()`
+2. Check sessionStorage cache → if found, `applySchema(cached)` immediately
+3. Fetch `/api/schema/full` → `applySchema(fresh)` on response
+4. `applySchema()` populates `xsdFieldData` and `_schemaFull`
+5. `applySchema()` fetches `/api/tables` → populates `_cdTablesMap` + `_cdTablesSortOrder`
+6. Chained: fetches `/api/types/counts` → populates `_typeCounts`
+7. Then: `invalidateCdSchema()` + `invalidateUserSchema()` + `renderContent()`
+
+### 6.2 Schema Caching
+
+| Cache | Builder | Invalidator |
+|-------|---------|-------------|
+| `_cdSchema` | `buildCdSchema()` via `getCdSchema()` | `invalidateCdSchema()` |
+| `_userSchema` | `buildUserSchema()` via `getUserSchema()` | `invalidateUserSchema()` |
+
+Accessors: `getCdTables()`, `getCdRelations()`, `getDbTables()`, `getUserRelations()`, etc.
+
+### 6.3 Global State
+
+| Variable | Content | Set by |
+|----------|---------|--------|
+| `xsdFieldData` | `{ "CD_TABLES": "K_TABLE:i,NAME:s,..." }` | `applySchema()` |
+| `window._schemaFull` | Full schema object | `applySchema()` |
+| `window._cdTablesMap` | `{ "CD_TABLES": 1 }` f_type per table | fetch `/api/tables` |
+| `window._cdTablesSortOrder` | `{ "CD_TABLES": 4 }` sort (parseInt'd) | fetch `/api/tables` |
+| `window._typeCounts` | `{ "CD_TABLES": 2 }` type count | fetch `/api/types/counts` |
+
+---
+
+## 7. Statistics Page
+
+Categorizes ALL tables (not just entities) into zones and types.
+
+**Classification rules** (same for all zones):
+1. `$` in name → subtable
+2. `_LK_` in name or base starts with `LK_` → lookup
+3. Base has exactly 2 parts with each ≤5 chars → link
+4. Base has `_` (other) → subtable
+5. No `_` in base → entity
+
+Statistics cards sort **alphabetically** within each category.
+
+---
+
+## 8. Known Issues & Gotchas
+
+| # | Issue | Detail |
+|---|-------|--------|
+| 1 | **sort is varchar** | cd_tables.sort is varchar(500). Use parseInt(). Never typeof === 'number'. |
+| 2 | **Prefix collisions** | DICT/DIC claimed by DICTIONARYCOMPONENTS if not sorted by length first. |
+| 3 | **No API testing** | spheeres.onrender.com blocked from Claude's environment. |
+| 4 | **Self-link order** | Self-link check must be BEFORE sub check or CD_DICO_DICO misclassifies. |
+| 5 | **CD_CANVASES** | Only in live DB, not in XSD seed. Must union xsdFieldData + _schemaFull. |
+| 6 | **CNTR abbreviation** | CD_FIEL_CNTR uses CNTR not CONT. Needs hardcoded alias in prefix map. |
+| 7 | **Render cold start** | First request 30-60s. SessionStorage cache shows instant stale data. |
+
+---
+
+## 9. Version History (key milestones)
+
+| Version | Commit | Changes |
 |---------|--------|---------|
-| `/api/schema/full` | GET | Full PostgreSQL schema (tables, columns, types) |
-| `/api/tables` | GET | All cd_tables rows (includes f_type) |
-| `/api/tables/:id/fields` | GET | Fields for a table |
-| `/api/tables/:id/types` | GET/POST | Types for a table |
-| `/api/stats/counts` | GET | Record counts per table |
-| `/api/seed` | POST | Seed dictionary to database |
-| `/api/build-tables` | POST | Build tables from dictionary |
-| `/api/import` | POST | Import XML/ZIP schema |
+| v0.6.2 | f06a369 | Original baseline, CD Designer working |
+| v0.7.1 | 8875425 | Clean restart, User Designer, zone colors |
+| v0.7.2 | 41ae4a4 | Self-link bug fix (CD_DICO_DICO), white gridlines |
+| v0.7.9 | 3cae5a2 | Prefix map fix (24 links), parseInt sort, type counts |
+| v0.8.0 | d1b8f51 | Drag & drop via row headers, saves sort |
+| v0.8.1 | a3e1edb | parseInt fix for varchar sort column |
+| v0.8.3 | e27a06e | User designer: only SYS×SYS yellow, all else gray |
 
-### 4.2 Schema Import (XSD/ZIP)
+---
 
-The import processes Spheeres XSD files and:
-1. Parses table/field definitions
-2. Classifies tables using `getTableFType()`:
-   - Starts with `LK_` or `CD_LK_` → f_type 2 (lookup)
-   - No `_` in base → f_type 1 (entity)
-   - 2 parts with ≤5 chars each → f_type 3 (link)
-   - Otherwise → f_type 4 (subtable) or 1 (entity)
-3. Inserts into `cd_tables` with correct f_type
-4. Inserts fields into `cd_fields` + link records into `cd_tabl_fiel`
+## 10. RULES FOR AI ASSISTANTS
 
-## 5. Deployment
+### ✅ DO:
+- Read this document FIRST before any changes
+- Use `parseInt()` for the sort field (it's varchar)
+- Keep self-link check BEFORE sub check in classification
+- Sort prefix map entities by name length (shortest first)
+- Test syntax with `node -e` before pushing
+- Push small, focused commits
+- Match the reference screenshots EXACTLY for colors
+- Union xsdFieldData + _schemaFull for complete table list
 
-- **GitHub**: Push to `main` branch triggers auto-deploy on Render
-- **Render free tier**: Server sleeps after inactivity, cold start takes 30-60 seconds
-- **PAT token**: Used for push authentication (stored in Claude memory)
+### ❌ DO NOT:
+- Modify table structures (no ALTER TABLE, no CREATE TABLE, no CAST)
+- Add F_ column scanning for relationship detection
+- Add search fields, filter bars, or legends to the Designer
+- Color entity headers/names (only matrix cells are colored)
+- Use `typeof r.sort === 'number'` (it's varchar, always string)
+- Try to access the live API from this environment (it's blocked)
+- Overwrite working code with a "clean rewrite" unless asked
+- Create three color zones in User mode (only SYS×SYS yellow, rest gray)
+- Make column headers draggable (rotated CSS breaks drag events)
+- Introduce CD/SYS/User background colors on row/column headers
 
-## 6. Version History
-
-| Version | Key Changes |
-|---------|------------|
-| v0.6.2  | Original baseline — CD Designer working |
-| v0.7.1  | User Designer matching CD pattern, zone colors, white headers, drag & drop, no legend |
-
-## 7. RULES FOR AI ASSISTANTS
-
-**DO NOT modify `buildCdSchema()` unless explicitly asked.**
-It works correctly. The CD Designer links are correct.
-
-**DO NOT add F_ column scanning** to derive additional relations.
-Relations come from link tables only, detected via prefix matching.
-
-**DO NOT add search fields, filter bars, or legends** to the Designer.
-The matrix should be clean: toggle + action buttons + matrix only.
-
-**DO NOT change the statistics categorization for CD zone.**
-The original name-pattern logic works correctly for CD tables.
-
-**Always start from the current working code.**
-Never overwrite working code with a "clean rewrite" unless asked.
-
-**Test locally before pushing** when possible. Render free tier deploys are slow.
-
-**The matrix cell values:**
-- `nn` on diagonal = self-referencing link table (e.g., CD_FIEL_FIEL)
-- `n` = link exists FROM row entity TO column entity
-- `—` = reciprocal of an `n` (always paired)
-- Count of `n` cells must equal count of `—` cells
-- Count of link tables = count of `nn` cells + count of `n` cells (not counting `—`)
+### 🔍 WHEN IN DOUBT:
+- Look at the reference screenshots uploaded by the user
+- Count the links (CD should have 24)
+- Check that n count equals — count
+- Verify DICT prefix → CD_DICTIONARIES (not DICTIONARYCOMPONENTS)
+- Ask the user to check the browser console (debug logs are present)
