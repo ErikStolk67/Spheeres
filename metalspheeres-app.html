@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.8';
+    const MS_VERSION = 'v0.6.9';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1383,11 +1383,12 @@ const cdIconMap = {
 // Build all CD_ table structures dynamically from xsdFieldData
 function buildCdSchema() {
     const allCd = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_')).sort();
+    const typeMap = window._cdTablesMap || {};
     
-    const entities = [];   // CD_XXXX (no underscore in base)
-    const lookups = [];    // CD_LK_*
-    const subs = {};       // CD_XXXX_YYYY where XXXX is entity prefix
-    const links = [];      // CD_XXXX_YYYY where both are entity prefixes
+    const entities = [];   // CD_XXXX (f_type 1 or no underscore in base)
+    const lookups = [];    // CD_LK_* (f_type 2)
+    const subs = {};       // f_type 4
+    const links = [];      // f_type 3
     
     // Step 1: find entities and lookups
     for (const t of allCd) {
@@ -1400,11 +1401,10 @@ function buildCdSchema() {
     }
     
     // Step 2: build prefix map from entities
-    const prefixMap = {}; // FIEL -> CD_FIELDS, CANV -> CD_CANVASES, etc.
+    const prefixMap = {};
     for (const e of entities) {
         const base = e.name.replace('CD_', '');
         prefixMap[base.substring(0, 4)] = e.name;
-        // Also try shorter prefixes for names like CD_DICTIONARYCOMPONENTS -> DICT
         if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
     }
     
@@ -1422,19 +1422,17 @@ function buildCdSchema() {
         const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
         
         if (parent1 && parent2 && parent1 !== parent2) {
-            // Link table: both parts match entities
             links.push({ name: t, from: parent1, to: parent2 });
         } else if (parent1 && parent1 !== t) {
-            // Sub table
             if (!subs[parent1]) subs[parent1] = [];
             subs[parent1].push(t);
         } else if (parent1 === parent2 && parent1) {
-            // Self-link (e.g. CD_FIEL_FIEL)
             links.push({ name: t, from: parent1, to: parent1 });
         }
     }
     
-    // Step 4: derive relations from links and subs
+    // Step 4: derive relations from links
+    // ALSO check F_ columns in each entity for additional references (—)
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
@@ -1442,10 +1440,29 @@ function buildCdSchema() {
     }
     for (const link of links) {
         if (link.from === link.to) {
-            setRel(link.from, link.to, 'nn'); // self-link
+            setRel(link.from, link.to, 'nn');
         } else {
             setRel(link.from, link.to, 'n');
             setRel(link.to, link.from, '—');
+        }
+    }
+    
+    // Step 4b: scan F_ columns in entities for additional references not caught by link tables
+    const schema = window._schemaFull || {};
+    const entityNames = entities.map(e => e.name);
+    for (const entity of entities) {
+        const info = schema[entity.name.toLowerCase()] || schema[entity.name];
+        if (!info || !info.columns) continue;
+        
+        for (const col of info.columns) {
+            const cn = col.name.toUpperCase();
+            if (!cn.startsWith('F_')) continue;
+            const ref = cn.replace('F_', '');
+            // Match F_ column to entity via prefix map
+            const target = prefixMap[ref] || prefixMap[ref.substring(0, 4)] || prefixMap[ref.substring(0, 3)];
+            if (target && target !== entity.name && !rels[entity.name]?.[target]) {
+                setRel(entity.name, target, '—');
+            }
         }
     }
     
@@ -1569,12 +1586,14 @@ function renderDbDesigner() {
                     const cellClass = isDictMode ? 'cell-nn-cd' : (isMainZone ? 'cell-nn' : 'cell-nn-user');
                     rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name} (self)" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
                 } else {
-                    rows += `<td class="cell-self"></td>`;
+                    // Diagonal: darker tint per zone
+                    const diagBg = isDictMode ? '#BFDBFE' : (isMainZone ? '#FDE68A' : '#E2E8F0');
+                    rows += `<td style="background:${diagBg};"></td>`;
                 }
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
 
-                let cellClass = 'cell-empty';
+                let cellClass = '';
                 if (isDictMode) {
                     if (val === 'nn') cellClass = isMainZone ? 'cell-nn-cd' : 'cell-nn-lk';
                     else if (val === 'n') cellClass = isMainZone ? 'cell-n-cd' : 'cell-n-lk';
@@ -1585,7 +1604,13 @@ function renderDbDesigner() {
                     else if (val === '—') cellClass = isMainZone ? 'cell-dash' : 'cell-dash-user';
                 }
 
-                rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" ${val ? 'style="cursor:pointer;" onclick="showLinkPopup(\'' + row.name + '\',\'' + col.name + '\',\'' + val + '\')"' : ''}>${val}</td>`;
+                if (cellClass) {
+                    rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
+                } else {
+                    // Empty cell: light tint per zone
+                    const emptyBg = isDictMode ? '#DBEAFE' : (isMainZone ? '#FEF9C3' : '#F8FAFC');
+                    rows += `<td style="background:${emptyBg};" title="${row.name} ↔ ${col.name}"></td>`;
+                }
             }
         }
         rows += `</tr>`;
