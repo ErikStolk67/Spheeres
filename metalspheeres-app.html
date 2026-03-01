@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.0';
+    const MS_VERSION = 'v0.7.1';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -248,7 +248,7 @@
         .matrix thead th:first-child { z-index: 4; left: 0; }
         .matrix tbody th { position: sticky; left: 0; z-index: 2; text-align: left; }
 
-        .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 120px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; vertical-align: bottom; }
+        .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 120px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; vertical-align: bottom; text-align: left; }
         .matrix .row-header { padding: 4px 10px; min-width: 140px; font-size: 11px; }
         .matrix .row-header .row-icon { display: inline-flex; align-items: center; justify-content: center; margin-right: 6px; width: 18px; height: 18px; vertical-align: middle; }
         .matrix .row-header .row-icon svg { width: 14px; height: 14px; }
@@ -1203,65 +1203,30 @@ function buildUserSchema() {
         const upper = t.toUpperCase();
         if (!upper.startsWith('CD_')) tableSet.add(upper);
     }
-    
     const allTables = [...tableSet].sort();
-    
-    // Use f_type from cd_tables if loaded (via window._cdTablesMap)
-    const typeMap = window._cdTablesMap || {};
-    
-    const entities = [];   // On both axes (f_type 1 or 5)
-    const lookups = [];    // f_type 2 or LK_ prefix
-    const subs = {};       // f_type 4 or $ separator
-    const links = [];      // f_type 3 = link tables
-    
-    // Classify using f_type
+
+    const entities = [];
+    const lookups = [];
+    const subs = {};
+    const links = [];
+
+    // Step 1: entities = no $ AND not LK_ AND no _ in base
+    // SYS_: entity if single word after SYS_ (SYS_USERS)
     for (const t of allTables) {
-        if (t.includes('$')) {
-            // $ subtables: find parent
-            const parent = t.split('$')[0];
-            if (!subs[parent]) subs[parent] = [];
-            subs[parent].push(t);
-            continue;
-        }
-        
-        const fType = typeMap[t];
-        
-        if (fType) {
-            // Authoritative type from cd_tables
-            if (fType === 2) {
-                lookups.push({ name: t, type: 'lk', icon: 'list' });
-            } else if (fType === 3) {
-                // Link table - will be processed after entities are known
-                links.push({ name: t });
-            } else if (fType === 4) {
-                // Subtable - find parent from name
-                // Store temporarily, assign parent later
-                links.push({ name: t, isSub: true });
-            } else {
-                // fType 1 (entity) or 5 (sys entity)
-                if (t.startsWith('SYS_')) {
-                    entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
-                } else {
-                    entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
-                }
+        if (t.includes('$')) continue;
+        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
+            lookups.push({ name: t, type: 'lk', icon: 'list' });
+        } else if (t.startsWith('SYS_')) {
+            const afterSys = t.replace('SYS_', '');
+            if (!afterSys.includes('_')) {
+                entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
             }
-        } else {
-            // Fallback: classify by naming convention (same as CD pattern)
-            if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
-                lookups.push({ name: t, type: 'lk', icon: 'list' });
-            } else if (t.startsWith('SYS_')) {
-                const afterSys = t.replace('SYS_', '');
-                if (!afterSys.includes('_')) {
-                    entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
-                }
-                // SYS_X_Y handled below as potential link
-            } else if (!t.includes('_')) {
-                entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
-            }
+        } else if (!t.includes('_')) {
+            entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
         }
     }
-    
-    // Build prefix map from entities ONLY (same as CD)
+
+    // Step 2: prefix map from entities ONLY
     const prefixMap = {};
     for (const e of entities) {
         const base = e.name.startsWith('SYS_') ? e.name.replace('SYS_', '') : e.name;
@@ -1269,87 +1234,55 @@ function buildUserSchema() {
         if (base.length >= 4) prefixMap[base.substring(0, 4)] = e.name;
         if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
     }
-    
-    // Process link tables: resolve from/to using prefix map
-    const resolvedLinks = [];
-    for (const link of links) {
-        if (link.isSub) {
-            // Subtable: first part of name should match entity
-            const base = link.name.startsWith('SYS_') ? link.name.replace('SYS_', '') : link.name;
-            const parts = base.split('_');
-            const parent = prefixMap[parts[0]] || prefixMap[parts[0].substring(0, 4)] || prefixMap[parts[0].substring(0, 3)];
-            if (parent) {
-                if (!subs[parent]) subs[parent] = [];
-                subs[parent].push(link.name);
-            }
-            continue;
-        }
-        
-        // Link table: split name to find from/to entities
-        const base = link.name.startsWith('SYS_') ? link.name.replace('SYS_', '') : link.name;
-        if (!base.includes('_')) continue;
-        
-        const parts = base.split('_');
-        const firstPrefix = parts[0];
-        const secondPart = parts.slice(1).join('_');
-        const secondPrefix = secondPart.substring(0, 4);
-        
-        const parent1 = prefixMap[firstPrefix] || prefixMap[firstPrefix.substring(0, 3)];
-        const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
-        
-        if (parent1 && parent2) {
-            resolvedLinks.push({ name: link.name, from: parent1, to: parent2 });
-        }
-    }
-    
-    // Also detect links/subs from tables without f_type that have underscores
+
+    // Step 3: classify underscore tables as links or subs (same as CD step 3)
     for (const t of allTables) {
-        if (t.includes('$') || t.startsWith('LK_') || t.startsWith('SYS_LK_')) continue;
-        if (typeMap[t]) continue; // already classified by f_type
-        
+        if (t.includes('$')) continue;
+        if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) continue;
         const base = t.startsWith('SYS_') ? t.replace('SYS_', '') : t;
         if (!base.includes('_')) continue;
-        
+
         const parts = base.split('_');
         const firstPrefix = parts[0];
         const secondPart = parts.slice(1).join('_');
         const secondPrefix = secondPart.substring(0, 4);
-        
+
         const parent1 = prefixMap[firstPrefix] || prefixMap[firstPrefix.substring(0, 3)];
         const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
-        
+
         if (parent1 && parent2 && parent1 !== parent2) {
-            resolvedLinks.push({ name: t, from: parent1, to: parent2 });
+            links.push({ name: t, from: parent1, to: parent2 });
         } else if (parent1 === parent2 && parent1) {
-            resolvedLinks.push({ name: t, from: parent1, to: parent1 });
+            links.push({ name: t, from: parent1, to: parent1 });
         } else if (parent1 && parent1 !== t) {
             if (!subs[parent1]) subs[parent1] = [];
             subs[parent1].push(t);
         }
     }
-    
-    // Derive relations from links (identical to CD)
+
+    // Step 4: $ subtables
+    for (const t of allTables) {
+        if (!t.includes('$')) continue;
+        const parent = t.split('$')[0];
+        const pe = entities.find(e => e.name === parent);
+        if (pe) { if (!subs[pe.name]) subs[pe.name] = []; subs[pe.name].push(t); }
+    }
+
+    // Step 5: relations from links (identical to CD)
     const rels = {};
-    function setRel(row, col, val) {
-        if (!rels[row]) rels[row] = {};
-        if (!rels[row][col]) rels[row][col] = val;
+    function setRel(row, col, val) { if (!rels[row]) rels[row] = {}; if (!rels[row][col]) rels[row][col] = val; }
+    for (const link of links) {
+        if (link.from === link.to) { setRel(link.from, link.to, 'nn'); }
+        else { setRel(link.from, link.to, 'n'); setRel(link.to, link.from, '—'); }
     }
-    for (const link of resolvedLinks) {
-        if (link.from === link.to) {
-            setRel(link.from, link.to, 'nn');
-        } else {
-            setRel(link.from, link.to, 'n');
-            setRel(link.to, link.from, '—');
-        }
-    }
-    
-    // Build tableList — ONLY entities on axes
+
+    // Step 6: tableList — entities only
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         return { ...e, cols: ['—', subCount || '—', '—'] };
     });
-    
-    return { entities, lookups, subs, links: resolvedLinks, relations: rels, tableList, prefixMap };
+
+    return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
 
 // Cached result
@@ -1383,12 +1316,11 @@ const cdIconMap = {
 // Build all CD_ table structures dynamically from xsdFieldData
 function buildCdSchema() {
     const allCd = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_')).sort();
-    const typeMap = window._cdTablesMap || {};
     
-    const entities = [];   // CD_XXXX (f_type 1 or no underscore in base)
-    const lookups = [];    // CD_LK_* (f_type 2)
-    const subs = {};       // f_type 4
-    const links = [];      // f_type 3
+    const entities = [];   // CD_XXXX (no underscore in base)
+    const lookups = [];    // CD_LK_*
+    const subs = {};       // CD_XXXX_YYYY where XXXX is entity prefix
+    const links = [];      // CD_XXXX_YYYY where both are entity prefixes
     
     // Step 1: find entities and lookups
     for (const t of allCd) {
@@ -1401,10 +1333,11 @@ function buildCdSchema() {
     }
     
     // Step 2: build prefix map from entities
-    const prefixMap = {};
+    const prefixMap = {}; // FIEL -> CD_FIELDS, CANV -> CD_CANVASES, etc.
     for (const e of entities) {
         const base = e.name.replace('CD_', '');
         prefixMap[base.substring(0, 4)] = e.name;
+        // Also try shorter prefixes for names like CD_DICTIONARYCOMPONENTS -> DICT
         if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
     }
     
@@ -1422,17 +1355,19 @@ function buildCdSchema() {
         const parent2 = prefixMap[secondPrefix] || prefixMap[secondPart.substring(0, 3)];
         
         if (parent1 && parent2 && parent1 !== parent2) {
+            // Link table: both parts match entities
             links.push({ name: t, from: parent1, to: parent2 });
         } else if (parent1 && parent1 !== t) {
+            // Sub table
             if (!subs[parent1]) subs[parent1] = [];
             subs[parent1].push(t);
         } else if (parent1 === parent2 && parent1) {
+            // Self-link (e.g. CD_FIEL_FIEL)
             links.push({ name: t, from: parent1, to: parent1 });
         }
     }
     
-    // Step 4: derive relations from links
-    // ALSO check F_ columns in each entity for additional references (—)
+    // Step 4: derive relations from links and subs
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
@@ -1440,29 +1375,10 @@ function buildCdSchema() {
     }
     for (const link of links) {
         if (link.from === link.to) {
-            setRel(link.from, link.to, 'nn');
+            setRel(link.from, link.to, 'nn'); // self-link
         } else {
             setRel(link.from, link.to, 'n');
             setRel(link.to, link.from, '—');
-        }
-    }
-    
-    // Step 4b: scan F_ columns in entities for additional references not caught by link tables
-    const schema = window._schemaFull || {};
-    const entityNames = entities.map(e => e.name);
-    for (const entity of entities) {
-        const info = schema[entity.name.toLowerCase()] || schema[entity.name];
-        if (!info || !info.columns) continue;
-        
-        for (const col of info.columns) {
-            const cn = col.name.toUpperCase();
-            if (!cn.startsWith('F_')) continue;
-            const ref = cn.replace('F_', '');
-            // Match F_ column to entity via prefix map
-            const target = prefixMap[ref] || prefixMap[ref.substring(0, 4)] || prefixMap[ref.substring(0, 3)];
-            if (target && target !== entity.name && !rels[entity.name]?.[target]) {
-                setRel(entity.name, target, '—');
-            }
         }
     }
     
@@ -1521,95 +1437,92 @@ function getCdLookupMap() {
 
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
-    
     const tables = isDictMode ? getCdTables() : getDbTables();
     const rels = isDictMode ? getCdRelations() : getUserRelations();
 
-    // Colors per mode
-    const mainBg = isDictMode ? '#DBEAFE' : '#FEF9C3';      // blue vs yellow headers
-    const mainRowBg = isDictMode ? '#F0F7FF' : '#FFFEF5';
-    const secBg = isDictMode ? '#F1F5F9' : '#F1F5F9';       // lookup/user tables
-    const secRowBg = isDictMode ? '#FAFBFC' : '#FAFBFC';
+    // Zone background colors for empty cells
+    const zoneMainEmpty = isDictMode ? '#DBEAFE' : '#FEF9C3';   // light blue / light yellow
+    const zoneCrossEmpty = isDictMode ? '#EFF6FF' : '#F8FAFC';  // lighter blue / near white
+    const zoneDiag = isDictMode ? '#BFDBFE' : '#FDE68A';        // medium blue / medium yellow
+    const zoneDiagCross = isDictMode ? '#E2E8F0' : '#E2E8F0';
 
-    // Column headers
+    // Column headers - white background, bottom-aligned, text at bottom of rotated header
     let colHeaders = '<th class="corner"><div style="font-size:11px;color:#94A3B8;padding:4px;">Type / Sub / Screens</div></th>';
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Type</th>';
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Sub</th>';
     colHeaders += '<th class="col-header meta-cols" style="font-size:9px;">Screens</th>';
 
-    for (const t of tables) {
-        const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
-        const bg = isMain ? mainBg : secBg;
-        colHeaders += `<th class="col-header" style="background:${bg};cursor:pointer;vertical-align:bottom;" onclick="showTablePopup('${t.name}')">${t.name}</th>`;
+    for (let i = 0; i < tables.length; i++) {
+        const t = tables[i];
+        colHeaders += `<th class="col-header" draggable="true" data-col-idx="${i}" 
+            style="background:#fff;cursor:grab;vertical-align:bottom;text-align:left;"
+            ondragstart="window._dragColIdx=${i};event.dataTransfer.effectAllowed='move';"
+            ondragover="event.preventDefault();"
+            ondrop="handleColDrop(${i});event.preventDefault();"
+            onclick="showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
     // Rows
     let rows = '';
     for (let i = 0; i < tables.length; i++) {
         const row = tables[i];
-        const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-        const rowBg = isMainRow ? mainRowBg : secRowBg;
 
         rows += `<tr>`;
-        rows += `<th class="row-header" style="background:${rowBg};cursor:pointer;" onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
+        // Row header - white background
+        rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
+            style="background:#fff;cursor:grab;"
+            ondragstart="window._dragRowIdx=${i};event.dataTransfer.effectAllowed='move';"
+            ondragover="event.preventDefault();"
+            ondrop="handleRowDrop(${i});event.preventDefault();"
+            onclick="showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
-        // Meta columns (Type, Sub, Screens)
+        // Meta columns (Type, Sub, Screens) - white background
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
             if (m === 0) {
-                // Type column - always clickable
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '—'}</td>`;
+                rows += `<td style="background:#fff;font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '—'}</td>`;
             } else if (m === 1 && isNum) {
-                // Sub column - clickable with dropdown when subs exist
-                rows += `<td style="background:${rowBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
+                rows += `<td style="background:#fff;font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
             } else if (m === 2 && isNum) {
-                // Screens column - show count
-                rows += `<td style="background:${rowBg};font-size:10px;color:#64748B;">${v}</td>`;
+                rows += `<td style="background:#fff;font-size:10px;color:#64748B;">${v}</td>`;
             } else {
-                rows += `<td style="background:${rowBg};font-size:10px;color:#CBD5E1;">—</td>`;
+                rows += `<td style="background:#fff;font-size:10px;color:#CBD5E1;">—</td>`;
             }
         }
 
-        // Relationship cells
+        // Relationship cells - colored by zone
         for (let j = 0; j < tables.length; j++) {
             const col = tables[j];
-
-            const isMainR = isDictMode ? (row.type === 'cd') : row.type === 'sys';
-            const isMainC = isDictMode ? (col.type === 'cd') : col.type === 'sys';
+            const isMainR = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
+            const isMainC = isDictMode ? (col.type === 'cd') : (col.type === 'sys');
             const isMainZone = isMainR && isMainC;
 
             if (row.name === col.name) {
-                // Diagonal - check for self-referencing nn
+                // Diagonal
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
                 if (val === 'nn') {
                     const cellClass = isDictMode ? 'cell-nn-cd' : (isMainZone ? 'cell-nn' : 'cell-nn-user');
                     rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name} (self)" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
                 } else {
-                    // Diagonal: darker tint per zone
-                    const diagBg = isDictMode ? '#BFDBFE' : (isMainZone ? '#FDE68A' : '#E2E8F0');
-                    rows += `<td style="background:${diagBg};"></td>`;
+                    rows += `<td style="background:${isMainZone ? zoneDiag : zoneDiagCross};"></td>`;
                 }
             } else {
                 const val = (rels[row.name] && rels[row.name][col.name]) || '';
-
-                let cellClass = '';
-                if (isDictMode) {
-                    if (val === 'nn') cellClass = isMainZone ? 'cell-nn-cd' : 'cell-nn-lk';
-                    else if (val === 'n') cellClass = isMainZone ? 'cell-n-cd' : 'cell-n-lk';
-                    else if (val === '—') cellClass = isMainZone ? 'cell-dash-cd' : 'cell-dash-lk';
-                } else {
-                    if (val === 'nn') cellClass = isMainZone ? 'cell-nn' : 'cell-nn-user';
-                    else if (val === 'n') cellClass = isMainZone ? 'cell-n' : 'cell-n-user';
-                    else if (val === '—') cellClass = isMainZone ? 'cell-dash' : 'cell-dash-user';
-                }
-
-                if (cellClass) {
+                if (val) {
+                    let cellClass;
+                    if (isDictMode) {
+                        if (val === 'nn') cellClass = isMainZone ? 'cell-nn-cd' : 'cell-nn-lk';
+                        else if (val === 'n') cellClass = isMainZone ? 'cell-n-cd' : 'cell-n-lk';
+                        else cellClass = isMainZone ? 'cell-dash-cd' : 'cell-dash-lk';
+                    } else {
+                        if (val === 'nn') cellClass = isMainZone ? 'cell-nn' : 'cell-nn-user';
+                        else if (val === 'n') cellClass = isMainZone ? 'cell-n' : 'cell-n-user';
+                        else cellClass = isMainZone ? 'cell-dash' : 'cell-dash-user';
+                    }
                     rows += `<td class="${cellClass}" title="${row.name} ↔ ${col.name}" style="cursor:pointer;" onclick="showLinkPopup('${row.name}','${col.name}','${val}')">${val}</td>`;
                 } else {
-                    // Empty cell: light tint per zone
-                    const emptyBg = isDictMode ? '#DBEAFE' : (isMainZone ? '#FEF9C3' : '#F8FAFC');
-                    rows += `<td style="background:${emptyBg};" title="${row.name} ↔ ${col.name}"></td>`;
+                    rows += `<td style="background:${isMainZone ? zoneMainEmpty : zoneCrossEmpty};" title="${row.name} ↔ ${col.name}"></td>`;
                 }
             }
         }
@@ -1635,27 +1548,6 @@ function renderDbDesigner() {
         <button onclick="openNewTableDialog()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">+ New Table</button>
     </div>`;
 
-    // Legend
-    const legendItems = isDictMode ? `
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#1D4ED8;"></div> nn = N:N (link table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#3B82F6;"></div> n = 1:N (sub table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#93C5FD;"></div> — = reference</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#64748B;"></div> nn (lookup)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> n (lookup)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> — (lookup)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#DBEAFE;border:1px solid #93C5FD;"></div> CD_ tables</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> Lookup tables</div>
-    ` : `
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#D97706;"></div> nn = N:N (link table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FBBF24;"></div> n = 1:N (sub table)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FDE68A;"></div> — = reference</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#64748B;"></div> nn (user)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#94A3B8;"></div> n (user)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#CBD5E1;"></div> — (user)</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#FEF9C3;border:1px solid #E5E7EB;"></div> SYS_ tables</div>
-        <div class="designer-legend-item"><div class="designer-legend-color" style="background:#F1F5F9;border:1px solid #E5E7EB;"></div> User tables</div>
-    `;
-
     return `<div class="designer" id="designerArea">
         <h1>Database Designer</h1>
         ${toggleHtml}
@@ -1668,6 +1560,34 @@ function renderDbDesigner() {
             </table>
         </div>
     </div>`;
+}
+
+// Drag & drop reordering for matrix columns/rows
+let _designerOrder = { cd: null, user: null };
+
+function handleColDrop(targetIdx) {
+    const sourceIdx = window._dragColIdx;
+    if (sourceIdx === undefined || sourceIdx === targetIdx) return;
+    reorderDesignerTables(sourceIdx, targetIdx);
+}
+function handleRowDrop(targetIdx) {
+    const sourceIdx = window._dragRowIdx;
+    if (sourceIdx === undefined || sourceIdx === targetIdx) return;
+    reorderDesignerTables(sourceIdx, targetIdx);
+}
+function reorderDesignerTables(from, to) {
+    const isDictMode = designerMode === 'dictionary';
+    const key = isDictMode ? 'cd' : 'user';
+    const tables = isDictMode ? getCdTables() : getDbTables();
+    
+    // Move item from index to new position
+    const item = tables.splice(from, 1)[0];
+    tables.splice(to, 0, item);
+    
+    // Store order for persistence within session
+    _designerOrder[key] = tables.map(t => t.name);
+    
+    renderContent();
 }
 
 function renderDashboard() {
@@ -1916,15 +1836,12 @@ function applySchema(schema) {
     updateCdTableTypes();
     updateUserTableTypes();
     
-    // Load cd_tables f_type map for entity/link/sub/lookup classification
+    // Load cd_tables f_type map for classification
     if (!window._cdTablesMap) {
         fetch(API + '/tables').then(r => r.ok ? r.json() : []).then(rows => {
             window._cdTablesMap = {};
-            for (const r of rows) {
-                window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
-            }
+            for (const r of rows) window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
             invalidateUserSchema();
-            console.log('cd_tables type map loaded:', Object.keys(window._cdTablesMap).length, 'entries');
         }).catch(() => {});
     }
 }
@@ -4155,21 +4072,7 @@ function renderDbStatistics() {
                 if (upper.startsWith('CD_LK_')) xsdFieldData[upper.replace('CD_','')] = xsdFieldData[upper];
             }
             
-            // Categorize tables
-            // For SYS/User: use f_type from cd_tables (1=entity, 2=lookup, 3=link, 4=subtable, 5=sys entity)
-            // For CD: use original name-pattern logic (which was working correctly)
-            let cdTablesMap = {};
-            try {
-                const tResp = await fetch(API + '/tables');
-                if (tResp.ok) {
-                    const tRows = await tResp.json();
-                    for (const r of tRows) {
-                        cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
-                    }
-                    window._cdTablesMap = cdTablesMap;
-                }
-            } catch(e) { console.warn('Could not load cd_tables types:', e.message); }
-            
+            // Categorize
             const cats = { cd:{entities:[],lookups:[],links:[],subtables:[]}, sys:{entities:[],lookups:[],links:[],subtables:[]}, user:{entities:[],lookups:[],links:[],subtables:[]} };
             for (const [tn, info] of Object.entries(schema)) {
                 const t = tn.toUpperCase();
@@ -4178,29 +4081,11 @@ function renderDbStatistics() {
                 const count = info.count || 0;
                 const base = t.replace(/^CD_|^SYS_/, '');
                 const item = {name:t, fields, count};
-                
-                if (zone === 'cd') {
-                    // CD tables: use original name-pattern logic (proven working)
-                    if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
-                    else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
-                    else if (base.includes('_')) cats[zone].subtables.push(item);
-                    else cats[zone].entities.push(item);
-                } else {
-                    // SYS/User: use f_type from cd_tables if available
-                    const fType = cdTablesMap[t];
-                    if (fType) {
-                        if (fType === 2) cats[zone].lookups.push(item);
-                        else if (fType === 3) cats[zone].links.push(item);
-                        else if (fType === 4) cats[zone].subtables.push(item);
-                        else cats[zone].entities.push(item);
-                    } else {
-                        // Fallback: same pattern as CD (proven working)
-                        if (base.startsWith('LK_')) cats[zone].lookups.push(item);
-                        else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
-                        else if (base.includes('_')) cats[zone].subtables.push(item);
-                        else cats[zone].entities.push(item);
-                    }
-                }
+                if (t.includes('$')) cats[zone].subtables.push(item);
+                else if (t.includes('_LK_') || base.startsWith('LK_')) cats[zone].lookups.push(item);
+                else if (base.split('_').length===2 && base.split('_')[0].length<=5 && base.split('_')[1].length<=5) cats[zone].links.push(item);
+                else if (base.includes('_')) cats[zone].subtables.push(item);
+                else cats[zone].entities.push(item);
             }
             
             function cardHtml(type, items, cardIcon, cardColor) {
