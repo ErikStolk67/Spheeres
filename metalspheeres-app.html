@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.5.3';
-    const MS_BUILD = '2026-03-01 11:30';
+    const MS_VERSION = 'v0.6.0';
+    const MS_BUILD = '2026-03-01 12:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1535,7 +1535,9 @@ function renderDbDesigner() {
     // Toggle button + action buttons
     let actionBtns = '';
     if (isDictMode) {
-        actionBtns = '<button onclick="rebuildDB()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">&#128295; Rebuild DB</button>' +
+        actionBtns = '<button onclick="backupDB()" style="padding:6px 14px;border-radius:6px;border:1px solid #6B7280;background:#F9FAFB;color:#374151;font-size:12px;font-weight:600;cursor:pointer;">💾 Backup</button>' +
+        '<button onclick="buildTables()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">🏗 Build Tables</button>' +
+        '<button onclick="rebuildDB()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">&#128295; Rebuild DB</button>' +
         '<button onclick="clearAll()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear All</button>' +
         '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
         '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML/ZIP</button>' +
@@ -3163,6 +3165,63 @@ function showImportReport(result) {
 }
 
 // Rebuild database - recreate all tables
+async function backupDB() {
+    showLoading('Creating backup...');
+    try {
+        const resp = await fetch(API + '/backup');
+        const blob = await resp.blob();
+        hideLoading();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cd_backup_' + new Date().toISOString().slice(0,10) + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch(err) {
+        hideLoading();
+        alert('Backup failed: ' + err.message);
+    }
+}
+
+async function buildTables() {
+    if (!confirm('This will create SYS_ and user tables in the database based on the dictionary definitions.\\n\\nRecommend: take a backup first!\\n\\nProceed?')) return;
+    showLoading('Building tables from dictionary...');
+    try {
+        const resp = await fetch(API + '/build-tables', { method: 'POST' });
+        const text = await resp.text();
+        hideLoading();
+        let result;
+        try { result = JSON.parse(text); } catch(e) {
+            showImportReport({ error: 'Server error: ' + text.substring(0, 200) });
+            return;
+        }
+        if (result.success) {
+            const details = (result.details || []).map(d => ({
+                table: d.table,
+                rows: d.status === 'created' ? d.fields : (d.added || 0),
+                total: d.fields || 0,
+                errors: d.status === 'error' ? 1 : 0,
+                lastError: d.error || (d.status === 'exists' && d.added > 0 ? d.added + ' columns added' : d.status)
+            }));
+            sessionStorage.removeItem('ms_schema');
+            invalidateCdSchema();
+            showImportReport({
+                success: true,
+                totalRows: result.created,
+                tablesProcessed: result.total,
+                details,
+                extra: 'Created: ' + result.created + ' | Already existed: ' + result.skipped + ' | Errors: ' + result.errored
+            });
+            loadSchemaFromDB().then(() => renderContent());
+        } else {
+            showImportReport({ error: result.error });
+        }
+    } catch(err) {
+        hideLoading();
+        showImportReport({ error: err.message });
+    }
+}
+
 async function rebuildDB() {
     showLoading('Rebuilding database...');
     try {

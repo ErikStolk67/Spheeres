@@ -1014,6 +1014,181 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
 
 const PORT = process.env.PORT || 3000;
 
+// ============================================================================
+// BACKUP - export all CD_ table data as JSON
+// ============================================================================
+app.get('/api/backup', async (req, res) => {
+    try {
+        const tablesRes = await pool.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'cd_%' ORDER BY table_name"
+        );
+        const backup = { timestamp: new Date().toISOString(), tables: {} };
+        for (const { table_name } of tablesRes.rows) {
+            try {
+                const { rows } = await pool.query(`SELECT * FROM "${table_name}"`);
+                backup.tables[table_name] = rows;
+            } catch(e) {
+                backup.tables[table_name] = { error: e.message };
+            }
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename=cd_backup_' + new Date().toISOString().slice(0,10) + '.json');
+        res.json(backup);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================================================
+// BUILD TABLES - create SYS_ and user tables from cd_tables + cd_fields
+// Reads table/field definitions from dictionary, creates PostgreSQL tables
+// ============================================================================
+app.post('/api/build-tables', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        // f_type mapping from cd_fields/cd_controls to PostgreSQL types
+        // f_type values: 1=integer, 2=string/text, 3=boolean, 4=datetime, 5=binary, 6=uuid
+        const pgTypeMap = {
+            1: 'integer',
+            2: 'text',
+            3: 'boolean',
+            4: 'timestamptz',
+            5: 'bytea',
+            6: 'uuid',
+        };
+        
+        // Get all tables from cd_tables
+        const tablesRes = await client.query(
+            'SELECT k_table, name, f_type FROM cd_tables ORDER BY sort'
+        );
+        
+        // Get all fields with their table assignments
+        const fieldsRes = await client.query(`
+            SELECT tf.k_tabl, tf.k_fiel, tf.k_seq, tf.main, f.name as field_name, f.f_type as field_type
+            FROM cd_tabl_fiel tf
+            JOIN cd_fields f ON tf.k_fiel = f.k_field
+            ORDER BY tf.k_tabl, tf.k_seq
+        `);
+        
+        // Group fields by table
+        const fieldsByTable = {};
+        for (const f of fieldsRes.rows) {
+            if (!fieldsByTable[f.k_tabl]) fieldsByTable[f.k_tabl] = [];
+            fieldsByTable[f.k_tabl].push(f);
+        }
+        
+        const results = [];
+        let created = 0, skipped = 0, errored = 0;
+        
+        await client.query('BEGIN');
+        
+        for (const table of tablesRes.rows) {
+            const tName = table.name.toLowerCase();
+            const fields = fieldsByTable[table.k_table] || [];
+            
+            // Skip CD_ tables (they already exist as dictionary)
+            if (tName.startsWith('cd_')) {
+                skipped++;
+                continue;
+            }
+            
+            // Check if table already exists
+            const exists = await client.query(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1", [tName]
+            );
+            
+            if (exists.rows.length > 0) {
+                // Table exists - add any missing columns
+                const existCols = await client.query(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [tName]
+                );
+                const existColNames = existCols.rows.map(r => r.column_name.toLowerCase());
+                
+                let added = 0;
+                for (const f of fields) {
+                    const colName = f.field_name.toLowerCase();
+                    if (!existColNames.includes(colName)) {
+                        const pgType = pgTypeMap[f.field_type] || 'text';
+                        try {
+                            await client.query('SAVEPOINT sp_col');
+                            await client.query(`ALTER TABLE "${tName}" ADD COLUMN "${colName}" ${pgType}`);
+                            await client.query('RELEASE SAVEPOINT sp_col');
+                            added++;
+                        } catch(e) {
+                            await client.query('ROLLBACK TO SAVEPOINT sp_col');
+                        }
+                    }
+                }
+                results.push({ table: table.name, status: 'exists', fields: fields.length, added });
+                skipped++;
+                continue;
+            }
+            
+            // Build CREATE TABLE statement
+            const colDefs = [];
+            const pkCols = [];
+            
+            for (const f of fields) {
+                const colName = f.field_name.toLowerCase();
+                const pgType = pgTypeMap[f.field_type] || 'text';
+                colDefs.push(`"${colName}" ${pgType}`);
+                
+                // K_ prefix = primary key candidate
+                if (f.main || (f.field_name.startsWith('K_') && f.k_seq <= 3)) {
+                    pkCols.push(`"${colName}"`);
+                }
+            }
+            
+            if (colDefs.length === 0) {
+                results.push({ table: table.name, status: 'skipped', reason: 'no fields' });
+                skipped++;
+                continue;
+            }
+            
+            // Add REPLICATIONID if not present
+            const hasRepId = fields.some(f => f.field_name.toUpperCase() === 'REPLICATIONID');
+            if (!hasRepId) {
+                colDefs.push('"replicationid" uuid DEFAULT gen_random_uuid()');
+            }
+            
+            let sql = `CREATE TABLE "${tName}" (\n  ${colDefs.join(',\n  ')}`;
+            if (pkCols.length > 0) {
+                sql += `,\n  PRIMARY KEY (${pkCols.join(', ')})`;
+            }
+            sql += '\n)';
+            
+            try {
+                await client.query('SAVEPOINT sp_tbl');
+                await client.query(sql);
+                await client.query('RELEASE SAVEPOINT sp_tbl');
+                results.push({ table: table.name, status: 'created', fields: fields.length, pk: pkCols.length });
+                created++;
+            } catch(e) {
+                await client.query('ROLLBACK TO SAVEPOINT sp_tbl');
+                results.push({ table: table.name, status: 'error', error: e.message });
+                errored++;
+            }
+        }
+        
+        await client.query('COMMIT');
+        
+        invalidateSchemaCache();
+        res.json({
+            success: true,
+            created,
+            skipped,
+            errored,
+            total: tablesRes.rows.length,
+            details: results
+        });
+    } catch(err) {
+        try { await client.query('ROLLBACK'); } catch(e) {}
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 
 // ============================================================================
 // SCHEMA XML IMPORT - imports Verspaning-style schema into CD_ tables
