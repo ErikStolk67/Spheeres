@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
     <script>
-    const MS_VERSION = 'v0.6.0';
-    const MS_BUILD = '2026-03-01 12:00';
+    const MS_VERSION = 'v0.6.1';
+    const MS_BUILD = '2026-03-01 12:30';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1166,145 +1166,129 @@ function renderDictionaryScreen(item, group) {
 // ============================================================================
 let designerMode = sessionStorage.getItem('ms_designerMode') || 'user';
 
-// USER DATABASE tables (SYS + entity)
-// Sub-tables for user database
-const userSubTables = {
-    "SYS_USERS": ["SYS_USER_ROLE","SYS_USER_RIGHT","SYS_USER_SESSION","SYS_USER_PREFERENCE","SYS_USER_COMPETENCE","SYS_USER_PLANNING","SYS_USER_SECURITY","SYS_USER_LOCK","SYS_USER_COMMAND","SYS_USER_QUEUE","SYS_USER_OBJECT","SYS_USER_TRANSPORT","SYS_USER_HISTORY","SYS_USER_LOG","SYS_USER_HOOK","SYS_USER_GLOBAL","SYS_USER_THING","SYS_USER_THESAURI","SYS_USER_CONTACT","SYS_USER_ACTION"],
-    "SYS_QUEUES": ["SYS_QUEUE_ITEM","SYS_QUEUE_LOG"],
-    "SYS_THESAURI": ["SYS_THESAURUS_ITEM","SYS_THESAURUS_RELATION"],
-    "SYS_SESSIONS": ["SYS_SESSION_LOG"],
-    "SYS_COMMANDS": ["SYS_COMMAND_PARAM"],
-    "SYS_COMPETENCES": ["SYS_COMPETENCE_LEVEL","SYS_COMPETENCE_SKILL","SYS_COMPETENCE_CERT"],
-    "SYS_PLANNING": ["SYS_PLANNING_ITEM"],
-    "SYS_HOOK": ["SYS_HOOK_EVENT","SYS_HOOK_LOG","SYS_HOOK_CONFIG"],
-    "ACTIONS": ["ACTION_PARAM","ACTION_LOG","ACTION_SCHEDULE","ACTION_RESULT"],
-    "CONTACTS": ["CONTACT_ADDRESS","CONTACT_PHONE","CONTACT_EMAIL","CONTACT_NOTE"],
-    "COMPANIES": ["COMPANY_ADDRESS","COMPANY_CONTACT","COMPANY_NOTE"],
-    "PROJECTS": ["PROJECT_MEMBER","PROJECT_PHASE","PROJECT_TASK"],
-    "CASES": ["CASE_NOTE","CASE_ATTACHMENT","CASE_HISTORY"],
-    "OPPORTUNITIES": ["OPPORTUNITY_LINE","OPPORTUNITY_NOTE","OPPORTUNITY_CONTACT"],
-    "AGENDA": ["AGENDA_ATTENDEE","AGENDA_REMINDER"],
-    "DOCUMENTS": ["DOCUMENT_VERSION","DOCUMENT_TAG","DOCUMENT_SHARE"],
-};
+// USER DATABASE tables (SYS + entity) - ALL derived from database schema
+// See buildUserSchema() in the dynamic schema section below
 
-const dbTables = [
-    // SYS tables (yellow)
-    { name: "SYS_LOGS",        type: "sys", icon: "scroll-text", cols: [4,0,2] },
-    { name: "SYS_GLOBALS",     type: "sys", icon: "globe", cols: [9,0,3] },
-    { name: "SYS_LOCKS",       type: "sys", icon: "lock", cols: [2,0,0] },
-    { name: "SYS_OBJECTS",     type: "sys", icon: "box", cols: [2,0,0] },
-    { name: "SYS_QUEUES",      type: "sys", icon: "list-ordered", cols: [11,0,2] },
-    { name: "SYS_RIGHTS",      type: "sys", icon: "shield", cols: [3,0,0] },
-    { name: "SYS_SECURITY",    type: "sys", icon: "shield-check", cols: [2,0,0] },
-    { name: "SYS_SESSIONS",    type: "sys", icon: "monitor", cols: [1,0,0] },
-    { name: "SYS_THINGS",      type: "sys", icon: "package", cols: [1,0,2] },
-    { name: "SYS_THESAURI",    type: "sys", icon: "book-open", cols: [12,0,3] },
-    { name: "SYS_TRANSPORTS",  type: "sys", icon: "truck", cols: [2,0,1] },
-    { name: "SYS_USERS",       type: "sys", icon: "users", cols: [6,0,3] },
-    { name: "SYS_COMMANDS",    type: "sys", icon: "terminal", cols: [9,0,2] },
-    { name: "SYS_COMPETENCES", type: "sys", icon: "award", cols: [4,0,3] },
-    { name: "SYS_PLANNING",    type: "sys", icon: "calendar", cols: [7,0,3] },
-    { name: "SYS_HOOK",        type: "sys", icon: "anchor", cols: [3,0,1] },
-    { name: "SYS_HISTORY",     type: "sys", icon: "history", cols: [1,0,0] },
-    // User tables (grey)
-    { name: "ACTIONS",         type: "user", icon: "zap", cols: [3,0,4] },
-    { name: "STATS",           type: "user", icon: "bar-chart-2", cols: [2,0,0] },
-    { name: "CONTACTS",        type: "user", icon: "user", cols: [5,0,2] },
-    { name: "COMPANIES",       type: "user", icon: "building-2", cols: [4,0,2] },
-    { name: "PROJECTS",        type: "user", icon: "folder-kanban", cols: [6,0,3] },
-    { name: "CASES",           type: "user", icon: "briefcase", cols: [8,0,3] },
-    { name: "OPPORTUNITIES",   type: "user", icon: "target", cols: [5,0,2] },
-    { name: "AGENDA",          type: "user", icon: "calendar-days", cols: [3,0,1] },
-    { name: "DOCUMENTS",       type: "user", icon: "file-text", cols: [7,0,2] },
-];
-
-// Set sub counts from userSubTables
-dbTables.forEach(t => {
-    const subs = userSubTables[t.name] || [];
-    if (subs.length) t.cols[1] = subs.length;
-});
-
-// Relationship matrix: relations[rowIndex][colIndex] = "nn" | "n" | "—" | ""
-// Based on the user's architecture diagram
-const relations = {};
-function R(row, col, val) {
-    if (!relations[row]) relations[row] = {};
-    relations[row][col] = val;
-}
-
-// SYS_GLOBALS relationships
-R("SYS_GLOBALS","SYS_LOCKS","nn");
-R("SYS_GLOBALS","SYS_TRANSPORTS","—");
-
-// SYS_OBJECTS relationships
-R("SYS_OBJECTS","SYS_QUEUES","nn");
-R("SYS_OBJECTS","SYS_USERS","n");
-
-// SYS_QUEUES relationships
-R("SYS_QUEUES","SYS_HISTORY","n");
-R("SYS_QUEUES","CONTACTS","n");
-R("SYS_QUEUES","OPPORTUNITIES","n");
-
-// SYS_THESAURI relationships
-R("SYS_THESAURI","SYS_THINGS","nn");
-R("SYS_THESAURI","ACTIONS","—");
-R("SYS_THESAURI","CONTACTS","n");
-R("SYS_THESAURI","COMPANIES","n");
-R("SYS_THESAURI","DOCUMENTS","n");
-
-// SYS_USERS relationships
-R("SYS_USERS","SYS_GLOBALS","n");
-R("SYS_USERS","SYS_OBJECTS","—");
-R("SYS_USERS","SYS_TRANSPORTS","nn");
-R("SYS_USERS","SYS_COMMANDS","—");
-R("SYS_USERS","SYS_COMPETENCES","n");
-R("SYS_USERS","SYS_PLANNING","n");
-R("SYS_USERS","ACTIONS","—");
-R("SYS_USERS","STATS","—");
-R("SYS_USERS","CONTACTS","—");
-R("SYS_USERS","COMPANIES","—");
-R("SYS_USERS","PROJECTS","—");
-R("SYS_USERS","CASES","—");
-R("SYS_USERS","OPPORTUNITIES","—");
-R("SYS_USERS","AGENDA","—");
-R("SYS_USERS","DOCUMENTS","—");
-
-// SYS_COMMANDS relationships
-R("SYS_COMMANDS","SYS_USERS","n");
-R("SYS_COMMANDS","ACTIONS","n");
-R("SYS_COMMANDS","DOCUMENTS","n");
-
-// SYS_COMPETENCES relationships
-R("SYS_COMPETENCES","SYS_USERS","—");
-R("SYS_COMPETENCES","SYS_PLANNING","n");
-R("SYS_COMPETENCES","CONTACTS","—");
-R("SYS_COMPETENCES","OPPORTUNITIES","—");
-
-// SYS_PLANNING relationships
-R("SYS_PLANNING","SYS_USERS","—");
-R("SYS_PLANNING","SYS_COMPETENCES","—");
-R("SYS_PLANNING","CASES","—");
-R("SYS_PLANNING","OPPORTUNITIES","n");
-
-// ACTIONS relationships
-R("ACTIONS","SYS_QUEUES","—");
-R("ACTIONS","SYS_USERS","n");
-R("ACTIONS","SYS_HISTORY","nn");
-R("ACTIONS","STATS","n");
-R("ACTIONS","CONTACTS","n");
-R("ACTIONS","COMPANIES","n");
-R("ACTIONS","PROJECTS","n");
-R("ACTIONS","CASES","n");
-R("ACTIONS","OPPORTUNITIES","n");
-R("ACTIONS","AGENDA","n");
-R("ACTIONS","DOCUMENTS","n");
+// Relationships for user/sys - now derived dynamically in buildUserSchema()
 
 // ============================================================================
 // DICTIONARY (CD_) tables - ALL derived from database schema
 // ============================================================================
 
-// Icon map for known entity names
-const cdIconMap = {
+// Icon map for known user/sys table names
+const userIconMap = {
+    'SYS_USERS':'users', 'SYS_LOGS':'scroll-text', 'SYS_GLOBALS':'globe', 'SYS_LOCKS':'lock',
+    'SYS_OBJECTS':'box', 'SYS_QUEUES':'list-ordered', 'SYS_RIGHTS':'shield', 'SYS_SECURITY':'shield-check',
+    'SYS_SESSIONS':'monitor', 'SYS_THINGS':'package', 'SYS_THESAURI':'book-open', 'SYS_TRANSPORTS':'truck',
+    'SYS_COMMANDS':'terminal', 'SYS_COMPETENCES':'award', 'SYS_PLANNING':'calendar', 'SYS_HOOK':'anchor',
+    'SYS_HOOKS':'anchor', 'SYS_HISTORY':'history',
+    'ACTIONS':'zap', 'CONTACTS':'user', 'COMPANIES':'building-2', 'PROJECTS':'folder-kanban',
+    'CASES':'briefcase', 'OPPORTUNITIES':'target', 'AGENDA':'calendar-days', 'DOCUMENTS':'file-text',
+    'MAILS':'mail', 'ORDERS':'shopping-cart', 'PRODUCTS':'package', 'SUPPLIERS':'truck',
+    'ARTICLES':'newspaper', 'LOCATIONS':'map-pin', 'TEMPLATES':'layout', 'QUERIES':'search',
+    'STATS':'bar-chart-2', 'ADDRESSES':'map',
+};
+
+// Build SYS/User table structures dynamically from xsdFieldData
+function buildUserSchema() {
+    const allTables = Object.keys(xsdFieldData)
+        .filter(t => !t.startsWith('CD_'))
+        .sort();
+    
+    const sysEntities = [];
+    const userEntities = [];
+    const subs = {};
+    const links = [];
+    
+    // Step 1: find entities (tables without $ or _ separators indicating sub/link)
+    // In user DB: subtables use $ separator (e.g. CONT$TESTSPREADSHEETSUBTABLE)
+    // or naming convention with parent prefix
+    for (const t of allTables) {
+        if (t.includes('$')) continue; // skip subtables with $ separator
+        if (t.startsWith('LK_')) continue; // skip user lookups
+        if (t.startsWith('SYS_')) {
+            sysEntities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
+        } else {
+            userEntities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+        }
+    }
+    
+    // Step 2: find subtables ($ separator)
+    for (const t of allTables) {
+        if (!t.includes('$')) continue;
+        const parts = t.split('$');
+        const parent = parts[0];
+        const parentEntity = [...sysEntities, ...userEntities].find(e => e.name === parent);
+        if (parentEntity) {
+            if (!subs[parent]) subs[parent] = [];
+            subs[parent].push(t);
+        }
+    }
+    
+    // Step 3: find user lookups
+    const lookups = allTables
+        .filter(t => t.startsWith('LK_'))
+        .map(t => ({ name: t, type: 'lk', icon: 'list' }));
+    
+    // Step 4: derive relations from F_ columns (foreign keys)
+    const rels = {};
+    function setRel(row, col, val) {
+        if (!rels[row]) rels[row] = {};
+        if (!rels[row][col]) rels[row][col] = val;
+    }
+    
+    // Check F_ columns in each table to find relationships
+    const schema = window._schemaFull || {};
+    const entityNames = [...sysEntities, ...userEntities].map(e => e.name);
+    
+    for (const entity of [...sysEntities, ...userEntities]) {
+        const info = schema[entity.name.toLowerCase()] || schema[entity.name];
+        if (!info || !info.columns) continue;
+        
+        for (const col of info.columns) {
+            const cn = col.name.toUpperCase();
+            if (!cn.startsWith('F_')) continue;
+            // Try to match F_XXXX to a table name
+            const ref = cn.replace('F_', '');
+            // Match against entity names
+            const target = entityNames.find(e => {
+                const eName = e.replace('SYS_', '');
+                return eName === ref || eName === ref + 'S' || eName + 'S' === ref || 
+                       eName.startsWith(ref) || ref.startsWith(eName.substring(0,4));
+            });
+            if (target && target !== entity.name) {
+                setRel(entity.name, target, '—');
+            }
+        }
+    }
+    
+    // Step 5: build table list with sub counts
+    const allEntities = [...sysEntities, ...userEntities];
+    const tableList = allEntities.map(e => {
+        const subCount = (subs[e.name] || []).length;
+        return { ...e, cols: ['—', subCount || '—', '—'] };
+    });
+    
+    return { entities: allEntities, lookups, subs, links, relations: rels, tableList };
+}
+
+// Cached result
+let _userSchema = null;
+function getUserSchema() {
+    if (!_userSchema || Object.keys(xsdFieldData).length === 0) {
+        _userSchema = buildUserSchema();
+    }
+    return _userSchema;
+}
+function invalidateUserSchema() { _userSchema = null; }
+
+// Backward-compatible accessors
+function getDbTables() { return getUserSchema().tableList; }
+function getUserRelations() { return getUserSchema().relations; }
+function getUserSubTables() { return getUserSchema().subs; }
+
+// ============================================================================
+// DICTIONARY (CD_) tables - ALL derived from database schema
     'DICTIONARIES':'book', 'DATABASES':'database', 'TABLES':'table', 'FIELDS':'columns',
     'CONTROLS':'settings', 'TYPES':'layers', 'LIFESTATUSES':'activity', 'FORMS':'layout',
     'ROLES':'shield', 'FOLDERS':'folder', 'FUNCTIONS':'code', 'CANVASES':'pen-tool',
@@ -1434,19 +1418,9 @@ function getCdLookupMap() {
     return map;
 }
 
-// Auto-generate reciprocal dashes for User: if A→B is "n", B→A gets "—"
-for (const row of Object.keys(relations)) {
-    for (const col of Object.keys(relations[row])) {
-        if (relations[row][col] === 'n' && (!relations[col] || !relations[col][row])) {
-            R(col, row, "—");
-        }
-    }
-}
-
-// Lookup mappings: which CD_LK_ tables belong to which entity (for Lookup Editor tree)
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
-    const tables = isDictMode ? getCdTables() : dbTables;
+    const tables = isDictMode ? getCdTables() : getDbTables();
     const rels = isDictMode ? getCdRelations() : relations;
 
     // Colors per mode
@@ -1827,7 +1801,9 @@ function applySchema(schema) {
     }
     window._schemaFull = schema;
     invalidateCdSchema();
+    invalidateUserSchema();
     updateCdTableTypes();
+    updateUserTableTypes();
 }
 
 
@@ -1996,19 +1972,19 @@ function lookupFields(name) {
 
 // Map table names to their table types
 const tableTypes = {};
-dbTables.forEach(t => {
-    // User tables without prefix are entities
-    tableTypes[t.name] = t.type === 'sys' ? 'sys' : 'entity';
-});
-tableTypes["STATS"] = 'lookup';
 // Add CD_ tables to tableTypes (will be populated after schema loads)
 function updateCdTableTypes() {
     const schema = getCdSchema();
     for (const e of schema.entities) tableTypes[e.name] = 'entity';
     for (const l of schema.lookups) tableTypes[l.name] = 'lookup';
 }
+function updateUserTableTypes() {
+    const schema = getUserSchema();
+    for (const e of schema.entities) tableTypes[e.name] = e.type === 'sys' ? 'sys' : 'entity';
+    for (const l of schema.lookups) tableTypes[l.name] = 'lookup';
+}
 // Run once at init, re-run after schema loads
-if (Object.keys(xsdFieldData).length > 0) updateCdTableTypes();
+if (Object.keys(xsdFieldData).length > 0) { updateCdTableTypes(); updateUserTableTypes(); }
 
 // ============================================================================
 // CUSTOM FIELDS STORAGE (in-memory per table)
@@ -2066,7 +2042,7 @@ async function loadFieldsFromDB(tableId) {
 // ============================================================================
 function showTablePopup(tableName) {
     // Find in user tables, CD main tables, or recognize as sub/link/lookup table
-    let table = dbTables.find(t => t.name === tableName) || getCdTables().find(t => t.name === tableName);
+    let table = getDbTables().find(t => t.name === tableName) || getCdTables().find(t => t.name === tableName);
     
     // If not found in main arrays, check if it's a known XSD table (sub, link, lookup)
     if (!table && xsdFieldData[tableName.toUpperCase()]) {
@@ -2076,7 +2052,8 @@ function showTablePopup(tableName) {
         table = { name: tableName, type: isSub ? 'sub' : (isLk ? 'lk' : 'cd'), icon: 'table' };
     }
     // Check user sub-tables
-    if (!table && Object.values(userSubTables).flat().includes(tableName)) {
+    const userSubs = getUserSubTables();
+    if (!table && Object.values(userSubs).flat().includes(tableName)) {
         table = { name: tableName, type: 'sub', icon: 'table' };
     }
     if (!table) return;
@@ -2473,7 +2450,7 @@ function openAddFieldPopup(tableName, tableId, typeBadge, color) {
 
     // Build lookup table options
     let lookupTableOpts = '<option value="">-- Select table --</option>';
-    for (const t of dbTables) {
+    for (const t of getDbTables()) {
         lookupTableOpts += '<option value="' + t.name + '">' + t.name + '</option>';
     }
 
@@ -3635,7 +3612,7 @@ function openSubDropdown(event, tableName) {
     const old = document.getElementById('subDropdown');
     if (old) old.remove();
 
-    const subs = getCdSubTables()[tableName] || userSubTables[tableName] || [];
+    const subs = getCdSubTables()[tableName] || (getUserSubTables()[tableName]) || [];
     if (subs.length === 0) return;
 
     const isCd = tableName.startsWith('CD_');
@@ -3709,15 +3686,11 @@ function createNewSubTable(parentTable) {
         subName = (parentTable.startsWith('SYS_') ? 'SYS_' : '') + prefix + '_' + name.toUpperCase().replace(/\s+/g,'_');
     }
 
-    // Add to appropriate sub-table map (will be auto-detected by getCdSubTables after schema reload)
-    const subMap = isCd ? {} : userSubTables;
-    if (!isCd) {
-        if (!subMap[parentTable]) subMap[parentTable] = [];
-        subMap[parentTable].push(subName);
-    }
+    // Sub-tables will be auto-detected after schema reload for both CD and user
+    // No need to manually track them anymore
 
     // Update sub count
-    const tableArr = isCd ? getCdTables() : dbTables;
+    const tableArr = isCd ? getCdTables() : getDbTables();
     const tbl = tableArr.find(t => t.name === parentTable);
     if (tbl) tbl.cols[1] = subMap[parentTable].length;
 
