@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.8';
+    const MS_VERSION = 'v0.7.9';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -248,7 +248,7 @@
         .matrix thead th:first-child { z-index: 4; left: 0; }
         .matrix tbody th { position: sticky; left: 0; z-index: 2; text-align: left; }
 
-        .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 120px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; vertical-align: bottom; text-align: left; }
+        .matrix .col-header { writing-mode: vertical-lr; transform: rotate(180deg); padding: 8px 4px; height: 150px; min-width: 32px; font-size: 10px; letter-spacing: 0.02em; vertical-align: bottom; text-align: left; }
         .matrix .row-header { padding: 4px 10px; min-width: 140px; font-size: 11px; }
         .matrix .row-header .row-icon { display: inline-flex; align-items: center; justify-content: center; margin-right: 6px; width: 18px; height: 18px; vertical-align: middle; }
         .matrix .row-header .row-icon svg { width: 14px; height: 14px; }
@@ -1346,13 +1346,24 @@ function buildCdSchema() {
     }
     
     // Step 2: build prefix map from entities
+    // Sort entities by name length so shorter names (DICTIONARIES) get priority over longer (DICTIONARYCOMPONENTS)
     const prefixMap = {}; // FIEL -> CD_FIELDS, CANV -> CD_CANVASES, etc.
-    for (const e of entities) {
+    const sortedEntities = [...entities].sort((a, b) => a.name.length - b.name.length);
+    for (const e of sortedEntities) {
         const base = e.name.replace('CD_', '');
-        prefixMap[base.substring(0, 4)] = e.name;
-        // Also try shorter prefixes for names like CD_DICTIONARYCOMPONENTS -> DICT
-        if (base.length > 4) prefixMap[base.substring(0, 3)] = e.name;
+        const p4 = base.substring(0, 4);
+        const p3 = base.substring(0, 3);
+        // Only set prefix if not already claimed by a shorter-named entity
+        if (!prefixMap[p4]) prefixMap[p4] = e.name;
+        if (base.length > 4 && !prefixMap[p3]) prefixMap[p3] = e.name;
+        // Also add full base as prefix for exact matching
+        prefixMap[base] = e.name;
     }
+    // Add common abbreviations used in link table names
+    prefixMap['CNTR'] = prefixMap['CONT'] || null; // CD_FIEL_CNTR -> CONTROLS
+    prefixMap['DICO'] = prefixMap['DICT'] || null; // CD_DICO_DICO -> DICTIONARIES
+    prefixMap['DATA'] = prefixMap['DATA'] || (prefixMap['DATAB'] ? prefixMap['DATAB'] : null);
+    if (!prefixMap['DATA']) prefixMap['DATA'] = entities.find(e => e.name === 'CD_DATABASES')?.name || null;
     
     // Step 3: classify remaining tables as subs or links
     for (const t of allCd) {
@@ -1478,10 +1489,8 @@ function renderDbDesigner() {
 
     for (let i = 0; i < tables.length; i++) {
         const t = tables[i];
-        const isMain = isDictMode ? (t.type === 'cd') : (t.type === 'sys');
-        const hdrBg = isDictMode ? '#DBEAFE' : (isMain ? '#FEF9C3' : '#F1F5F9');
         colHeaders += `<th class="col-header" data-col-idx="${i}" 
-            style="background:${hdrBg};cursor:pointer;vertical-align:bottom;text-align:left;"
+            style="background:#F8FAFC;cursor:pointer;vertical-align:bottom;text-align:left;"
             onclick="if(!window._wasDragging)showTablePopup('${t.name}')">${t.name}</th>`;
     }
 
@@ -1491,9 +1500,9 @@ function renderDbDesigner() {
         const row = tables[i];
 
         rows += `<tr>`;
-        // Row header - drag source for reordering (columns follow)
+        // Row header - light background (not colored like matrix cells)
         const isMainRow = isDictMode ? (row.type === 'cd') : (row.type === 'sys');
-        const rowBg = isDictMode ? '#EFF6FF' : (isMainRow ? '#FFFEF5' : '#FAFBFC');
+        const rowBg = '#FAFBFC';
         rows += `<th class="row-header" draggable="true" data-row-idx="${i}"
             style="background:${rowBg};cursor:grab;"
             ondragstart="window._dragRowIdx=${i};event.dataTransfer.setData('text/plain','row-${i}');event.dataTransfer.effectAllowed='move';"
@@ -1502,7 +1511,7 @@ function renderDbDesigner() {
             ondrop="this.style.borderBottom='';handleRowDrop(${i});event.preventDefault();event.stopPropagation();"
             onclick="if(!window._wasDragging)showTablePopup('${row.name}')"><span class="row-icon"><i data-lucide="${row.icon}"></i></span>${row.name}</th>`;
 
-        // Meta columns (Type, Sub, Screens) - same background as row
+        // Meta columns (Type, Sub, Screens) - same light background
         for (let m = 0; m < 3; m++) {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
@@ -1899,25 +1908,22 @@ function applySchema(schema) {
     updateCdTableTypes();
     updateUserTableTypes();
     
-    // Load cd_tables f_type map for classification
-    if (!window._cdTablesMap) {
-        fetch(API + '/tables').then(r => r.ok ? r.json() : []).then(rows => {
-            window._cdTablesMap = {};
-            window._cdTablesSortOrder = {};
-            for (const r of rows) {
-                window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
-                window._cdTablesSortOrder[r.name.toUpperCase()] = r.sort || 9999;
-            }
-            invalidateCdSchema();
-            invalidateUserSchema();
-        }).catch(() => {});
-        // Also load type counts per entity
-        fetch(API + '/types/counts').then(r => r.ok ? r.json() : {}).then(counts => {
-            window._typeCounts = counts;
-            invalidateCdSchema();
-            invalidateUserSchema();
-        }).catch(() => {});
-    }
+    // Load cd_tables data (sort order, f_type, type counts) - ALWAYS reload
+    fetch(API + '/tables').then(r => r.ok ? r.json() : []).then(rows => {
+        window._cdTablesMap = {};
+        window._cdTablesSortOrder = {};
+        for (const r of rows) {
+            window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
+            window._cdTablesSortOrder[r.name.toUpperCase()] = typeof r.sort === 'number' ? r.sort : 9999;
+        }
+        // Also load type counts
+        return fetch(API + '/types/counts').then(r2 => r2.ok ? r2.json() : {});
+    }).then(counts => {
+        window._typeCounts = counts || {};
+        invalidateCdSchema();
+        invalidateUserSchema();
+        renderContent();
+    }).catch(e => console.warn('tables/types load:', e.message));
 }
 
 
