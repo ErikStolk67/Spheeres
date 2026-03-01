@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.6.3';
+    const MS_VERSION = 'v0.6.4';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1197,12 +1197,9 @@ function buildUserSchema() {
     // Combine tables from xsdFieldData AND live schema (_schemaFull)
     const tableSet = new Set();
     
-    // From xsdFieldData (XSD-imported metadata)
     for (const t of Object.keys(xsdFieldData)) {
         if (!t.startsWith('CD_')) tableSet.add(t.toUpperCase());
     }
-    
-    // From live PostgreSQL schema
     const schema = window._schemaFull || {};
     for (const t of Object.keys(schema)) {
         const upper = t.toUpperCase();
@@ -1211,73 +1208,136 @@ function buildUserSchema() {
     
     const allTables = [...tableSet].sort();
     
-    const sysEntities = [];
-    const userEntities = [];
-    const subs = {};
-    const links = [];
-    const lookups = [];
+    const entities = [];    // Main entities (no $, no LK_, not a link table)
+    const lookups = [];     // LK_* tables
+    const subs = {};        // Tables with $ separator
+    const links = [];       // Link tables: ENT1_ENT2 or SYS_ENT1_ENT2
     
-    // Step 1: classify all tables (same pattern as buildCdSchema)
+    // Step 1: find entities and lookups (skip $ subtables, skip LK_)
+    const candidateEntities = [];
     for (const t of allTables) {
-        if (t.includes('$')) continue; // subtables handled in step 2
+        if (t.includes('$')) continue;
         if (t.startsWith('LK_') || t.startsWith('SYS_LK_')) {
             lookups.push({ name: t, type: 'lk', icon: 'list' });
-        } else if (t.startsWith('SYS_')) {
-            sysEntities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
         } else {
-            userEntities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+            candidateEntities.push(t);
         }
     }
     
-    // Step 2: find subtables ($ separator)
+    // Step 2: build entity name set — entities are tables whose name doesn't 
+    // combine two other entity names with _ separator
+    // First pass: collect all potential entity names
+    const entityNames = new Set();
+    for (const t of candidateEntities) {
+        // SYS_ entities: strip SYS_ prefix for matching
+        // User entities: use full name
+        entityNames.add(t);
+    }
+    
+    // Step 3: detect link tables by checking if a table name = ENT1_ENT2 
+    // where both ENT1 and ENT2 are entity names.
+    // For SYS_ tables: SYS_ENT1_ENT2 where ENT1 and ENT2 match entities
+    // Build prefix map from candidate entities (like CD does with 4-char prefixes)
+    const prefixMap = {};
+    for (const t of candidateEntities) {
+        const base = t.startsWith('SYS_') ? t.replace('SYS_', '') : t;
+        // Map full name
+        prefixMap[base] = t;
+        // Map 4-char prefix
+        if (base.length >= 4) prefixMap[base.substring(0, 4)] = t;
+        // Map 3-char prefix for longer names
+        if (base.length > 4) prefixMap[base.substring(0, 3)] = t;
+    }
+    
+    const linkTableNames = new Set();
+    
+    for (const t of candidateEntities) {
+        // Strip SYS_ if present to get the base for splitting
+        const isSys = t.startsWith('SYS_');
+        const base = isSys ? t.replace('SYS_', '') : t;
+        
+        if (!base.includes('_')) continue; // no _ means not a link table
+        
+        // Try splitting at each _ position to find ENT1_ENT2
+        const parts = base.split('_');
+        let foundLink = false;
+        
+        for (let i = 1; i < parts.length; i++) {
+            const firstPart = parts.slice(0, i).join('_');
+            const secondPart = parts.slice(i).join('_');
+            
+            // Match against prefixes (same logic as CD)
+            const parent1 = prefixMap[firstPart] || prefixMap[firstPart.substring(0, 4)] || prefixMap[firstPart.substring(0, 3)];
+            const parent2 = prefixMap[secondPart] || prefixMap[secondPart.substring(0, 4)] || prefixMap[secondPart.substring(0, 3)];
+            
+            if (parent1 && parent2 && parent1 !== t && parent2 !== t) {
+                if (parent1 === parent2) {
+                    // Self-link
+                    links.push({ name: t, from: parent1, to: parent1 });
+                } else {
+                    // Link table: from=ENT1 (row), to=ENT2 (column)
+                    links.push({ name: t, from: parent1, to: parent2 });
+                }
+                linkTableNames.add(t);
+                foundLink = true;
+                break;
+            }
+        }
+        
+        // If not a link, check if it's a sub table
+        if (!foundLink) {
+            const firstPart = parts[0];
+            const parent = prefixMap[firstPart] || prefixMap[firstPart.substring(0, 4)] || prefixMap[firstPart.substring(0, 3)];
+            if (parent && parent !== t) {
+                if (!subs[parent]) subs[parent] = [];
+                subs[parent].push(t);
+                linkTableNames.add(t); // exclude from entities
+            }
+        }
+    }
+    
+    // Step 4: find $ subtables
     for (const t of allTables) {
         if (!t.includes('$')) continue;
         const parent = t.split('$')[0];
-        const parentEntity = [...sysEntities, ...userEntities].find(e => e.name === parent);
-        if (parentEntity) {
+        if (entityNames.has(parent)) {
             if (!subs[parent]) subs[parent] = [];
             subs[parent].push(t);
         }
     }
     
-    // Step 3: derive relations from F_ columns (like CD uses link tables)
+    // Step 5: entities = candidates that are NOT link tables and NOT sub tables
+    for (const t of candidateEntities) {
+        if (linkTableNames.has(t)) continue;
+        if (t.startsWith('SYS_')) {
+            entities.push({ name: t, type: 'sys', icon: userIconMap[t] || 'server' });
+        } else {
+            entities.push({ name: t, type: 'user', icon: userIconMap[t] || 'table' });
+        }
+    }
+    
+    // Step 6: derive relations from links (identical to CD pattern)
     const rels = {};
     function setRel(row, col, val) {
         if (!rels[row]) rels[row] = {};
         if (!rels[row][col]) rels[row][col] = val;
     }
-    
-    const entityNames = [...sysEntities, ...userEntities].map(e => e.name);
-    
-    for (const entity of [...sysEntities, ...userEntities]) {
-        const info = schema[entity.name.toLowerCase()] || schema[entity.name];
-        if (!info || !info.columns) continue;
-        
-        for (const col of info.columns) {
-            const cn = col.name.toUpperCase();
-            if (!cn.startsWith('F_')) continue;
-            const ref = cn.replace('F_', '');
-            const target = entityNames.find(e => {
-                const eName = e.replace('SYS_', '');
-                return eName === ref || eName === ref + 'S' || eName + 'S' === ref || 
-                       eName.startsWith(ref) || ref.startsWith(eName.substring(0,4));
-            });
-            if (target && target !== entity.name) {
-                setRel(entity.name, target, '—');
-            }
+    for (const link of links) {
+        if (link.from === link.to) {
+            setRel(link.from, link.to, 'nn');
+        } else {
+            setRel(link.from, link.to, 'n');
+            setRel(link.to, link.from, '—');
         }
     }
     
-    // Step 4: build tableList — ONLY entities on axes (identical to CD pattern)
-    // SYS entities first (like CD_ entities), then user entities (like CD lookups)
-    const allEntities = [...sysEntities, ...userEntities];
-    const tableList = allEntities.map(e => {
+    // Step 7: build tableList — ONLY entities on axes
+    const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         return { ...e, cols: ['—', subCount || '—', '—'] };
     });
     
-    return { entities: allEntities, lookups, subs, links, relations: rels, tableList,
-             counts: { sys: sysEntities.length, user: userEntities.length, lookups: lookups.length, subs: Object.values(subs).flat().length, total: allEntities.length } };
+    return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
 
 // Cached result
@@ -1430,32 +1490,11 @@ function getCdLookupMap() {
     return map;
 }
 
-// Designer search for User mode (no filter bar, just search when too many tables)
-let userDesignerSearch = '';
-
 function renderDbDesigner() {
     const isDictMode = designerMode === 'dictionary';
     
-    let tables = isDictMode ? getCdTables() : getDbTables();
+    const tables = isDictMode ? getCdTables() : getDbTables();
     const rels = isDictMode ? getCdRelations() : getUserRelations();
-    
-    // For User mode: apply search and cap to prevent browser crash
-    let searchHtml = '';
-    if (!isDictMode) {
-        const search = userDesignerSearch.toLowerCase();
-        if (search) {
-            tables = tables.filter(t => t.name.toLowerCase().includes(search));
-        }
-        const MAX_MATRIX = 80;
-        const total = tables.length;
-        if (total > MAX_MATRIX) tables = tables.slice(0, MAX_MATRIX);
-        searchHtml = `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-            <input type="text" placeholder="Search ${total} tables..." value="${userDesignerSearch}" 
-                style="padding:5px 10px;border-radius:6px;border:1px solid #D1D5DB;font-size:12px;width:220px;"
-                oninput="userDesignerSearch=this.value;clearTimeout(window._dsTO);window._dsTO=setTimeout(()=>renderContent(),300);">
-            ${total > tables.length ? '<span style="color:#DC2626;font-size:11px;">Showing ' + tables.length + ' of ' + total + '</span>' : '<span style="color:#64748B;font-size:11px;">' + tables.length + ' tables</span>'}
-        </div>`;
-    }
 
     // Colors per mode
     const mainBg = isDictMode ? '#DBEAFE' : '#FEF9C3';      // blue vs yellow headers
@@ -1583,7 +1622,6 @@ function renderDbDesigner() {
     return `<div class="designer" id="designerArea">
         <h1>Database Designer</h1>
         ${toggleHtml}
-        ${searchHtml}
 
         <div class="designer-legend" style="display:flex;gap:12px;flex-wrap:wrap;margin:8px 0;font-size:11px;">
             ${legendItems}
