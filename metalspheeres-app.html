@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.2';
+    const MS_VERSION = 'v0.7.3';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1276,13 +1276,14 @@ function buildUserSchema() {
         else { setRel(link.from, link.to, 'n'); setRel(link.to, link.from, '—'); }
     }
 
-    // Step 6: tableList — entities only
+    // Step 6: tableList — entities only, sorted by sort_order (SYS_ first)
+    const sortOrder = window._cdTablesSortOrder || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const fieldData = xsdFieldData[e.name] || '';
         const fieldCount = fieldData ? fieldData.split(',').filter(f => f.trim()).length : 0;
-        return { ...e, cols: [fieldCount || '—', subCount || '—', '—'] };
-    });
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [fieldCount || '—', subCount || '—', '—'] };
+    }).sort((a, b) => a.sortOrder - b.sortOrder);
 
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
@@ -1384,13 +1385,14 @@ function buildCdSchema() {
         }
     }
     
-    // Step 5: build table list with sub/type counts for matrix
+    // Step 5: build table list with sub/type counts for matrix, sorted by sort_order
+    const sortOrder = window._cdTablesSortOrder || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const fieldData = xsdFieldData[e.name] || '';
         const fieldCount = fieldData ? fieldData.split(',').filter(f => f.trim()).length : 0;
-        return { ...e, cols: [fieldCount || '—', subCount || '—', '—'] };
-    });
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [fieldCount || '—', subCount || '—', '—'] };
+    }).sort((a, b) => a.sortOrder - b.sortOrder);
     
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
 }
@@ -1581,15 +1583,28 @@ function handleRowDrop(targetIdx) {
 }
 function reorderDesignerTables(from, to) {
     const isDictMode = designerMode === 'dictionary';
-    const key = isDictMode ? 'cd' : 'user';
     const tables = isDictMode ? getCdTables() : getDbTables();
     
     // Move item from index to new position
     const item = tables.splice(from, 1)[0];
     tables.splice(to, 0, item);
     
-    // Store order for persistence within session
-    _designerOrder[key] = tables.map(t => t.name);
+    // Update sort_order in memory and persist to server
+    const order = [];
+    for (let i = 0; i < tables.length; i++) {
+        tables[i].sortOrder = i + 1;
+        if (window._cdTablesSortOrder) window._cdTablesSortOrder[tables[i].name] = i + 1;
+        order.push({ name: tables[i].name, sort_order: i + 1 });
+    }
+    
+    // Save to cd_tables via API
+    fetch(API + '/tables/sort', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order })
+    }).then(r => r.json()).then(d => {
+        if (d.error) console.error('Sort save failed:', d.error);
+    }).catch(e => console.error('Sort save failed:', e.message));
     
     renderContent();
 }
@@ -1844,7 +1859,12 @@ function applySchema(schema) {
     if (!window._cdTablesMap) {
         fetch(API + '/tables').then(r => r.ok ? r.json() : []).then(rows => {
             window._cdTablesMap = {};
-            for (const r of rows) window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
+            window._cdTablesSortOrder = {};
+            for (const r of rows) {
+                window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
+                window._cdTablesSortOrder[r.name.toUpperCase()] = r.sort_order || 9999;
+            }
+            invalidateCdSchema();
             invalidateUserSchema();
         }).catch(() => {});
     }

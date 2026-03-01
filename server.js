@@ -123,6 +123,33 @@ app.get('/api/tables', async (req, res) => {
     res.json(rows);
 });
 
+// Update sort_order for multiple tables at once (after drag & drop reorder)
+app.put('/api/tables/sort', express.json(), async (req, res) => {
+    const { order } = req.body; // array of { name, sort_order }
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'order array required' });
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            for (const item of order) {
+                await client.query(
+                    'UPDATE cd_tables SET sort_order = $1, changedate = now() WHERE UPPER(name) = UPPER($2)',
+                    [item.sort_order, item.name]
+                );
+            }
+            await client.query('COMMIT');
+            res.json({ ok: true, updated: order.length });
+        } catch(e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/tables/:id/fields', async (req, res) => {
     const { rows } = await pool.query(
         'SELECT * FROM cd_fields WHERE k_table = $1 ORDER BY sort_order', [req.params.id]
