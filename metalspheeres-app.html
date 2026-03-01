@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.7.3';
+    const MS_VERSION = 'v0.7.4';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -1278,11 +1278,11 @@ function buildUserSchema() {
 
     // Step 6: tableList — entities only, sorted by sort_order (SYS_ first)
     const sortOrder = window._cdTablesSortOrder || {};
+    const typeCounts = window._typeCounts || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
-        const fieldData = xsdFieldData[e.name] || '';
-        const fieldCount = fieldData ? fieldData.split(',').filter(f => f.trim()).length : 0;
-        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [fieldCount || '—', subCount || '—', '—'] };
+        const typeCount = typeCounts[e.name] || 0;
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
     }).sort((a, b) => a.sortOrder - b.sortOrder);
 
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
@@ -1316,9 +1316,18 @@ const cdIconMap = {
     'DICTIONARYCOMPARISONS':'git-compare'
 };
 
-// Build all CD_ table structures dynamically from xsdFieldData
+// Build all CD_ table structures dynamically from xsdFieldData + live schema
 function buildCdSchema() {
-    const allCd = Object.keys(xsdFieldData).filter(t => t.startsWith('CD_')).sort();
+    const cdSet = new Set();
+    for (const t of Object.keys(xsdFieldData)) {
+        if (t.startsWith('CD_')) cdSet.add(t);
+    }
+    const schema = window._schemaFull || {};
+    for (const t of Object.keys(schema)) {
+        const upper = t.toUpperCase();
+        if (upper.startsWith('CD_')) cdSet.add(upper);
+    }
+    const allCd = [...cdSet].sort();
     
     const entities = [];   // CD_XXXX (no underscore in base)
     const lookups = [];    // CD_LK_*
@@ -1387,11 +1396,11 @@ function buildCdSchema() {
     
     // Step 5: build table list with sub/type counts for matrix, sorted by sort_order
     const sortOrder = window._cdTablesSortOrder || {};
+    const typeCounts = window._typeCounts || {};
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
-        const fieldData = xsdFieldData[e.name] || '';
-        const fieldCount = fieldData ? fieldData.split(',').filter(f => f.trim()).length : 0;
-        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [fieldCount || '—', subCount || '—', '—'] };
+        const typeCount = typeCounts[e.name] || 0;
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
     }).sort((a, b) => a.sortOrder - b.sortOrder);
     
     return { entities, lookups, subs, links, relations: rels, tableList, prefixMap };
@@ -1864,6 +1873,12 @@ function applySchema(schema) {
                 window._cdTablesMap[r.name.toUpperCase()] = r.f_type || 1;
                 window._cdTablesSortOrder[r.name.toUpperCase()] = r.sort_order || 9999;
             }
+            invalidateCdSchema();
+            invalidateUserSchema();
+        }).catch(() => {});
+        // Also load type counts per entity
+        fetch(API + '/types/counts').then(r => r.ok ? r.json() : {}).then(counts => {
+            window._typeCounts = counts;
             invalidateCdSchema();
             invalidateUserSchema();
         }).catch(() => {});

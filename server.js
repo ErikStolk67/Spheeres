@@ -239,6 +239,20 @@ app.get('/api/tables/:id/types', async (req, res) => {
     res.json(rows);
 });
 
+// Bulk type counts per table (for designer Type column)
+app.get('/api/types/counts', async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            'SELECT t.name, COUNT(ty.k_type) as type_count FROM cd_tables t LEFT JOIN cd_types ty ON ty.k_table = t.k_table GROUP BY t.name ORDER BY t.name'
+        );
+        const counts = {};
+        for (const r of rows) counts[r.name.toUpperCase()] = parseInt(r.type_count) || 0;
+        res.json(counts);
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/tables/:id/types', async (req, res) => {
     const { name } = req.body;
     try {

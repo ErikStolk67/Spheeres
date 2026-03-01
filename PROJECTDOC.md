@@ -114,7 +114,7 @@ The designer renders a **cross-matrix** where:
 
 | Column | Content | Notes |
 |--------|---------|-------|
-| Type   | Number of valid types for this entity | Clickable → opens types editor |
+| Type   | Number of types for this entity (from cd_types table) | Clickable → opens types editor |
 | Sub    | Number of subtables | Clickable → opens sub dropdown |
 | Screens| Number of screens | Display only |
 
