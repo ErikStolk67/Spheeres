@@ -9,8 +9,8 @@ Single-page app: one HTML file + Node.js backend.
 
 | Item | Value |
 |------|-------|
-| Frontend | `metalspheeres-app.html` (~4400 lines, HTML + CSS + JS) |
-| Backend | `server.js` (~1500 lines, Node.js/Express) |
+| Frontend | `metalspheeres-app.html` (~5400 lines, HTML + CSS + JS) |
+| Backend | `server.js` (~1550 lines, Node.js/Express) |
 | Database | PostgreSQL on Neon (cloud) |
 | Hosting | Render.com free tier, auto-deploy from GitHub `main` |
 | URL | https://spheeres.onrender.com |
@@ -286,8 +286,11 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 | Endpoint | Method | Returns |
 |----------|--------|---------|
 | `/api/stats/counts` | GET | Record counts per table |
-| `/api/raw/:table` | GET | Raw table data |
+| `/api/raw/:table?limit=&offset=&search=` | GET | Raw table data, paginated. Search queries ALL text/varchar columns with ILIKE |
 | `/api/data/:table` | POST | Insert/update data |
+| `/api/types/counts` | GET | COUNT(DISTINCT f_type) in actual table data (not cd_types) |
+| `/api/tables/sort/init` | POST | Fill NULL sort values in cd_tables with contiguous numbers |
+| `/api/backup` | GET | Export all CD_ table data as JSON |
 
 ### 5.3 Admin
 
@@ -326,7 +329,16 @@ The import processes Spheeres XSD files and:
 | `renderDbStatistics()` | Renders statistics cards with table counts |
 | `applySchema()` | Applies loaded schema data, fires table/type fetches, triggers cache invalidation |
 | `loadSchemaFromDB()` | Entry point: loads from sessionStorage cache, then fetches fresh from API |
-| `handleRowDrop()` | Drag & drop handler: reorders entities, saves sort to server |
+| `handleColDrop()` | Drag & drop handler: reorders columns within block, saves contiguous sort |
+| `renderFormDesigner()` | Form Designer screen with toolbox, preview, tabs |
+| `fdRenderToolbox()` | Builds toolbox: subject fields, subtables, linked entities |
+| `fdRenderPreview()` | Builds form preview: toolbar, header area, tabs |
+| `renderLookupEditor()` | Lookup Editor with categorized tree |
+| `getCdLookupMap()` | Builds lookup tree: entities→lookups, sorted by zone |
+| `showRawData(tableName)` | Raw data popup with pagination (50/page) |
+| `openSearchScreen(table, cb)` | Record search overlay for a specific table |
+| `openEntitySearch()` | Entity/table name search overlay |
+| `openGlobalSearch()` | Context-aware: routes to correct search per active designer |
 
 ### 6.3 Startup Sequence
 
@@ -372,6 +384,39 @@ Categorizes ALL tables (not just entities) into zones and types.
 
 Statistics cards sort **alphabetically** within each category.
 
+**Statistics card interactions:**
+- Click table name → alert "Klik op Records of Fields"
+- Click record count → `showRawData()` popup with paginated data (50/page)
+- Click field count → `showTablePopup()` with field definitions
+
+**Type column:** Shows `COUNT(DISTINCT f_type)` from the actual table data (not cd_types). Only counts tables that have an f_type column.
+
+### 7.1 Raw Data Popup
+
+`showRawData(tableName)` opens a paginated data viewer:
+- 50 records per page
+- Clickable page numbers (1 2 3 … 178 179 180)
+- First/prev/next/last buttons
+- Sticky header row
+- NULL values shown in light gray
+- Total record count in title
+
+### 7.2 Lookup Editor
+
+Tree structure sorted in 8 categories:
+1. CD Entities → their LK_ lookups
+2. CD Subtables → their LK_ lookups
+3. SYS Entities → their LK_ lookups
+4. SYS Subtables → their LK_ lookups
+5. User Entities → their LK_ lookups
+6. User Subtables → their LK_ lookups
+7. Connected Lookups — LK_ tables with F_ columns pointing to other LK_ tables
+8. Unrelated — LK_ tables not referenced by any non-lookup table
+
+Only **LK_ tables** appear as children. Entities/subs/links never appear as children.
+
+`getCdLookupMap()` scans ALL tables (not just CD) for F_ columns and matches to LK_ tables.
+
 ---
 
 ## 8. CSS Classes & Styling Details
@@ -396,10 +441,12 @@ All matrix cells have `border-right: 2px solid #fff; border-bottom: 2px solid #f
 
 ### 8.3 Icons
 
-- Uses Lucide icons v0.263.1 (CDN)
-- `cdIconMap`: maps CD entity base names to icons (e.g. 'FIELDS':'list', 'TABLES':'grid')
-- `userIconMap`: maps SYS/User entity names to icons (e.g. 'SYS_USERS':'users')
+- **Lucide** icons v0.263.1 (CDN) — used for sidebar, entity icons, toolbars
+- **FontAwesome** 6.5.1 (CDN) — used for search screen, form designer buttons
+- `cdIconMap`: maps CD entity base names to Lucide icons (e.g. 'FIELDS':'list')
+- `userIconMap`: maps SYS/User entity names to Lucide icons (e.g. 'SYS_USERS':'users')
 - Fallback stub if Lucide CDN fails
+- Icon viewer pages in Dictionary menu: Lucide Icons + FontAwesome Icons (click to copy)
 
 ### 8.4 Designer Toggle
 
@@ -419,6 +466,42 @@ All matrix cells have `border-right: 2px solid #fff; border-bottom: 2px solid #f
 | Dictionary Screen | `renderDictionaryScreen(item, group)` | Click CD_ item in sidebar |
 | Entity Screen | `renderEntityScreen(item, group)` | Click entity item in sidebar |
 | Entity Popup | `showTablePopup(tableName)` | Click entity name in matrix |
+| Raw Data Popup | `showRawData(tableName)` | Click record count in statistics |
+| Form Designer | `renderFormDesigner()` | Click "Form Designer" menu item |
+| Lookup Editor | `renderLookupEditor()` | Click "Lookup Editor" menu item |
+| Lucide Icons | `renderLucideIcons()` | Click "Lucide Icons" menu item |
+| FontAwesome Icons | `renderFontAwesomeIcons()` | Click "FontAwesome Icons" menu item |
+| Search Screen | `openSearchScreen(table, callback)` | Click search bar on any screen |
+| Entity Search | `openEntitySearch()` | ⌘K / Ctrl+K (default) |
+
+### 9.1 Sidebar Menu Structure
+
+**Primary** — Business entities (Contacts, Companies, Projects, etc.)
+**System** — SYS_ tables (Users, Logs, Sessions, etc.)
+**Dictionary** — CD_ metadata tables + Database Statistics + Icon viewers
+**Designers** (in order):
+1. Database Designer, 2. Workflow Designer, 3. Form Designer,
+4. Network Designer, 5. Field Collection Designer, 6. Data Wizard,
+7. Function Designer, 8. SBI Designer, 9. Lookup Editor, 10. Translations
+**Resources** — Template Designer
+
+### 9.2 Search System
+
+Two search modes, triggered by context:
+
+| Mode | Trigger | Searches | Result action |
+|------|---------|----------|---------------|
+| Entity search | ⌘K on non-designer screens | All table names in schema | Navigate to Form Designer |
+| Record search | ⌘K on designers, or click search bar | Records in specific CD table | Callback per designer |
+
+Designer → CD table mapping:
+- Form Designer → `cd_forms`
+- Workflow Designer → `cd_canvases`
+- Function Designer → `cd_functions`
+- Lookup Editor → `cd_tables`
+- Translations → `cd_translations`
+
+`openGlobalSearch()` reads `activeItem` and routes to the correct search mode.
 
 Navigation: `activeItem` stored in sessionStorage, sidebar highlights active item.
 
@@ -603,6 +686,10 @@ The link direction determines the label shown:
 | 5 | **CD_CANVASES** | Only in live DB, not in XSD seed. Must union xsdFieldData + _schemaFull. |
 | 6 | **CNTR abbreviation** | CD_FIEL_CNTR uses CNTR not CONT. Needs hardcoded alias in prefix map. |
 | 7 | **Render cold start** | First request 30-60s. SessionStorage cache shows instant stale data. |
+| 8 | **NULL sort values** | Many cd_tables rows have sort=NULL from imports. /api/tables/sort/init fixes this. |
+| 9 | **cd_fields mostly NULL** | XSD import only sets name+type+sort. f_kind, f_format etc. need data export to fill. |
+| 10 | **Headers must be WHITE** | Entity names on both axes: #fff. Meta columns: lighter than matrix. NOT zone-colored. |
+| 11 | **Drag is column-based** | Drag on horizontal axis (column headers), NOT row headers. Within same block only. |
 
 ---
 
@@ -617,6 +704,19 @@ The link direction determines the label shown:
 | v0.8.0 | d1b8f51 | Drag & drop via row headers, saves sort |
 | v0.8.1 | a3e1edb | parseInt fix for varchar sort column |
 | v0.8.3 | e27a06e | User designer: only SYS×SYS yellow, all else gray |
+| v0.8.5 | 314089e | WHITE headers, light meta columns, column drag |
+| v0.8.6 | f71cc7f | Fix NULL sort values with /api/tables/sort/init |
+| v0.8.7 | e5ab433 | Raw data pagination (500/page) |
+| v0.8.8 | c03b511 | Type column: COUNT(DISTINCT f_type) in actual data |
+| v0.8.9 | 83ac445 | Raw data: 50/page with page number buttons |
+| v0.9.0 | f09283c | Lookup editor: sorted by zone + Connected + Unrelated |
+| v0.9.1 | 36b0a11 | Lookup editor: only LK_ tables as children |
+| v0.9.2 | 1e3f846 | Form Designer: first version with toolbox + preview |
+| v0.9.3 | b71b943 | Restructure menus (10 designers + Resources), add FontAwesome |
+| v0.9.4 | 9ad3cfc | Icon viewer pages: Lucide + FontAwesome |
+| v0.9.5 | e684def | Google-style Search Screen across all text fields |
+| v0.9.6 | da6d331 | Unified search: entity search + record search |
+| v0.9.7 | 35da66d | Designers search CD tables, Form Designer → cd_forms |
 
 ---
 
@@ -631,18 +731,22 @@ The link direction determines the label shown:
 - Push small, focused commits
 - Match the reference screenshots EXACTLY for colors
 - Union xsdFieldData + _schemaFull for complete table list
+- Use contiguous sort values (1,2,3...) when reordering
+- Designers only interact with CD tables (dictionary)
+- Search screen: each designer searches its own CD table
 
 ### ❌ DO NOT:
 - Modify table structures (no ALTER TABLE, no CREATE TABLE, no CAST)
 - Add F_ column scanning for relationship detection
-- Add search fields, filter bars, or legends to the Designer
+- Add search fields, filter bars, or legends to the Database Designer
 - Color entity headers/names (only matrix cells are colored)
 - Use `typeof r.sort === 'number'` (it's varchar, always string)
 - Try to access the live API from this environment (it's blocked)
 - Overwrite working code with a "clean rewrite" unless asked
 - Create three color zones in User mode (only SYS×SYS yellow, rest gray)
-- Make column headers draggable (rotated CSS breaks drag events)
 - Introduce CD/SYS/User background colors on row/column headers
+- Show entities/subs/links as children in Lookup Editor (only LK_ tables)
+- Use entity dropdown selectors in designers (use search screen instead)
 
 ### 🔍 WHEN IN DOUBT:
 - Look at the reference screenshots uploaded by the user
@@ -650,3 +754,4 @@ The link direction determines the label shown:
 - Check that n count equals — count
 - Verify DICT prefix → CD_DICTIONARIES (not DICTIONARYCOMPONENTS)
 - Ask the user to check the browser console (debug logs are present)
+- Check PROJECTDOC section 12 for Form Designer specifics
