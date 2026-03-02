@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script>
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
@@ -892,10 +893,22 @@ const menuGroups = [
         icon: "pen-tool", description: "Design tools",
         items: [
             { id: "db_designer", label: "Database Designer", icon: "database" },
-            { id: "lookup_editor", label: "Lookup Editor", icon: "list" },
-            { id: "form_designer", label: "Form Designer", icon: "monitor" },
-            { id: "canvas_designer", label: "Canvas Designer", icon: "layout-dashboard" },
             { id: "workflow_designer", label: "Workflow Designer", icon: "workflow" },
+            { id: "form_designer", label: "Form Designer", icon: "monitor" },
+            { id: "network_designer", label: "Network Designer", icon: "share-2" },
+            { id: "fieldcollection_designer", label: "Field Collection Designer", icon: "layers" },
+            { id: "datawizard", label: "Data Wizard", icon: "wand-2" },
+            { id: "function_designer", label: "Function Designer", icon: "code" },
+            { id: "sbi_designer", label: "SBI Designer", icon: "bar-chart-2" },
+            { id: "lookup_editor", label: "Lookup Editor", icon: "list" },
+            { id: "translations", label: "Translations", icon: "languages" },
+        ]
+    },
+    {
+        id: "resources", label: "Resources", color: "#059669", accent: "#047857",
+        icon: "package", description: "Templates & resources",
+        items: [
+            { id: "template_designer", label: "Template Designer", icon: "file-text" },
         ]
     }
 ];

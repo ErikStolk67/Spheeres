@@ -447,7 +447,28 @@ This determines which zone each entity belongs to in the User Designer matrix.
 }
 ```
 
-Frontend: Lucide Icons v0.263.1 (CDN), no build step, no framework.
+Frontend: Lucide Icons v0.263.1 (CDN), FontAwesome 6.5.1 (CDN), no build step, no framework.
+
+### 11.1 FontAwesome Icon Classes
+
+Usage: `<i class="fa-solid fa-house"></i>` or `<i class="fa-regular fa-file"></i>`
+
+| Category | Icons |
+|----------|-------|
+| Navigation | `fa-house`, `fa-bars`, `fa-arrow-left`, `fa-arrow-right`, `fa-chevron-down`, `fa-chevron-up`, `fa-xmark` |
+| Actions | `fa-plus`, `fa-pen`, `fa-trash`, `fa-copy`, `fa-download`, `fa-upload`, `fa-save`, `fa-rotate` |
+| Objects | `fa-file`, `fa-folder`, `fa-database`, `fa-table`, `fa-list`, `fa-grid`, `fa-image`, `fa-link` |
+| Users | `fa-user`, `fa-users`, `fa-building`, `fa-address-book`, `fa-id-card` |
+| Status | `fa-check`, `fa-circle-check`, `fa-circle-xmark`, `fa-triangle-exclamation`, `fa-circle-info` |
+| Design | `fa-palette`, `fa-pen-ruler`, `fa-wand-magic-sparkles`, `fa-layer-group`, `fa-puzzle-piece` |
+| Data | `fa-chart-bar`, `fa-chart-line`, `fa-filter`, `fa-sort`, `fa-magnifying-glass` |
+| Communication | `fa-envelope`, `fa-phone`, `fa-comment`, `fa-bell` |
+| Business | `fa-briefcase`, `fa-cart-shopping`, `fa-money-bill`, `fa-handshake`, `fa-bullseye` |
+| Misc | `fa-gear`, `fa-lock`, `fa-key`, `fa-shield`, `fa-code`, `fa-terminal`, `fa-globe`, `fa-calendar` |
+
+Styles: `fa-solid` (filled), `fa-regular` (outline), `fa-light`, `fa-brands`
+Sizing: `fa-xs`, `fa-sm`, `fa-lg`, `fa-xl`, `fa-2xl`
+Colors: Use inline style `style="color:#3B82F6;"`
 
 ---
 
