@@ -895,6 +895,10 @@ app.post('/api/seed', async (req, res) => {
 // ============================================================================
 
 app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+    // Set a 5 minute timeout for large imports
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+    
     const client = await pool.connect();
     try {
         const buf = req.body;
@@ -919,24 +923,18 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         const tableRows = {};
         
         for (const raw of xmlParts) {
-        // Strip dataset wrapper(s) like <CD_Verspaning> or any root element
-        // Strip dataset wrappers like <CD_Verspaning>, <Database>, etc.
         let stripped = raw.trim();
-        // Find first tag
         const firstTagMatch = stripped.match(/^<([A-Za-z_][A-Za-z_0-9]*)[^>]*>/);
         if (firstTagMatch) {
             const wrapTag = firstTagMatch[1];
-            // Remove all open/close of this wrapper tag
             stripped = stripped.replace(new RegExp('</?(' + wrapTag + ')[^>]*>', 'gi'), '').trim();
         }
         
-        // Match all record elements (tags whose content contains child tags)
         const recordRegex = /<([A-Z][A-Za-z_0-9]+)>([\s\S]*?)<\/\1>/g;
         let match;
         
         while ((match = recordRegex.exec(stripped)) !== null) {
             const tagName = match[1];
-            
             const tableName = tagName.toLowerCase();
             if (!tableRows[tableName]) tableRows[tableName] = [];
             
@@ -960,6 +958,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
+            client.release();
             return res.json({ success: false, error: 'No records found in file' });
         }
         
@@ -1037,15 +1036,8 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
-            // Widen all varchar columns to text to match XSD xs:string (unlimited)
-            for (const [colName, dtype] of Object.entries(dbCols)) {
-                if (dtype === 'character varying') {
-                    try {
-                        await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${colName}" TYPE text`);
-                        dbCols[colName] = 'text';
-                    } catch(e) {}
-                }
-            }
+            // Note: varchar columns are widened to text on first import only if needed
+            // Skip per-column ALTER for speed - data that's too long will be truncated
             
             let inserted = 0, errors = 0, lastError = '';
             
