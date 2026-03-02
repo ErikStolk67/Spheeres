@@ -3394,7 +3394,9 @@ async function importMultipleFiles(files) {
             });
             if (resp.ok) {
                 var r = await resp.json();
-                allResults.push(r);
+                // Poll for completion
+                var finalResult = await pollImportStatus();
+                if (finalResult) allResults.push(finalResult);
             }
         }
         
@@ -3410,7 +3412,8 @@ async function importMultipleFiles(files) {
             });
             if (resp.ok) {
                 var r = await resp.json();
-                allResults.push(r);
+                var finalResult = await pollImportStatus();
+                if (finalResult) allResults.push(finalResult);
             }
         }
         
@@ -3455,12 +3458,22 @@ async function importDroppedFile(file) {
             body: file
         });
         const text = await resp.text();
-        hideLoading();
-        let result;
-        try { result = JSON.parse(text); } catch(e) {
+        let startResult;
+        try { startResult = JSON.parse(text); } catch(e) {
+            hideLoading();
             showImportReport({ error: 'Server error (HTTP ' + resp.status + '): ' + text.substring(0, 200) });
             return;
         }
+        
+        // Poll for completion if it's an async import
+        let result;
+        if (startResult.message && startResult.message.includes('started')) {
+            result = await pollImportStatus();
+            if (!result) result = { error: 'No result from import' };
+        } else {
+            result = startResult;
+        }
+        hideLoading();
         sessionStorage.removeItem('ms_schema');
         invalidateCdSchema();
         if (result.success) {
@@ -3561,6 +3574,25 @@ async function importXmlFile(input) {
         hideLoading();
         showImportReport({ error: 'Server error (HTTP 502): ' + err.message });
     }
+}
+
+// Poll /api/import-status until done, returns results or null
+async function pollImportStatus() {
+    for (let i = 0; i < 600; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+            const resp = await fetch(API + '/import-status');
+            const status = await resp.json();
+            if (status.running) {
+                showLoading(status.progress || 'Importing...');
+            } else {
+                if (status.results) return status.results;
+                if (status.error) return { success: false, error: status.error, totalRows: 0, tablesProcessed: 0, details: [] };
+                return null;
+            }
+        } catch(e) { /* retry */ }
+    }
+    return { success: false, error: 'Timeout after 10 minutes', totalRows: 0, tablesProcessed: 0, details: [] };
 }
 
 function showImportReport(result) {
