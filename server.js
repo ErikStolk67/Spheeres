@@ -894,19 +894,30 @@ app.post('/api/seed', async (req, res) => {
 // Format: <CD_Verspaning><CD_TABLENAME><field>val</field>...</CD_TABLENAME>...</CD_Verspaning>
 // ============================================================================
 
+// Import status tracking
+let _importStatus = { running: false, progress: '', results: null, error: null };
+
+app.get('/api/import-status', (req, res) => {
+    res.json(_importStatus);
+});
+
 app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
-    // Set a 5 minute timeout for large imports
-    req.setTimeout(300000);
-    res.setTimeout(300000);
+    if (_importStatus.running) {
+        return res.json({ success: false, error: 'Import already running: ' + _importStatus.progress });
+    }
     
+    const buf = req.body;
+    _importStatus = { running: true, progress: 'Parsing XML...', results: null, error: null };
+    
+    // Respond immediately — import runs in background
+    res.json({ success: true, message: 'Import started. Check /api/import-status for progress.' });
+    
+    // Background import
     const client = await pool.connect();
     try {
-        const buf = req.body;
-        
         // Collect XML content from file(s)
         let xmlParts = [];
         
-        // Detect ZIP (magic bytes PK)
         if (buf.length > 2 && buf[0] === 0x50 && buf[1] === 0x4B) {
             const zip = new AdmZip(buf);
             const entries = zip.getEntries();
@@ -919,7 +930,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             xmlParts.push(buf.toString('utf-8'));
         }
         
-        // Collect all rows per table from all XML parts
+        // Parse XML
         const tableRows = {};
         
         for (const raw of xmlParts) {
@@ -954,14 +965,16 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 tableRows[tableName].push(row);
             }
         }
-        } // end xmlParts loop
+        }
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
+            _importStatus = { running: false, progress: 'Done', results: null, error: 'No records found in file' };
             client.release();
-            return res.json({ success: false, error: 'No records found in file' });
+            return;
         }
         
+        _importStatus.progress = 'Found ' + tableNames.length + ' tables, starting import...';
         const importResults = [];
         let totalRows = 0;
         
@@ -1090,6 +1103,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             
             totalRows += inserted;
             importResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
+            _importStatus.progress = `Imported ${importResults.length}/${tableNames.length} tables (${totalRows} rows)`;
         }
         
         await client.query('COMMIT');
@@ -1098,10 +1112,10 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         }
         
         invalidateSchemaCache();
-        res.json({ success: true, tablesProcessed: importResults.length, totalRows, details: importResults });
+        _importStatus = { running: false, progress: 'Done', results: { success: true, tablesProcessed: importResults.length, totalRows, details: importResults }, error: null };
     } catch (err) {
         try { await client.query('ROLLBACK'); } catch(e) {}
-        res.status(500).json({ error: err.message });
+        _importStatus = { running: false, progress: 'Error', results: null, error: err.message };
     } finally {
         client.release();
     }
