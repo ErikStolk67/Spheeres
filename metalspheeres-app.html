@@ -664,7 +664,7 @@
         }
         .add-field-btn:hover { background: #22C55E14; border-style: solid; }
 
-        /* Loading spinner overlay */
+        /* Loading spinner overlay - only for quick operations */
         .loading-overlay {
             display: none;
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -677,6 +677,21 @@
             border-top-color: #3B82F6; border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
+        /* Import status bar - non-blocking */
+        .import-bar {
+            display: none; position: fixed; bottom: 16px; right: 16px; z-index: 9998;
+            background: #fff; border: 1px solid #E2E8F0; border-radius: 10px;
+            padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+            min-width: 300px; font-family: 'DM Sans', sans-serif;
+        }
+        .import-bar.active { display: flex; align-items: center; gap: 12px; }
+        .import-bar-spinner {
+            width: 20px; height: 20px; border: 3px solid #E2E8F0;
+            border-top-color: #3B82F6; border-radius: 50%;
+            animation: spin 0.8s linear infinite; flex-shrink: 0;
+        }
+        .import-bar-text { font-size: 13px; color: #334155; flex: 1; }
+        .import-bar-close { border: none; background: none; color: #94A3B8; cursor: pointer; font-size: 16px; padding: 0 4px; }
         .count-spinner {
             display: inline-block; width: 12px; height: 12px; border: 2px solid #E2E8F0;
             border-top-color: #94A3B8; border-radius: 50%;
@@ -841,10 +856,15 @@
 <div class="popup-overlay" id="addFieldPopup"></div>
 <!-- Types Editor Popup Overlay -->
 <div class="popup-overlay" id="typesEditorPopup"></div>
-<!-- Loading Overlay -->
+<!-- Loading Overlay (quick ops only) -->
 <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-spinner"></div>
     <div class="loading-text" id="loadingText">Processing...</div>
+</div>
+<!-- Import Status Bar (non-blocking) -->
+<div class="import-bar" id="importBar">
+    <div class="import-bar-spinner"></div>
+    <div class="import-bar-text" id="importBarText">Importing...</div>
 </div>
 
 <script>
@@ -3293,6 +3313,13 @@ function showLoading(text) {
 function hideLoading() {
     document.getElementById('loadingOverlay').classList.remove('active');
 }
+function showImportBar(text) {
+    document.getElementById('importBarText').textContent = text || 'Importing...';
+    document.getElementById('importBar').classList.add('active');
+}
+function hideImportBar() {
+    document.getElementById('importBar').classList.remove('active');
+}
 
 // Drag & drop import - works on any page
 // Use window + capture to ensure we always catch the event
@@ -3363,7 +3390,7 @@ window.addEventListener('drop', async function(e) {
 }, true);
 
 async function importMultipleFiles(files) {
-    showLoading('Reading ' + files.length + ' files...');
+    showImportBar('Reading ' + files.length + ' files...');
     try {
         var xmlParts = [];
         var zipFiles = [];
@@ -3386,7 +3413,7 @@ async function importMultipleFiles(files) {
         // Import zips first
         var allResults = [];
         for (var z of zipFiles) {
-            showLoading('Importing ' + z.name + '...');
+            showImportBar('Uploading ' + z.name + '...');
             var resp = await fetch(API + '/import-xml', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/octet-stream' },
@@ -3402,7 +3429,7 @@ async function importMultipleFiles(files) {
         
         // Combine all XMLs into one request
         if (xmlParts.length > 0) {
-            showLoading('Importing ' + xmlParts.length + ' XML files...');
+            showImportBar('Uploading ' + xmlParts.length + ' XML files...');
             var combined = '<IMPORT>' + xmlParts.join('\n') + '</IMPORT>';
             var blob = new Blob([combined], { type: 'application/octet-stream' });
             var resp = await fetch(API + '/import-xml', {
@@ -3417,7 +3444,7 @@ async function importMultipleFiles(files) {
             }
         }
         
-        hideLoading();
+        hideImportBar();
         sessionStorage.removeItem('ms_schema');
         
         // Merge results
@@ -3433,14 +3460,14 @@ async function importMultipleFiles(files) {
         showImportReport(total);
         loadSchemaFromDB().then(function() { renderContent(); });
     } catch (err) {
-        hideLoading();
+        hideImportBar();
         showImportReport({ error: err.message });
     }
 }
 
 async function importDroppedFile(file) {
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    showLoading('Reading ' + file.name + ' (' + sizeMB + ' MB)...');
+    showImportBar('Reading ' + file.name + ' (' + sizeMB + ' MB)...');
     try {
         // Detect file type: schema XML has <Database>...<Tables> structure
         let endpoint = '/import-xml';
@@ -3451,7 +3478,7 @@ async function importDroppedFile(file) {
             }
         }
         
-        showLoading('Importing ' + file.name + '...');
+        showImportBar('Uploading ' + file.name + '...');
         const resp = await fetch(API + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/octet-stream' },
@@ -3460,7 +3487,7 @@ async function importDroppedFile(file) {
         const text = await resp.text();
         let startResult;
         try { startResult = JSON.parse(text); } catch(e) {
-            hideLoading();
+            hideImportBar();
             showImportReport({ error: 'Server error (HTTP ' + resp.status + '): ' + text.substring(0, 200) });
             return;
         }
@@ -3473,7 +3500,7 @@ async function importDroppedFile(file) {
         } else {
             result = startResult;
         }
-        hideLoading();
+        hideImportBar();
         sessionStorage.removeItem('ms_schema');
         invalidateCdSchema();
         if (result.success) {
@@ -3508,7 +3535,7 @@ async function importDroppedFile(file) {
             showImportReport({ error: result.error });
         }
     } catch (err) {
-        hideLoading();
+        hideImportBar();
         showImportReport({ error: err.message });
     }
 }
@@ -3520,7 +3547,7 @@ async function importXmlFile(input) {
     input.value = '';
     
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    showLoading('Importing ' + file.name + ' (' + sizeMB + ' MB)...');
+    showImportBar('Uploading ' + file.name + ' (' + sizeMB + ' MB)...');
     
     try {
         const resp = await fetch(API + '/import-xml', {
@@ -3532,47 +3559,25 @@ async function importXmlFile(input) {
         const startResult = await resp.json();
         
         if (!startResult.success) {
-            hideLoading();
+            hideImportBar();
             showImportReport({ error: startResult.error || 'Failed to start import' });
             return;
         }
         
-        // Poll for import status
-        let pollCount = 0;
-        const maxPolls = 600; // 10 minutes max
-        const poll = async () => {
-            pollCount++;
-            try {
-                const statusResp = await fetch(API + '/import-status');
-                const status = await statusResp.json();
-                
-                if (status.running) {
-                    showLoading(status.progress || 'Importing...');
-                    if (pollCount < maxPolls) setTimeout(poll, 1000);
-                    else { hideLoading(); showImportReport({ error: 'Import timeout after 10 minutes' }); }
-                } else {
-                    hideLoading();
-                    if (status.error) {
-                        showImportReport({ error: status.error });
-                    } else if (status.results) {
-                        sessionStorage.removeItem('ms_schema');
-                        await loadSchemaFromDB();
-                        showImportReport(status.results);
-                        renderContent();
-                    } else {
-                        showImportReport({ error: 'Unknown import status' });
-                    }
-                }
-            } catch(e) {
-                if (pollCount < maxPolls) setTimeout(poll, 2000);
-                else { hideLoading(); showImportReport({ error: 'Lost connection during import' }); }
-            }
-        };
-        setTimeout(poll, 2000);
+        const result = await pollImportStatus();
+        hideImportBar();
         
+        if (result && result.success) {
+            sessionStorage.removeItem('ms_schema');
+            await loadSchemaFromDB();
+            showImportReport(result);
+            renderContent();
+        } else {
+            showImportReport(result || { error: 'No result from import' });
+        }
     } catch (err) {
-        hideLoading();
-        showImportReport({ error: 'Server error (HTTP 502): ' + err.message });
+        hideImportBar();
+        showImportReport({ error: 'Server error: ' + err.message });
     }
 }
 
@@ -3584,14 +3589,16 @@ async function pollImportStatus() {
             const resp = await fetch(API + '/import-status');
             const status = await resp.json();
             if (status.running) {
-                showLoading(status.progress || 'Importing...');
+                showImportBar(status.progress || 'Importing...');
             } else {
+                hideImportBar();
                 if (status.results) return status.results;
                 if (status.error) return { success: false, error: status.error, totalRows: 0, tablesProcessed: 0, details: [] };
                 return null;
             }
         } catch(e) { /* retry */ }
     }
+    hideImportBar();
     return { success: false, error: 'Timeout after 10 minutes', totalRows: 0, tablesProcessed: 0, details: [] };
 }
 
