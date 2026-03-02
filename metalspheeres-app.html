@@ -1432,7 +1432,7 @@ function buildUserSchema() {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
         const isSys = e.type === 'sys' ? 0 : 1;
-        return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount > 0 ? typeCount : '–', subCount || '–', '–'] };
+        return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount, subCount, 0] };
     });
     // Always SYS first; within groups sort by sort field if available
     tableList.sort((a, b) => a.groupOrder - b.groupOrder || (hasSortData ? a.sortOrder - b.sortOrder : 0));
@@ -1564,7 +1564,7 @@ function buildCdSchema() {
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
-        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount > 0 ? typeCount : '–', subCount || '–', '–'] };
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount, subCount, 0] };
     });
     if (hasSortData) tableList.sort((a, b) => a.sortOrder - b.sortOrder);
     
@@ -1754,13 +1754,18 @@ function renderDbDesigner() {
             const v = row.cols[m];
             const isNum = typeof v === 'number' && v > 0;
             if (m === 0) {
-                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#64748B;cursor:pointer;" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '…'}</td>`;
-            } else if (m === 1 && isNum) {
-                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
-            } else if (m === 2 && isNum) {
-                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#64748B;">${v}</td>`;
+                // Type column: always clickable, show number or dash
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:${isNum ? '#1D4ED8' : '#CBD5E1'};cursor:pointer;${isNum ? 'font-weight:600;' : ''}" onclick="openTypesEditor('${row.name}')" title="Types of ${row.name}">${isNum ? v : '–'}</td>`;
+            } else if (m === 1) {
+                // Sub column: clickable when has subs
+                if (isNum) {
+                    rows += `<td style="background:${rowMetaBg};font-size:10px;color:#3B82F6;cursor:pointer;font-weight:600;" onclick="openSubDropdown(event,'${row.name}')" title="Sub-tables of ${row.name}">${v}</td>`;
+                } else {
+                    rows += `<td style="background:${rowMetaBg};font-size:10px;color:#CBD5E1;">–</td>`;
+                }
             } else {
-                rows += `<td style="background:${rowMetaBg};font-size:10px;color:#CBD5E1;">…</td>`;
+                // Screens column
+                rows += `<td style="background:${rowMetaBg};font-size:10px;color:${isNum ? '#64748B' : '#CBD5E1'};">${isNum ? v : '–'}</td>`;
             }
         }
 
