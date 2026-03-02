@@ -1432,7 +1432,7 @@ function buildUserSchema() {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
         const isSys = e.type === 'sys' ? 0 : 1;
-        return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
+        return { ...e, groupOrder: isSys, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount > 0 ? typeCount : '–', subCount || '–', '–'] };
     });
     // Always SYS first; within groups sort by sort field if available
     tableList.sort((a, b) => a.groupOrder - b.groupOrder || (hasSortData ? a.sortOrder - b.sortOrder : 0));
@@ -1564,7 +1564,7 @@ function buildCdSchema() {
     const tableList = entities.map(e => {
         const subCount = (subs[e.name] || []).length;
         const typeCount = typeCounts[e.name] || 0;
-        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount || '…', subCount || '…', '…'] };
+        return { ...e, sortOrder: sortOrder[e.name] || 9999, cols: [typeCount > 0 ? typeCount : '–', subCount || '–', '–'] };
     });
     if (hasSortData) tableList.sort((a, b) => a.sortOrder - b.sortOrder);
     
