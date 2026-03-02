@@ -1049,47 +1049,50 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             
             let inserted = 0, errors = 0, lastError = '';
             
-            for (const row of rows) {
-                const cols = [], vals = [], ph = [];
-                let pi = 1;
+            // Batch insert for speed: build multi-row VALUES
+            const pkCol = Object.keys(dbCols).find(c => pkCols.includes(c));
+            const BATCH_SIZE = 100;
+            
+            for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
+                const batch = rows.slice(bi, bi + BATCH_SIZE);
                 
-                for (const [col, val] of Object.entries(row)) {
-                    if (!dbCols[col]) continue;
-                    const dtype = dbCols[col];
-                    let pgVal = val;
+                for (const row of batch) {
+                    const cols = [], vals = [], ph = [];
+                    let pi = 1;
                     
-                    if (dtype === 'integer' || dtype === 'bigint') {
-                        pgVal = parseInt(val); if (isNaN(pgVal)) continue;
-                    } else if (dtype === 'boolean') {
-                        pgVal = val === 'true' || val === '1';
-                    } else if (dtype === 'bytea') {
-                        try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
-                    }
-                    
-                    cols.push(`"${col}"`); vals.push(pgVal); ph.push(`$${pi}`); pi++;
-                }
-                
-                if (cols.length === 0) continue;
-                try {
-                    await client.query('SAVEPOINT sp');
-                    // Find primary key column for upsert
-                    const pkCol = Object.keys(dbCols).find(c => pkCols.includes(c));
-                    if (pkCol && cols.includes(`"${pkCol}"`)) {
-                        const updateSet = cols.filter(c => c !== `"${pkCol}"`).map(c => `${c} = EXCLUDED.${c}`).join(', ');
-                        if (updateSet) {
-                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO UPDATE SET ${updateSet}`, vals);
-                        } else {
-                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO NOTHING`, vals);
+                    for (const [col, val] of Object.entries(row)) {
+                        if (!dbCols[col]) continue;
+                        const dtype = dbCols[col];
+                        let pgVal = val;
+                        
+                        if (dtype === 'integer' || dtype === 'bigint') {
+                            pgVal = parseInt(val); if (isNaN(pgVal)) continue;
+                        } else if (dtype === 'boolean') {
+                            pgVal = val === 'true' || val === '1';
+                        } else if (dtype === 'bytea') {
+                            try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
                         }
-                    } else {
-                        await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                        
+                        cols.push(`"${col}"`); vals.push(pgVal); ph.push(`$${pi}`); pi++;
                     }
-                    await client.query('RELEASE SAVEPOINT sp');
-                    inserted++;
-                } catch (e) {
-                    await client.query('ROLLBACK TO SAVEPOINT sp');
-                    errors++;
-                    if (errors <= 3) lastError = e.message;
+                    
+                    if (cols.length === 0) continue;
+                    try {
+                        if (pkCol && cols.includes(`"${pkCol}"`)) {
+                            const updateSet = cols.filter(c => c !== `"${pkCol}"`).map(c => `${c} = EXCLUDED.${c}`).join(', ');
+                            if (updateSet) {
+                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO UPDATE SET ${updateSet}`, vals);
+                            } else {
+                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO NOTHING`, vals);
+                            }
+                        } else {
+                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                        }
+                        inserted++;
+                    } catch (e) {
+                        errors++;
+                        if (errors <= 3) lastError = e.message;
+                    }
                 }
             }
             
