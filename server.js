@@ -964,8 +964,16 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
     res.json({ success: true, message: 'Import started. Check /api/import-status for progress.' });
     
     // Background import
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
+    } catch(e) {
+        console.error('Import: failed to connect to DB:', e.message);
+        _importStatus = { running: false, progress: 'Error', results: null, error: 'DB connection failed: ' + e.message };
+        return;
+    }
+    try {
+        console.log('Import: starting, buffer size:', buf.length);
         // Collect XML content from file(s)
         let xmlParts = [];
         
@@ -1020,11 +1028,13 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
+            console.error('Import: no records found in XML');
             _importStatus = { running: false, progress: 'Done', results: null, error: 'No records found in file' };
             client.release();
             return;
         }
         
+        console.log('Import: found', tableNames.length, 'tables:', tableNames.slice(0, 10).join(', '));
         _importStatus.progress = 'Found ' + tableNames.length + ' tables, starting import...';
         const importResults = [];
         let totalRows = 0;
@@ -1158,6 +1168,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         }
         
         await client.query('COMMIT');
+        console.log('Import: COMMITTED. Tables:', importResults.length, 'Rows:', totalRows);
         for (const r of importResults) {
             if (r.rows > 0) try { await client.query(`ANALYZE "${r.table}"`); } catch(e) {}
         }
@@ -1165,10 +1176,11 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         invalidateSchemaCache();
         _importStatus = { running: false, progress: 'Done', results: { success: true, tablesProcessed: importResults.length, totalRows, details: importResults }, error: null };
     } catch (err) {
+        console.error('Import ERROR:', err.message);
         try { await client.query('ROLLBACK'); } catch(e) {}
         _importStatus = { running: false, progress: 'Error', results: null, error: err.message };
     } finally {
-        client.release();
+        if (client) client.release();
     }
 });
 

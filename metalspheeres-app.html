@@ -3588,18 +3588,31 @@ async function importXmlFile(input) {
 
 // Poll /api/import-status until done, returns results or null
 async function pollImportStatus() {
+    let nullCount = 0;
     for (let i = 0; i < 600; i++) {
         await new Promise(r => setTimeout(r, 1000));
         try {
             const resp = await fetch(API + '/import-status');
             const status = await resp.json();
             if (status.running) {
+                nullCount = 0;
                 showImportBar(status.progress || 'Importing...');
-            } else {
+            } else if (status.results) {
                 hideImportBar();
-                if (status.results) return status.results;
-                if (status.error) return { success: false, error: status.error, totalRows: 0, tablesProcessed: 0, details: [] };
-                return null;
+                return status.results;
+            } else if (status.error) {
+                hideImportBar();
+                return { success: false, error: status.error, totalRows: 0, tablesProcessed: 0, details: [] };
+            } else {
+                // Status is idle (running=false, results=null, error=null)
+                // This can happen if we poll before the server starts, or after a crash
+                nullCount++;
+                if (nullCount > 10) {
+                    // After 10 seconds of null status, give up
+                    hideImportBar();
+                    return { success: false, error: 'Import did not start. Check server logs.', totalRows: 0, tablesProcessed: 0, details: [] };
+                }
+                showImportBar('Waiting for import to start...');
             }
         } catch(e) { /* retry */ }
     }
