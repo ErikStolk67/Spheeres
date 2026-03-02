@@ -654,13 +654,25 @@ The toolbox shows the entity and all related tables:
 - "+" tab to add new tab
 - Tab order follows link table connections
 
-### 12.6 Screen Types (F_TYPE)
+### 12.6 Screen Types (F_TYPE) and CD_TYPES
 
-- Each entity can have multiple consult screen types
-- Type "-" (dash) is always present as the default
-- Per F_Type value in the entity, a separate consult screen can be configured
+The type system works as follows:
+
+- **CD_TYPES** is the central lookup table for all F_TYPE values
+- `cd_types.f_table` → FK to `cd_tables.k_table` — determines which entity the type belongs to
+- `cd_types.f_type` → FK to `cd_types.k_type` — subtypes (parent type)
+- `cd_types.k_type` → PK, the value stored in F_TYPE columns of entity records
+
+To get types for entity "COMPANIES":
+1. Find k_table: `SELECT k_table FROM cd_tables WHERE name = 'COMPANIES'` → e.g. 42
+2. Get types: `SELECT * FROM cd_types WHERE f_table = 42`
+
+API: `GET /api/entity-types/:entityName` returns `{ types: [...], k_table: N }`
+
+- Type "-" (dash) is always present as the default for screens
+- Per type value, a separate consult screen can be configured
 - New types inherit from the "-" screen
-- The F_TYPE dropdown at the top switches between screen variants
+- The `default` boolean in cd_types marks the default type for new records
 
 ### 12.7 Link Labels in Toolbox
 

@@ -300,6 +300,32 @@ app.get('/api/types/counts', async (req, res) => {
     }
 });
 
+// Get types for a specific entity from cd_types via cd_tables lookup
+app.get('/api/entity-types/:entityName', async (req, res) => {
+    const entityName = req.params.entityName.toUpperCase();
+    try {
+        // Find k_table for this entity
+        const tableRes = await pool.query(
+            'SELECT k_table FROM cd_tables WHERE UPPER(name) = $1 LIMIT 1',
+            [entityName]
+        );
+        if (tableRes.rows.length === 0) {
+            return res.json({ types: [], k_table: null });
+        }
+        const k_table = tableRes.rows[0].k_table;
+        
+        // Get types from cd_types where f_table matches
+        const typesRes = await pool.query(
+            'SELECT k_type, name, f_type, f_icon, "default", sort FROM cd_types WHERE f_table = $1 ORDER BY sort, name',
+            [k_table]
+        );
+        
+        res.json({ types: typesRes.rows, k_table });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/tables/:id/types', async (req, res) => {
     const { name } = req.body;
     try {

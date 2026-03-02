@@ -4523,24 +4523,22 @@ function fdToggleFields(headerEl) {
 }
 
 async function fdLoadTypes(entityName) {
-    // Load distinct f_type values for this entity
+    // Load types from cd_types where f_table = k_table of this entity
     try {
-        const tableName = entityName.toLowerCase();
-        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName) + '?limit=1000&offset=0');
+        const res = await fetch(API + '/entity-types/' + encodeURIComponent(entityName));
         if (!res.ok) return;
         const data = await res.json();
-        const rows = data.rows || [];
-        const types = new Set();
-        for (const r of rows) {
-            if (r.f_type !== null && r.f_type !== undefined) types.add(r.f_type);
-        }
+        const types = data.types || [];
         const sel = document.getElementById('fdTypeSelect');
         if (sel) {
-            sel.innerHTML = '<option value="-">-</option>';
-            for (const t of [...types].sort()) {
-                sel.innerHTML += `<option value="${t}">${t}</option>`;
+            sel.innerHTML = '<option value="-">- (default)</option>';
+            for (const t of types) {
+                const label = t.name || ('Type ' + t.k_type);
+                sel.innerHTML += `<option value="${t.k_type}" ${t.default ? 'selected' : ''}>${label}</option>`;
             }
         }
+        // Store for later use
+        window._fdEntityTypes = types;
     } catch(e) { /* ignore */ }
 }
 
