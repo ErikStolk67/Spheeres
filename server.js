@@ -361,25 +361,37 @@ app.get('/api/stats/counts', async (req, res) => {
 });
 
 app.get('/api/raw/:table', async (req, res) => {
-    const table = req.params.table.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const table = req.params.table.toLowerCase().replace(/[^a-z0-9_$]/g, '');
     const limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
     const search = req.query.search || '';
     try {
-        // Get total count
-        const countRes = await pool.query(`SELECT count(*) FROM "${table}"`);
+        let whereClause = '';
+        const params = [];
+        
+        if (search) {
+            // Get text columns for google-style search across all text fields
+            const colInfo = await pool.query(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND data_type IN ('text','character varying')",
+                [table]
+            );
+            const textCols = colInfo.rows.map(c => c.column_name);
+            if (textCols.length > 0) {
+                const conditions = textCols.map(col => `"${col}" ILIKE $1`);
+                whereClause = ' WHERE (' + conditions.join(' OR ') + ')';
+                params.push('%' + search + '%');
+            }
+        }
+        
+        const countRes = await pool.query(`SELECT count(*) FROM "${table}"${whereClause}`, params);
         const total = parseInt(countRes.rows[0].count);
         
-        // Get rows with optional search on name column
-        let query = `SELECT * FROM "${table}"`;
-        const params = [];
-        if (search) {
-            query += ` WHERE name ILIKE $1`;
-            params.push(`%${search}%`);
-        }
-        query += ` ORDER BY 1 LIMIT ${limit} OFFSET ${offset}`;
+        const pi = params.length;
+        const { rows } = await pool.query(
+            `SELECT * FROM "${table}"${whereClause} ORDER BY 1 LIMIT $${pi+1} OFFSET $${pi+2}`,
+            [...params, limit, offset]
+        );
         
-        const { rows } = await pool.query(query, params);
         res.json({ rows, total, limit, offset });
     } catch (err) {
         res.status(500).json({ error: err.message });

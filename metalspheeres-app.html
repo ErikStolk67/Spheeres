@@ -12,7 +12,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.4';
+    const MS_VERSION = 'v0.9.5';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -683,6 +683,40 @@
             animation: spin 0.8s linear infinite; vertical-align: middle;
         }
         .loading-text { color: #fff; font-size: 16px; font-weight: 600; }
+        /* ============ SEARCH SCREEN ============ */
+        .ss-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: flex-start; justify-content: center; padding-top: 60px;
+        }
+        .ss-container {
+            background: #fff; border-radius: 12px; width: 90vw; max-width: 900px;
+            max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .ss-header { padding: 16px 20px; border-bottom: 1px solid #E2E8F0; }
+        .ss-searchbox {
+            width: 100%; padding: 12px 16px; font-size: 16px; border: 2px solid #3B82F6;
+            border-radius: 8px; outline: none; font-family: 'DM Sans', sans-serif;
+        }
+        .ss-searchbox:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .ss-info { padding: 8px 20px; font-size: 12px; color: #94A3B8; border-bottom: 1px solid #F1F5F9; display: flex; justify-content: space-between; }
+        .ss-results { flex: 1; overflow-y: auto; }
+        .ss-row {
+            padding: 10px 20px; border-bottom: 1px solid #F1F5F9; cursor: pointer;
+            display: flex; gap: 12px; align-items: flex-start; font-size: 13px;
+        }
+        .ss-row:hover { background: #F0F9FF; }
+        .ss-row-pk { color: #94A3B8; font-size: 11px; min-width: 50px; }
+        .ss-row-fields { flex: 1; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+        .ss-row-field { display: flex; gap: 4px; }
+        .ss-row-label { color: #94A3B8; font-size: 11px; }
+        .ss-row-value { color: #0F172A; }
+        .ss-highlight { background: #FEF08A; padding: 0 1px; border-radius: 2px; }
+        .ss-pager { padding: 10px 20px; border-top: 1px solid #E2E8F0; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+        .ss-pager button { padding: 4px 8px; border: 1px solid #E2E8F0; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; }
+        .ss-pager button:disabled { color: #CBD5E1; cursor: default; }
+        .ss-pager button.active { background: #3B82F6; color: #fff; border-color: #3B82F6; }
+
         /* ============ FORM DESIGNER ============ */
         .fd-container { display: flex; height: calc(100vh - 100px); gap: 0; }
         .fd-toolbox {
@@ -1241,11 +1275,9 @@ function renderDictionaryScreen(item, group) {
                     '<button class="toolbar-btn">+ New</button>' +
                     '<button class="toolbar-btn ghost" onclick="loadEntityList(\'' + tableName + '\')">Refresh</button>' +
                 '</div>' +
-                '<div class="toolbar-search">' +
+                '<div class="toolbar-search" style="cursor:pointer;" onclick="openSearchScreen(\'' + tableName + '\')">' +
                     '<i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>' +
-                    '<input type="text" placeholder="Search ' + item.label.toLowerCase() + '..." ' +
-                        'style="border:none;outline:none;font-size:13px;background:transparent;width:200px;" ' +
-                        'onkeyup="if(event.key===\'Enter\')loadEntityList(\'' + tableName + '\',null,null,this.value)">' +
+                    '<span style="font-size:13px;color:#94A3B8;">Search ' + item.label.toLowerCase() + '...</span>' +
                 '</div>' +
             '</div>' +
             '<div id="entityListContainer">' +
@@ -1924,11 +1956,9 @@ function renderEntityScreen(item, group) {
                     <button class="toolbar-btn">+ New</button>
                     <button class="toolbar-btn ghost" onclick="loadEntityList('${tableName}','${item.id}')">Refresh</button>
                 </div>
-                <div class="toolbar-search">
+                <div class="toolbar-search" style="cursor:pointer;" onclick="openSearchScreen('${tableName}')">
                     <i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>
-                    <input type="text" placeholder="Search ${item.label.toLowerCase()}..." 
-                        style="border:none;outline:none;font-size:13px;background:transparent;width:200px;"
-                        onkeyup="if(event.key==='Enter')loadEntityList('${tableName}',null,null,this.value)">
+                    <span style="font-size:13px;color:#94A3B8;">Search ${item.label.toLowerCase()}...</span>
                 </div>
             </div>
             <div id="entityListContainer">
@@ -3897,6 +3927,168 @@ document.addEventListener('keydown', function(e) {
 let activeLookupTable = null;
 
 // ============================================================================
+// SEARCH SCREEN - Google-style search across all fields of subject entity
+// ============================================================================
+let _ssTable = null;
+let _ssPage = 0;
+const _ssPageSize = 25;
+
+function openSearchScreen(tableName) {
+    _ssTable = tableName;
+    _ssPage = 0;
+    
+    // Remove existing
+    const existing = document.getElementById('searchScreenOverlay');
+    if (existing) existing.remove();
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'searchScreenOverlay';
+    overlay.className = 'ss-overlay';
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    
+    overlay.innerHTML = `<div class="ss-container">
+        <div class="ss-header">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                <i class="fa-solid fa-magnifying-glass" style="color:#3B82F6;font-size:18px;"></i>
+                <span style="font-size:16px;font-weight:700;color:#0F172A;">${tableName}</span>
+                <button onclick="document.getElementById('searchScreenOverlay').remove()" style="margin-left:auto;border:none;background:none;font-size:18px;cursor:pointer;color:#94A3B8;">✕</button>
+            </div>
+            <input class="ss-searchbox" id="ssInput" type="text" placeholder="Search across all fields..." autofocus
+                onkeyup="if(event.key==='Enter'){_ssPage=0;ssDoSearch();}">
+        </div>
+        <div class="ss-info" id="ssInfo">Type and press Enter to search</div>
+        <div class="ss-results" id="ssResults"></div>
+        <div class="ss-pager" id="ssPager"></div>
+    </div>`;
+    
+    document.body.appendChild(overlay);
+    setTimeout(() => document.getElementById('ssInput').focus(), 50);
+}
+
+async function ssDoSearch() {
+    const query = document.getElementById('ssInput').value.trim();
+    const resultsEl = document.getElementById('ssResults');
+    const infoEl = document.getElementById('ssInfo');
+    const pagerEl = document.getElementById('ssPager');
+    
+    if (!query) {
+        resultsEl.innerHTML = '';
+        infoEl.innerHTML = 'Type and press Enter to search';
+        pagerEl.innerHTML = '';
+        return;
+    }
+    
+    resultsEl.innerHTML = '<div style="padding:30px;text-align:center;color:#94A3B8;"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;border-width:2px;"></div>Searching...</div>';
+    infoEl.innerHTML = 'Searching...';
+    pagerEl.innerHTML = '';
+    
+    try {
+        const offset = _ssPage * _ssPageSize;
+        const res = await fetch(API + '/raw/' + encodeURIComponent(_ssTable.toLowerCase()) + 
+            '?limit=' + _ssPageSize + '&offset=' + offset + '&search=' + encodeURIComponent(query));
+        if (!res.ok) throw new Error('API error ' + res.status);
+        const data = await res.json();
+        const rows = data.rows || [];
+        const total = data.total || 0;
+        const totalPages = Math.ceil(total / _ssPageSize);
+        
+        infoEl.innerHTML = `<span>${total} result${total !== 1 ? 's' : ''} for "<strong>${query}</strong>"</span><span>${total > 0 ? (offset+1) + '–' + Math.min(offset+_ssPageSize, total) + ' of ' + total : ''}</span>`;
+        
+        if (rows.length === 0) {
+            resultsEl.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8;font-size:14px;">No records found</div>';
+            pagerEl.innerHTML = '';
+            return;
+        }
+        
+        // Get column names, skip binary/bytea and replicationid
+        const allCols = Object.keys(rows[0]);
+        const skipCols = new Set();
+        for (const col of allCols) {
+            const cl = col.toLowerCase();
+            if (cl === 'replicationid' || cl.startsWith('memo_') || cl === 'graphical' || cl === 'image' || cl === 'logo' || cl === 'picture') {
+                skipCols.add(col);
+            }
+            // Skip if all values are null or binary
+            if (rows.every(r => r[col] === null || (typeof r[col] === 'object' && r[col] !== null))) {
+                skipCols.add(col);
+            }
+        }
+        const showCols = allCols.filter(c => !skipCols.has(c));
+        
+        // Find PK column (first K_ column)
+        const pkCol = allCols.find(c => c.toLowerCase().startsWith('k_')) || allCols[0];
+        
+        let html = '';
+        for (const row of rows) {
+            const pk = row[pkCol];
+            html += `<div class="ss-row" onclick="document.getElementById('searchScreenOverlay').remove();">`;
+            html += `<span class="ss-row-pk">#${pk || '?'}</span>`;
+            html += `<div class="ss-row-fields">`;
+            
+            for (const col of showCols) {
+                if (col === pkCol) continue;
+                let val = row[col];
+                if (val === null || val === undefined) continue;
+                val = String(val);
+                if (val === '' || val === 'null') continue;
+                
+                // Truncate long values
+                if (val.length > 80) val = val.substring(0, 77) + '...';
+                
+                // Highlight search terms
+                const highlighted = ssHighlight(val, query);
+                
+                html += `<span class="ss-row-field"><span class="ss-row-label">${col}:</span> <span class="ss-row-value">${highlighted}</span></span>`;
+            }
+            html += `</div></div>`;
+        }
+        resultsEl.innerHTML = html;
+        
+        // Pager
+        if (totalPages > 1) {
+            let p = '';
+            const btnStyle = 'padding:4px 8px;font-size:11px;cursor:pointer;border:1px solid #E2E8F0;border-radius:4px;background:#fff;';
+            const actStyle = 'padding:4px 8px;font-size:11px;border:1px solid #3B82F6;border-radius:4px;background:#3B82F6;color:#fff;';
+            const disStyle = 'padding:4px 8px;font-size:11px;border:1px solid #E2E8F0;border-radius:4px;background:#F8FAFC;color:#CBD5E1;';
+            
+            p += `<button style="${_ssPage === 0 ? disStyle : btnStyle}" ${_ssPage === 0 ? 'disabled' : ''} onclick="_ssPage=0;ssDoSearch();">◀◀</button>`;
+            p += `<button style="${_ssPage === 0 ? disStyle : btnStyle}" ${_ssPage === 0 ? 'disabled' : ''} onclick="_ssPage=Math.max(0,_ssPage-1);ssDoSearch();">◀</button>`;
+            
+            const pages = [];
+            for (let i = 0; i < totalPages; i++) {
+                if (i === 0 || i === totalPages - 1 || (i >= _ssPage - 2 && i <= _ssPage + 2)) pages.push(i);
+                else if (pages.length > 0 && pages[pages.length-1] !== -1) pages.push(-1);
+            }
+            for (const pg of pages) {
+                if (pg === -1) p += '<span style="color:#94A3B8;">…</span>';
+                else p += `<button style="${pg === _ssPage ? actStyle : btnStyle}" onclick="_ssPage=${pg};ssDoSearch();">${pg+1}</button>`;
+            }
+            
+            p += `<button style="${_ssPage >= totalPages-1 ? disStyle : btnStyle}" ${_ssPage >= totalPages-1 ? 'disabled' : ''} onclick="_ssPage=Math.min(${totalPages-1},_ssPage+1);ssDoSearch();">▶</button>`;
+            p += `<button style="${_ssPage >= totalPages-1 ? disStyle : btnStyle}" ${_ssPage >= totalPages-1 ? 'disabled' : ''} onclick="_ssPage=${totalPages-1};ssDoSearch();">▶▶</button>`;
+            pagerEl.innerHTML = p;
+        } else {
+            pagerEl.innerHTML = '';
+        }
+    } catch(e) {
+        resultsEl.innerHTML = '<div style="padding:20px;color:#EF4444;">Error: ' + e.message + '</div>';
+    }
+}
+
+function ssHighlight(text, query) {
+    if (!query) return text;
+    // Escape HTML first
+    text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Split query into words and highlight each
+    const words = query.split(/\s+/).filter(w => w.length > 0);
+    for (const word of words) {
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp('(' + escaped + ')', 'gi'), '<span class="ss-highlight">$1</span>');
+    }
+    return text;
+}
+
+// ============================================================================
 // ICON VIEWERS
 // ============================================================================
 function renderLucideIcons() {
@@ -4223,7 +4415,7 @@ function fdRenderPreview() {
     
     // Build toolbar
     let html = `<div class="fd-toolbar">
-        <input type="text" placeholder="Search..." style="padding:4px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;width:120px;">
+        <input type="text" placeholder="Search..." style="padding:4px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;width:120px;cursor:pointer;" readonly onclick="openSearchScreen(fdCurrentEntity)">
         <span style="cursor:pointer;color:#F59E0B;">★</span>
         <button class="fd-toolbar-btn green">⊕ Add</button>
         <button class="fd-toolbar-btn blue">✏ Edit</button>
