@@ -12,7 +12,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.2';
+    const MS_VERSION = 'v0.9.4';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -886,6 +886,8 @@ const menuGroups = [
             { id: "cd_translations", label: "Translations", icon: "languages" },
             { id: "cd_components", label: "Components", icon: "boxes" },
             { id: "db_statistics", label: "Database Statistics", icon: "bar-chart-3" },
+            { id: "icons_lucide", label: "Lucide Icons", icon: "image" },
+            { id: "icons_fontawesome", label: "FontAwesome Icons", icon: "flag" },
         ]
     },
     {
@@ -1009,6 +1011,10 @@ function renderContent() {
             } else if (activeItem === 'form_designer') {
                 content.innerHTML = renderFormDesigner();
                 initFormDesigner();
+            } else if (activeItem === 'icons_lucide') {
+                content.innerHTML = renderLucideIcons();
+            } else if (activeItem === 'icons_fontawesome') {
+                content.innerHTML = renderFontAwesomeIcons();
             } else if (activeItem === 'db_statistics') {
                 content.innerHTML = renderDbStatistics();
                 initDbStatistics();
@@ -3889,6 +3895,98 @@ document.addEventListener('keydown', function(e) {
 // LOOKUP EDITOR
 // ============================================================================
 let activeLookupTable = null;
+
+// ============================================================================
+// ICON VIEWERS
+// ============================================================================
+function renderLucideIcons() {
+    const icons = [
+        'activity','air-vent','alarm-clock','alert-circle','alert-triangle','align-center','align-left','align-right','anchor','aperture',
+        'archive','arrow-down','arrow-left','arrow-right','arrow-up','at-sign','award',
+        'bar-chart','bar-chart-2','bar-chart-3','battery','bell','bluetooth','bold','book','book-open','bookmark','box','boxes','briefcase','bug','building','building-2',
+        'calculator','calendar','calendar-days','camera','car','check','check-circle','chevron-down','chevron-left','chevron-right','chevron-up','circle','clipboard','clock','cloud','code','code-2','cog','columns','columns-3','command','compass','copy','corner-down-left','corner-down-right','cpu','credit-card','crop','crosshair',
+        'database','delete','diamond','disc','dollar-sign','download','droplet',
+        'edit','edit-2','edit-3','eraser','external-link','eye','eye-off',
+        'facebook','fast-forward','feather','file','file-text','film','filter','flag','flame','flask-conical','folder','folder-kanban','folder-open','folder-tree','form-input','forward','frown',
+        'gauge','gift','git-branch','git-compare','git-merge','globe','globe-2','grab','grid','grip','group',
+        'hard-drive','hash','headphones','heart','help-circle','hexagon','history','home',
+        'image','inbox','info','italic',
+        'key','keyboard',
+        'lamp','languages','laptop','layers','layout','layout-dashboard','layout-template','library','life-buoy','lightbulb','link','link-2','list','list-ordered','loader','lock','log-in','log-out',
+        'mail','map','map-pin','maximize','megaphone','menu','message-circle','message-square','mic','minimize','minus','monitor','moon','more-horizontal','more-vertical','mountain','mouse','move','music',
+        'navigation','network',
+        'package','paintbrush','palette','paperclip','pause','pen','pen-tool','percent','phone','pie-chart','pin','play','plug','plus','pocket','power','printer','puzzle',
+        'radio','redo','refresh-cw','repeat','rewind','rocket','rotate-ccw','rotate-cw','rss',
+        'save','scale','scan','scissors','scroll-text','search','send','server','settings','share','share-2','shield','shield-check','shopping-bag','shopping-cart','shuffle','sidebar','signal','skip-back','skip-forward','slash','sliders','smartphone','smile','sort-asc','sort-desc','speaker','square','star','stop-circle','sun','sunrise','sunset',
+        'table','table-2','tablet','tag','tags','target','terminal','thermometer','thumbs-down','thumbs-up','timer','toggle-left','toggle-right','tool','trash','trash-2','trending-down','trending-up','triangle','trophy','truck','tv','type',
+        'umbrella','underline','undo','unlink','unlock','upload','user','user-check','user-minus','user-plus','users',
+        'video','voicemail','volume','volume-1','volume-2','volume-x',
+        'wallet','wand-2','watch','wifi','wind','workflow','wrench',
+        'x','x-circle','x-square',
+        'zap','zoom-in','zoom-out'
+    ];
+    
+    let html = '<div style="padding:16px;"><h2 style="margin-bottom:16px;">Lucide Icons (' + icons.length + ')</h2>';
+    html += '<input type="text" id="lucideSearch" placeholder="Search icons..." oninput="filterIcons(\'lucide\')" style="padding:8px 12px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;width:300px;margin-bottom:16px;">';
+    html += '<div id="lucideGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">';
+    for (const icon of icons) {
+        html += `<div class="icon-card" data-name="${icon}" style="display:flex;flex-direction:column;align-items:center;padding:12px 4px;border:1px solid #E2E8F0;border-radius:8px;cursor:pointer;transition:background 0.1s;" onclick="navigator.clipboard.writeText('${icon}');this.style.background='#DBEAFE';setTimeout(()=>this.style.background='',500);" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background=''">
+            <i data-lucide="${icon}" style="width:24px;height:24px;color:#334155;margin-bottom:6px;"></i>
+            <span style="font-size:10px;color:#64748B;text-align:center;word-break:break-all;">${icon}</span>
+        </div>`;
+    }
+    html += '</div></div>';
+    setTimeout(() => lucide.createIcons(), 50);
+    return html;
+}
+
+function renderFontAwesomeIcons() {
+    const categories = {
+        'Navigation': ['house','bars','arrow-left','arrow-right','arrow-up','arrow-down','chevron-down','chevron-up','chevron-left','chevron-right','angles-left','angles-right','xmark','caret-down','caret-up','circle-arrow-left','circle-arrow-right'],
+        'Actions': ['plus','pen','pen-to-square','trash','trash-can','copy','download','upload','floppy-disk','rotate','rotate-right','share','share-from-square','link','unlink','scissors','paste','clone'],
+        'Files & Folders': ['file','file-lines','file-pdf','file-image','file-code','file-excel','file-word','file-zipper','file-import','file-export','folder','folder-open','folder-plus','folder-minus','box-archive'],
+        'Users & People': ['user','users','user-plus','user-minus','user-check','user-xmark','user-gear','user-shield','user-tie','people-group','address-book','id-card','id-badge'],
+        'Communication': ['envelope','envelope-open','phone','phone-volume','comment','comments','message','paper-plane','inbox','reply','reply-all','bell','bell-slash'],
+        'Business': ['briefcase','building','building-columns','landmark','handshake','money-bill','money-bill-wave','coins','credit-card','cart-shopping','bag-shopping','receipt','file-invoice','file-invoice-dollar','chart-line','chart-bar','chart-pie','chart-area','bullseye','crosshairs'],
+        'Status & Feedback': ['check','circle-check','circle-xmark','triangle-exclamation','circle-info','circle-question','circle-exclamation','thumbs-up','thumbs-down','star','star-half-stroke','heart','flag','bookmark','ban','shield','shield-halved','lock','lock-open','unlock','eye','eye-slash'],
+        'Design & Layout': ['palette','paintbrush','pen-ruler','pen-fancy','wand-magic-sparkles','layer-group','object-group','object-ungroup','table-cells','table-columns','table-list','grip','grip-vertical','border-all','expand','compress','maximize','minimize'],
+        'Data & Database': ['database','server','hard-drive','cloud','cloud-arrow-up','cloud-arrow-down','filter','sort','sort-up','sort-down','magnifying-glass','magnifying-glass-plus','magnifying-glass-minus','bars-progress','spinner','circle-notch'],
+        'Media': ['image','camera','video','film','music','volume-high','volume-low','volume-xmark','play','pause','stop','forward','backward','circle-play','circle-pause'],
+        'Devices': ['desktop','laptop','mobile-screen','tablet-screen-button','keyboard','print','tv','display','plug','wifi','bluetooth','signal','tower-broadcast','satellite-dish'],
+        'Maps & Travel': ['location-dot','map','map-pin','map-location-dot','compass','globe','earth-americas','earth-europe','earth-asia','plane','car','truck','ship','train','bicycle'],
+        'Code & Dev': ['code','terminal','bug','gear','gears','wrench','screwdriver-wrench','puzzle-piece','microchip','robot','cube','cubes','sitemap','diagram-project','network-wired'],
+        'Misc': ['calendar','calendar-days','calendar-check','clock','hourglass','stopwatch','tag','tags','key','anchor','bolt','fire','snowflake','sun','moon','cloud-sun','temperature-half','droplet','leaf','tree','seedling','recycle']
+    };
+    
+    let html = '<div style="padding:16px;"><h2 style="margin-bottom:16px;">FontAwesome Icons</h2>';
+    html += '<input type="text" id="faSearch" placeholder="Search icons..." oninput="filterIcons(\'fa\')" style="padding:8px 12px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;width:300px;margin-bottom:16px;">';
+    html += '<div id="faGrid">';
+    
+    for (const [category, icons] of Object.entries(categories)) {
+        html += `<h3 style="margin:16px 0 8px;font-size:14px;color:#334155;border-bottom:1px solid #E2E8F0;padding-bottom:4px;">${category} (${icons.length})</h3>`;
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:8px;">';
+        for (const icon of icons) {
+            html += `<div class="icon-card" data-name="${icon}" style="display:flex;flex-direction:column;align-items:center;padding:12px 4px;border:1px solid #E2E8F0;border-radius:8px;cursor:pointer;transition:background 0.1s;" onclick="navigator.clipboard.writeText('fa-solid fa-${icon}');this.style.background='#DBEAFE';setTimeout(()=>this.style.background='',500);" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background=''">
+                <i class="fa-solid fa-${icon}" style="font-size:24px;color:#334155;margin-bottom:6px;"></i>
+                <span style="font-size:10px;color:#64748B;text-align:center;word-break:break-all;">${icon}</span>
+            </div>`;
+        }
+        html += '</div>';
+    }
+    html += '</div></div>';
+    return html;
+}
+
+function filterIcons(type) {
+    const input = type === 'lucide' ? document.getElementById('lucideSearch') : document.getElementById('faSearch');
+    const query = input.value.toLowerCase();
+    const container = type === 'lucide' ? document.getElementById('lucideGrid') : document.getElementById('faGrid');
+    const cards = container.querySelectorAll('.icon-card');
+    cards.forEach(card => {
+        const name = card.getAttribute('data-name');
+        card.style.display = name.includes(query) ? '' : 'none';
+    });
+}
 
 // ============================================================================
 // FORM DESIGNER
