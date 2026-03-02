@@ -1100,7 +1100,8 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 }
             }
             
-            await client.query(`TRUNCATE "${tableName}" CASCADE`);
+            // No TRUNCATE — use UPSERT to safely merge data
+            // This prevents data loss if the import is interrupted
             
             // Get primary key columns for upsert
             const pkResult = await client.query(`
@@ -1619,4 +1620,51 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`MetalSpheeres API running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`MetalSpheeres API running on port ${PORT}`);
+    
+    // Startup health check: if cd_tables is empty, auto-seed from schema
+    try {
+        const { rows } = await pool.query('SELECT COUNT(*) as cnt FROM cd_tables');
+        const count = parseInt(rows[0].cnt);
+        console.log(`Health check: cd_tables has ${count} rows`);
+        
+        if (count === 0) {
+            console.log('WARNING: cd_tables is EMPTY! Auto-seeding from PostgreSQL schema...');
+            
+            // Get all tables from PostgreSQL catalog
+            const schema = await getSchemaFull();
+            const tableNames = Object.keys(schema);
+            console.log(`Found ${tableNames.length} tables in PostgreSQL catalog`);
+            
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+                let tableId = 1;
+                for (const tableName of tableNames.sort()) {
+                    // Determine f_type from name
+                    const upper = tableName.toUpperCase();
+                    let fType = 1; // entity
+                    if (upper.includes('_LK_') || upper.startsWith('LK_')) fType = 2; // lookup
+                    else if (upper.match(/^CD_[A-Z]{2,5}_[A-Z]{2,5}$/) && !upper.includes('_LK_')) fType = 3; // link
+                    else if (upper.includes('$') || (upper.startsWith('CD_') && upper.split('_').length > 2 && fType !== 3)) fType = 4; // subtable
+                    
+                    await client.query(
+                        'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now()) ON CONFLICT (k_table) DO NOTHING',
+                        [tableId, upper, fType, tableId]
+                    );
+                    tableId++;
+                }
+                await client.query('COMMIT');
+                console.log(`Auto-seeded cd_tables with ${tableId - 1} tables`);
+            } catch(e) {
+                try { await client.query('ROLLBACK'); } catch(e2) {}
+                console.error('Auto-seed failed:', e.message);
+            } finally {
+                client.release();
+            }
+        }
+    } catch(e) {
+        console.error('Health check failed:', e.message);
+    }
+});
