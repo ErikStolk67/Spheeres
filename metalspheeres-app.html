@@ -11,7 +11,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.1';
+    const MS_VERSION = 'v0.9.2';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -682,6 +682,75 @@
             animation: spin 0.8s linear infinite; vertical-align: middle;
         }
         .loading-text { color: #fff; font-size: 16px; font-weight: 600; }
+        /* ============ FORM DESIGNER ============ */
+        .fd-container { display: flex; height: calc(100vh - 100px); gap: 0; }
+        .fd-toolbox {
+            width: 220px; min-width: 220px; border-right: 1px solid #E2E8F0;
+            overflow-y: auto; background: #FFFBEB; padding: 8px;
+        }
+        .fd-toolbox-title { font-size: 12px; color: #92400E; font-weight: 600; padding: 6px 8px; }
+        .fd-entity-header {
+            padding: 6px 8px; font-size: 12px; font-weight: 700; color: #334155;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+            border: 1px solid #E2E8F0; border-radius: 6px; margin-bottom: 2px; background: #fff;
+        }
+        .fd-entity-header:hover { background: #F8FAFC; }
+        .fd-entity-label { font-size: 10px; color: #94A3B8; font-weight: 400; margin-left: auto; }
+        .fd-field {
+            padding: 3px 8px 3px 20px; font-size: 11px; color: #fff; font-weight: 500;
+            border-radius: 4px; margin: 1px 0; cursor: grab; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .fd-field.pkey { background: #22C55E; }
+        .fd-field.lookup { background: #F59E0B; }
+        .fd-field.text { background: #3B82F6; }
+        .fd-field.image { background: #8B5CF6; }
+        .fd-field.datetime { background: #EF4444; }
+        .fd-field.memo { background: #EC4899; }
+        .fd-field.bool { background: #14B8A6; }
+        .fd-field.other { background: #64748B; }
+        .fd-fields-list { overflow: hidden; transition: max-height 0.2s; }
+        .fd-fields-list.collapsed { max-height: 0 !important; }
+        .fd-main { flex: 1; display: flex; flex-direction: column; overflow: auto; }
+        .fd-topbar {
+            display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            border-bottom: 1px solid #E2E8F0; background: #fff; flex-wrap: wrap;
+        }
+        .fd-topbar-entity { font-size: 16px; font-weight: 700; color: #0F172A; }
+        .fd-topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; }
+        .fd-topbar select { padding: 4px 8px; border: 1px solid #D1D5DB; border-radius: 4px; font-size: 12px; }
+        .fd-preview { flex: 1; padding: 16px; overflow: auto; background: #F8FAFC; }
+        .fd-toolbar {
+            display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; margin-bottom: 12px;
+        }
+        .fd-toolbar-btn { padding: 4px 10px; font-size: 12px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .fd-toolbar-btn.green { color: #22C55E; border-color: #22C55E; }
+        .fd-toolbar-btn.blue { color: #3B82F6; border-color: #3B82F6; }
+        .fd-toolbar-btn.red { color: #EF4444; border-color: #EF4444; }
+        .fd-toolbar-btn.orange { color: #F97316; border-color: #F97316; }
+        .fd-header-area {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+            border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; padding: 16px; margin-bottom: 16px;
+        }
+        .fd-header-col { display: flex; flex-direction: column; gap: 6px; }
+        .fd-header-field { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .fd-header-field label { color: #64748B; min-width: 80px; }
+        .fd-header-field input { flex: 1; padding: 4px 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; background: #F8FAFC; }
+        .fd-entity-icon { position: absolute; right: 16px; top: 8px; font-size: 48px; color: #E2E8F0; }
+        .fd-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 2px solid #E2E8F0; margin-bottom: 8px; }
+        .fd-tab {
+            padding: 8px 14px; font-size: 12px; color: #64748B; cursor: pointer;
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+        }
+        .fd-tab:hover { color: #334155; }
+        .fd-tab.active { color: #DC2626; border-bottom-color: #3B82F6; font-weight: 600; }
+        .fd-tab-content { min-height: 150px; }
+        .fd-tab-row {
+            padding: 6px 12px; font-size: 12px; color: #78350F; background: #FDE68A;
+            border-radius: 4px; margin: 2px 0;
+        }
+
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -924,6 +993,9 @@ function renderContent() {
             } else if (activeItem === 'lookup_editor') {
                 content.innerHTML = renderLookupEditor();
                 initLookupTree();
+            } else if (activeItem === 'form_designer') {
+                content.innerHTML = renderFormDesigner();
+                initFormDesigner();
             } else if (activeItem === 'db_statistics') {
                 content.innerHTML = renderDbStatistics();
                 initDbStatistics();
@@ -3804,6 +3876,308 @@ document.addEventListener('keydown', function(e) {
 // LOOKUP EDITOR
 // ============================================================================
 let activeLookupTable = null;
+
+// ============================================================================
+// FORM DESIGNER
+// ============================================================================
+let fdCurrentEntity = null;
+let fdCurrentType = '-';
+let fdActiveTab = 0;
+
+function renderFormDesigner() {
+    // Get all entities (user + sys)
+    const userSchema = getUserSchema();
+    const cdSchema = getCdSchema();
+    const allEntities = [
+        ...(cdSchema.tableList || []).map(t => t.name),
+        ...(userSchema.tableList || []).map(t => t.name)
+    ].sort();
+    
+    // Default to first entity or stored
+    if (!fdCurrentEntity && allEntities.length > 0) {
+        fdCurrentEntity = sessionStorage.getItem('fd_entity') || allEntities[0];
+    }
+    
+    // Entity selector dropdown
+    const entityOptions = allEntities.map(e => 
+        `<option value="${e}" ${e === fdCurrentEntity ? 'selected' : ''}>${e}</option>`
+    ).join('');
+    
+    return `<div class="fd-container">
+        <div class="fd-toolbox" id="fdToolbox">
+            <div class="fd-toolbox-title">Toolbox</div>
+            <div style="padding:4px 8px;margin-bottom:6px;font-size:11px;color:#92400E;border:1px solid #FBBF24;border-radius:4px;background:#FEF3C7;">Entities</div>
+            <div id="fdToolboxContent">Loading...</div>
+        </div>
+        <div class="fd-main">
+            <div class="fd-topbar">
+                <span class="fd-topbar-entity" id="fdEntityName">${fdCurrentEntity || '...'}</span>
+                <span style="cursor:pointer;color:#94A3B8;" title="Edit">✏</span>
+                <div class="fd-topbar-right">
+                    <label>Entity type</label>
+                    <select id="fdTypeSelect" onchange="fdCurrentType=this.value;fdRenderPreview();">
+                        <option value="-">-</option>
+                    </select>
+                    <label>Screen type</label>
+                    <select><option>ConsultScreen</option></select>
+                    <label>Field Collection</label>
+                    <select><option>User</option></select>
+                    <span style="cursor:pointer;color:#94A3B8;">⚙</span>
+                </div>
+            </div>
+            <div class="fd-preview" id="fdPreview">Loading...</div>
+        </div>
+    </div>
+    <div style="position:fixed;top:64px;right:16px;z-index:50;">
+        <select style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;" onchange="fdCurrentEntity=this.value;sessionStorage.setItem('fd_entity',this.value);fdLoadEntity();">
+            ${entityOptions}
+        </select>
+    </div>`;
+}
+
+function initFormDesigner() {
+    fdLoadEntity();
+}
+
+function fdLoadEntity() {
+    if (!fdCurrentEntity) return;
+    const entityName = fdCurrentEntity;
+    document.getElementById('fdEntityName').textContent = entityName;
+    
+    // Build toolbox
+    fdRenderToolbox(entityName);
+    
+    // Load types for this entity
+    fdLoadTypes(entityName);
+    
+    // Render preview
+    fdRenderPreview();
+}
+
+function fdGetFieldType(fieldName) {
+    const fn = fieldName.toUpperCase();
+    if (fn.startsWith('K_')) return 'pkey';
+    if (fn.startsWith('F_') || fn === 'CREATEDBY' || fn === 'CHANGEDBY') return 'lookup';
+    if (fn === 'MEMO' || fn.startsWith('MEMO_')) return 'memo';
+    if (fn === 'IMAGE' || fn === 'LOGO' || fn === 'PICTURE' || fn === 'GRAPHICAL') return 'image';
+    if (fn === 'CREATEDATE' || fn === 'CHANGEDATE' || fn === 'LASTSTATUSDATE' || fn === 'LIFEDATE') return 'datetime';
+    if (fn.startsWith('IS_') || fn === 'MAIN' || fn === 'ENABLED') return 'bool';
+    return 'text';
+}
+
+function fdGetFieldIcon(type) {
+    const icons = { pkey: '🔑', lookup: '🔍', text: '𝐓↕', image: '🖼', datetime: '📅', memo: '📝', bool: '☑', other: '■' };
+    return icons[type] || '■';
+}
+
+function fdRenderToolbox(entityName) {
+    const schema = window._schemaFull || {};
+    const entityInfo = schema[entityName.toLowerCase()];
+    const cols = entityInfo ? (entityInfo.columns || []) : [];
+    
+    // Sort fields by sort column if available, else by position
+    const sortedCols = [...cols].sort((a, b) => (a.ordinal_position || 0) - (b.ordinal_position || 0));
+    
+    // Find linked entities via relations
+    const userRels = getUserRelations();
+    const cdRels = getCdRelations();
+    const rels = { ...cdRels, ...userRels };
+    
+    // Find subtables
+    const allSubs = { ...getCdSubTables(), ...getUserSubTables() };
+    const entitySubs = allSubs[entityName] || [];
+    
+    // Find linked entities (where this entity has n, — or nn relations)
+    const linkedEntities = [];
+    const entityRels = rels[entityName] || {};
+    for (const [targetEntity, relType] of Object.entries(entityRels)) {
+        if (targetEntity === entityName) continue;
+        let label = relType === 'n' ? '1:n' : (relType === '—' ? 'n:1' : relType);
+        linkedEntities.push({ name: targetEntity, label });
+    }
+    
+    let html = '';
+    
+    // Subject entity
+    html += `<div class="fd-entity-header" onclick="fdToggleFields(this)">
+        <i data-lucide="${userIconMap[entityName] || cdIconMap[entityName.replace('CD_','')] || 'table'}" style="width:14px;height:14px;"></i>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${entityName}</span>
+        <span class="fd-entity-label">Subject 1:1</span>
+    </div>`;
+    html += `<div class="fd-fields-list" id="fdFields_subject">`;
+    for (const col of sortedCols) {
+        const ft = fdGetFieldType(col.name);
+        html += `<div class="fd-field ${ft}" draggable="true" title="${col.name}">${fdGetFieldIcon(ft)} ${col.name}</div>`;
+    }
+    html += `</div>`;
+    
+    // Subtables
+    for (const sub of entitySubs) {
+        html += `<div class="fd-entity-header" onclick="fdToggleFields(this)" style="margin-top:4px;">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;font-size:11px;">${sub.length > 18 ? sub.substring(0,16)+'...' : sub}</span>
+            <span style="cursor:pointer;color:#94A3B8;font-size:10px;">✏</span>
+        </div>`;
+        const subInfo = schema[sub.toLowerCase()];
+        if (subInfo) {
+            html += `<div class="fd-fields-list collapsed">`;
+            for (const sc of (subInfo.columns || [])) {
+                const ft = fdGetFieldType(sc.name);
+                html += `<div class="fd-field ${ft}" draggable="true" title="${sub}.${sc.name}">${fdGetFieldIcon(ft)} ${sc.name}</div>`;
+            }
+            html += `</div>`;
+        }
+    }
+    
+    // Linked entities
+    for (const le of linkedEntities.sort((a,b) => a.name.localeCompare(b.name))) {
+        const leInfo = schema[le.name.toLowerCase()];
+        const leCols = leInfo ? (leInfo.columns || []) : [];
+        html += `<div class="fd-entity-header" onclick="fdToggleFields(this)" style="margin-top:4px;">
+            <i data-lucide="${userIconMap[le.name] || cdIconMap[le.name.replace('CD_','')] || 'table'}" style="width:12px;height:12px;"></i>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${le.name}</span>
+            <span class="fd-entity-label">${le.label}</span>
+        </div>`;
+        html += `<div class="fd-fields-list collapsed">`;
+        for (const lc of leCols) {
+            const ft = fdGetFieldType(lc.name);
+            html += `<div class="fd-field ${ft}" draggable="true" title="${le.name}.${lc.name}">${fdGetFieldIcon(ft)} ${lc.name}</div>`;
+        }
+        html += `</div>`;
+    }
+    
+    document.getElementById('fdToolboxContent').innerHTML = html;
+    lucide.createIcons();
+}
+
+function fdToggleFields(headerEl) {
+    const fieldsList = headerEl.nextElementSibling;
+    if (fieldsList && fieldsList.classList.contains('fd-fields-list')) {
+        fieldsList.classList.toggle('collapsed');
+    }
+}
+
+async function fdLoadTypes(entityName) {
+    // Load distinct f_type values for this entity
+    try {
+        const tableName = entityName.toLowerCase();
+        const res = await fetch(API + '/raw/' + encodeURIComponent(tableName) + '?limit=1000&offset=0');
+        if (!res.ok) return;
+        const data = await res.json();
+        const rows = data.rows || [];
+        const types = new Set();
+        for (const r of rows) {
+            if (r.f_type !== null && r.f_type !== undefined) types.add(r.f_type);
+        }
+        const sel = document.getElementById('fdTypeSelect');
+        if (sel) {
+            sel.innerHTML = '<option value="-">-</option>';
+            for (const t of [...types].sort()) {
+                sel.innerHTML += `<option value="${t}">${t}</option>`;
+            }
+        }
+    } catch(e) { /* ignore */ }
+}
+
+function fdRenderPreview() {
+    const entityName = fdCurrentEntity;
+    if (!entityName) return;
+    
+    const schema = window._schemaFull || {};
+    const entityInfo = schema[entityName.toLowerCase()];
+    const cols = entityInfo ? (entityInfo.columns || []) : [];
+    
+    // Find linked entities for tabs
+    const userRels = getUserRelations();
+    const cdRels = getCdRelations();
+    const rels = { ...cdRels, ...userRels };
+    const entityRels = rels[entityName] || {};
+    const allSubs = { ...getCdSubTables(), ...getUserSubTables() };
+    const entitySubs = allSubs[entityName] || [];
+    
+    const tabEntities = [];
+    for (const [target, relType] of Object.entries(entityRels)) {
+        if (target !== entityName) tabEntities.push(target);
+    }
+    tabEntities.sort();
+    
+    // Separate fields into header groups
+    const nameFields = cols.filter(c => ['NAME','ALIAS'].includes(c.name.toUpperCase()) || c.name.toUpperCase().startsWith('NAME_'));
+    const contactFields = cols.filter(c => ['PHONE','FAX','EMAIL','WEBSITE'].includes(c.name.toUpperCase()));
+    const otherHeader = cols.filter(c => {
+        const u = c.name.toUpperCase();
+        return !u.startsWith('K_') && !u.startsWith('F_') && !u.startsWith('MEMO') && 
+               !['NAME','ALIAS','PHONE','FAX','EMAIL','WEBSITE','CREATEDATE','CHANGEDATE','CREATEDBY','CHANGEDBY','LASTSTATUSDATE','REPLICATIONID','GRAPHICAL','IMAGE','LOGO','PICTURE'].includes(u) &&
+               !u.startsWith('NAME_') && !u.startsWith('IS_');
+    });
+    
+    // Build toolbar
+    let html = `<div class="fd-toolbar">
+        <input type="text" placeholder="Search..." style="padding:4px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;width:120px;">
+        <span style="cursor:pointer;color:#F59E0B;">★</span>
+        <button class="fd-toolbar-btn green">⊕ Add</button>
+        <button class="fd-toolbar-btn blue">✏ Edit</button>
+        <button class="fd-toolbar-btn red">🗑 Delete</button>
+        <button class="fd-toolbar-btn">≡ List</button>
+        <button class="fd-toolbar-btn orange">↺ History</button>
+        <div style="margin-left:auto;font-size:32px;color:#E2E8F0;">
+            <i data-lucide="${userIconMap[entityName] || 'building-2'}" style="width:48px;height:48px;color:#E2E8F0;"></i>
+        </div>
+    </div>`;
+    
+    // Three-column header area
+    html += `<div class="fd-header-area" style="position:relative;">`;
+    
+    // Left column: avatar + name fields
+    html += `<div class="fd-header-col">
+        <div style="width:80px;height:80px;background:#F1F5F9;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#CBD5E1;font-size:24px;">👤</div>`;
+    for (const f of nameFields.slice(0, 3)) {
+        html += `<div class="fd-header-field"><input placeholder="${f.name}" readonly></div>`;
+    }
+    html += `</div>`;
+    
+    // Middle column: contact fields
+    html += `<div class="fd-header-col">`;
+    for (const f of contactFields) {
+        html += `<div class="fd-header-field"><label>${f.name}</label><input placeholder="${f.name}" readonly></div>`;
+    }
+    html += `</div>`;
+    
+    // Right column: other fields
+    html += `<div class="fd-header-col">`;
+    for (const f of otherHeader.slice(0, 4)) {
+        html += `<div class="fd-header-field"><label>${f.name}</label><input placeholder="${f.name}" readonly></div>`;
+    }
+    html += `</div>`;
+    html += `</div>`;
+    
+    // Tabs
+    const allTabs = [...entitySubs.map(s => ({ name: s, type: 'sub' })), ...tabEntities.map(e => ({ name: e, type: 'link' }))];
+    html += `<div class="fd-tabs">`;
+    for (let i = 0; i < allTabs.length; i++) {
+        const tab = allTabs[i];
+        const displayName = tab.name.replace(entityName + '$', '').replace(entityName + '_', '');
+        html += `<div class="fd-tab ${i === fdActiveTab ? 'active' : ''}" onclick="fdActiveTab=${i};fdRenderPreview();">${displayName}</div>`;
+    }
+    html += `<div class="fd-tab" style="color:#CBD5E1;">+</div>`;
+    html += `</div>`;
+    
+    // Tab content: show fields of active tab's entity
+    html += `<div class="fd-tab-content">`;
+    if (allTabs.length > 0 && fdActiveTab < allTabs.length) {
+        const activeTabEntity = allTabs[fdActiveTab];
+        const tabInfo = schema[activeTabEntity.name.toLowerCase()];
+        const tabCols = tabInfo ? (tabInfo.columns || []) : [];
+        
+        for (const tc of tabCols) {
+            if (tc.name.toUpperCase().startsWith('K_') || tc.name.toUpperCase() === 'REPLICATIONID') continue;
+            html += `<div class="fd-tab-row">${activeTabEntity.name}.${tc.name}</div>`;
+        }
+    }
+    html += `</div>`;
+    
+    document.getElementById('fdPreview').innerHTML = html;
+    lucide.createIcons();
+}
 
 function renderLookupEditor() {
     // Build tree HTML

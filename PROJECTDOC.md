@@ -451,7 +451,127 @@ Frontend: Lucide Icons v0.263.1 (CDN), no build step, no framework.
 
 ---
 
-## 12. Known Issues & Gotchas
+## 12. Form Designer
+
+### 12.1 Overview
+
+The Form Designer builds consult screens for entities. It shows a **toolbox** on the left, a **form preview** in the center, and **tabs** at the bottom for linked entities.
+
+### 12.2 Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `cd_forms` | Screen definitions (k_form, f_type, name, f_kind, f_template) |
+| `cd_tabl_form` | Links tables to forms (k_form → k_tabl, main, tabletype, f_fieldcollection) |
+| `cd_form_cntr` | Links controls to forms (k_form → k_cntr, k_seq for ordering) |
+| `cd_form_form` | Links forms to other forms (k_form1 → k_form2) |
+| `cd_canvases` | Canvas/screen elements (k_canvas, f_type, name, xposition, yposition, size) |
+
+### 12.3 Screen Layout
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Form Designer    [Search...] [icons]                        │
+├──────────┬──────────────────────────────────────────────────┤
+│ Toolbox  │ COMPANIES ✏  Entity type [-▾] Screen [Consult▾] │
+│          │  Field Collection [User▾] ⚙                      │
+│ Entities │┌────────────────────────────────────────────────┐│
+│ ┌──────┐ ││ [Search] ★ +Add ✏Edit 🗑Delete ≡List ↺History ││
+│ │COMP. │ ││                                          🏛    ││
+│ │Sub1:1│ ││ ┌─────────┬──────────────┬────────────────┐   ││
+│ │Fields│ ││ │Avatar   │Company name  │VAT number      │   ││
+│ │  ... │ ││ │Logo     │RONALD RONALD │Last VIES...    │   ││
+│ │      │ ││ │Drop doc │Phone  +31... │Paymentcondition│   ││
+│ └──────┘ ││ │         │email  info@  │Supply conditions│  ││
+│ $SUBKEYS ││ │         │Website www   │                │   ││
+│ $COMP... ││ └─────────┴──────────────┴────────────────┘   ││
+│ $LICENS  ││                                                ││
+│ Companies││ Contacten Actions Bedrijven Adressen ...  +    ││
+│ Actions  ││┌──────────────────────────────────────────────┐││
+│ Contacts │││ Contacts.Full name                           │││
+│ Projects │││ Contacts.Contact name                        │││
+│ Cases    │││ Contacts.Picture                             │││
+│ Opport.  │││ Contacts.Birthday                            │││
+│ Agenda   │││ ...                                          │││
+│          ││└──────────────────────────────────────────────┘││
+│          │└────────────────────────────────────────────────┘│
+└──────────┴──────────────────────────────────────────────────┘
+```
+
+### 12.4 Toolbox (Left Panel)
+
+The toolbox shows the entity and all related tables:
+
+**Top section — Subject entity:**
+- Entity name (e.g. "COMPANIES") with icon
+- Label "Subject 1:1" 
+- All fields from the entity, sorted by SORT field
+- Fields are color-coded by type:
+  - **Green**: PKey (K_ fields)
+  - **Orange/yellow**: Lookup (F_ fields referencing LK_ tables)
+  - **Blue**: Text fields
+  - **Purple**: Image fields
+  - **Red**: DateTime fields
+- Click on entity header → collapse/expand fields
+
+**Middle section — Subtables:**
+- $SUBKEYS, $COMPANYADDRESSES, $LICENSES, etc.
+- Each with edit icon (✏)
+
+**Bottom section — Linked entities:**
+- All entities connected via link tables
+- Each shows a link label:
+  - "1:n" — link from subject to this entity
+  - "1:main" — link where main=true
+  - "n:1" — reverse link
+- Click on header → collapse/expand that entity's fields
+
+### 12.5 Form Preview (Center)
+
+**Top bar:**
+- Entity name with edit icon
+- Entity type dropdown (from cd_types for this entity, always includes "-" default)
+- Screen type dropdown (ConsultScreen, EditScreen, etc.)
+- Field Collection dropdown (User, Admin, etc.)
+
+**Toolbar:**
+- Search, Star/favorite, +Add, Edit, Delete, List, History buttons
+
+**Three-column header area:**
+- Left: Avatar/logo, name fields, document drop zone
+- Middle: Key fields (Phone, Fax, email, Website)
+- Right: Additional fields (VAT number, Payment condition, etc.)
+- Fields can be dragged here from the toolbox
+
+**Bottom tabs:**
+- One tab per linked entity + subtable
+- Active tab shows field rows (gold/yellow color)
+- Fields shown as "EntityName.FieldName"
+- "+" tab to add new tab
+- Tab order follows link table connections
+
+### 12.6 Screen Types (F_TYPE)
+
+- Each entity can have multiple consult screen types
+- Type "-" (dash) is always present as the default
+- Per F_Type value in the entity, a separate consult screen can be configured
+- New types inherit from the "-" screen
+- The F_TYPE dropdown at the top switches between screen variants
+
+### 12.7 Link Labels in Toolbox
+
+The link direction determines the label shown:
+
+| Scenario | Label | Meaning |
+|----------|-------|---------|
+| Link table has subject as first entity | 1:n | Subject links to many of this entity |
+| Link table has subject as second entity | n:1 | This entity links to many subjects |
+| Link table has main=true | 1:main | Primary/main link |
+| Both directions exist | Shows both labels | |
+
+---
+
+## 13. Known Issues & Gotchas
 
 | # | Issue | Detail |
 |---|-------|--------|
@@ -465,7 +585,7 @@ Frontend: Lucide Icons v0.263.1 (CDN), no build step, no framework.
 
 ---
 
-## 13. Version History (key milestones)
+## 14. Version History (key milestones)
 
 | Version | Commit | Changes |
 |---------|--------|---------|
@@ -479,7 +599,7 @@ Frontend: Lucide Icons v0.263.1 (CDN), no build step, no framework.
 
 ---
 
-## 14. RULES FOR AI ASSISTANTS
+## 15. RULES FOR AI ASSISTANTS
 
 ### ✅ DO:
 - Read this document FIRST before any changes
