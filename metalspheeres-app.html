@@ -12,7 +12,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.6';
+    const MS_VERSION = 'v0.9.7';
     const MS_BUILD = '2026-03-01 14:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -819,11 +819,11 @@
                 <span class="breadcrumb-item">Dashboard</span>
             </div>
             <div class="topbar-actions">
-                <div class="search-bar" onclick="openEntitySearch()" style="cursor:pointer;">
+                <div class="search-bar" onclick="openGlobalSearch()" style="cursor:pointer;">
                     <i data-lucide="search" style="width:14px;height:14px;color:#94A3B8;"></i>
-                    <input type="text" id="globalSearchInput" placeholder="Search entity..." 
+                    <input type="text" id="globalSearchInput" placeholder="Search..." 
                         style="border:none;outline:none;background:transparent;font-size:13px;width:160px;cursor:pointer;"
-                        onfocus="openEntitySearch()" readonly>
+                        onfocus="openGlobalSearch()" readonly>
                     <span class="search-kbd">⌘K</span>
                 </div>
                 <i data-lucide="bell" class="topbar-icon" style="width:18px;height:18px;"></i>
@@ -3945,12 +3945,23 @@ function openEntitySearch(callback) {
     _showSearchOverlay('Search entity...', 'Type to find an entity or table');
 }
 
-function openSearchScreen(tableName) {
+function openSearchScreen(tableName, callback) {
     _ssMode = 'records';
     _ssTable = tableName;
     _ssPage = 0;
-    _ssCallback = null;
+    _ssCallback = callback || null;
     _showSearchOverlay('Search in ' + tableName + '...', 'Search across all fields');
+}
+
+// Callback when a form is selected from cd_forms search
+function ssFormCallback(row) {
+    // row has name, k_form, etc. - find the entity linked to this form via cd_tabl_form
+    const formName = row.name || row.NAME || '';
+    // The form name typically matches or contains the entity name
+    // For now, use the name directly and load it
+    fdCurrentEntity = formName.toUpperCase();
+    sessionStorage.setItem('fd_entity', fdCurrentEntity);
+    fdLoadEntity();
 }
 
 function _showSearchOverlay(placeholder, hint) {
@@ -3988,13 +3999,38 @@ function _showSearchOverlay(placeholder, hint) {
 document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        openEntitySearch();
+        openGlobalSearch();
     }
     if (e.key === 'Escape') {
         const overlay = document.getElementById('searchScreenOverlay');
         if (overlay) overlay.remove();
     }
 });
+
+// Context-aware global search
+function openGlobalSearch() {
+    // Designers search their specific CD table
+    const designerSearchMap = {
+        'form_designer': ['cd_forms', ssFormCallback],
+        'workflow_designer': ['cd_canvases', null],
+        'function_designer': ['cd_functions', null],
+        'lookup_editor': ['cd_tables', null],
+        'fieldcollection_designer': ['cd_tables', null],
+        'network_designer': ['cd_canvases', null],
+        'sbi_designer': ['cd_tables', null],
+        'datawizard': ['cd_tables', null],
+        'translations': ['cd_translations', null],
+        'template_designer': ['cd_forms', null],
+    };
+    
+    const mapping = designerSearchMap[activeItem];
+    if (mapping) {
+        openSearchScreen(mapping[0], mapping[1]);
+    } else {
+        // Default: entity search
+        openEntitySearch();
+    }
+}
 
 async function ssDoSearch() {
     const query = document.getElementById('ssInput').value.trim();
@@ -4045,8 +4081,11 @@ async function ssDoSearch() {
         const pkCol = allCols.find(c => c.toLowerCase().startsWith('k_')) || allCols[0];
         
         let html = '';
-        for (const row of rows) {
-            html += `<div class="ss-row">`;
+        // Store rows for callback
+        window._ssRows = rows;
+        for (let ri = 0; ri < rows.length; ri++) {
+            const row = rows[ri];
+            html += `<div class="ss-row" onclick="ssSelectRecord(${ri})">`;
             html += `<span class="ss-row-pk">#${row[pkCol] || '?'}</span>`;
             html += `<div class="ss-row-fields">`;
             for (const col of showCols) {
@@ -4114,26 +4153,26 @@ function ssEntitySearch(query) {
 function ssSelectEntity(entityName) {
     document.getElementById('searchScreenOverlay').remove();
     
-    // If we have a callback, use it
-    if (_ssCallback) {
-        _ssCallback(entityName);
-        return;
-    }
+    if (_ssCallback) { _ssCallback({ name: entityName }); return; }
     
-    // Default: load in current screen context
+    // Default: load in form designer
+    fdCurrentEntity = entityName;
+    sessionStorage.setItem('fd_entity', entityName);
     if (activeItem === 'form_designer') {
-        fdCurrentEntity = entityName;
-        sessionStorage.setItem('fd_entity', entityName);
         fdLoadEntity();
     } else {
-        // For other screens: navigate to entity
-        fdCurrentEntity = entityName;
-        sessionStorage.setItem('fd_entity', entityName);
-        // Switch to form designer if not on a specific screen
         activeItem = 'form_designer';
         sessionStorage.setItem('ms_activeItem', activeItem);
         renderContent();
     }
+}
+
+function ssSelectRecord(index) {
+    const row = window._ssRows && window._ssRows[index];
+    if (!row) return;
+    document.getElementById('searchScreenOverlay').remove();
+    
+    if (_ssCallback) { _ssCallback(row); return; }
 }
 
 function ssRenderPager(total, pagerEl) {
@@ -4470,7 +4509,7 @@ function fdRenderPreview() {
     
     // Build toolbar
     let html = `<div class="fd-toolbar">
-        <input type="text" placeholder="Search..." style="padding:4px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;width:120px;cursor:pointer;" readonly onclick="if(fdCurrentEntity)openSearchScreen(fdCurrentEntity);else openEntitySearch();">
+        <input type="text" placeholder="Search forms..." style="padding:4px 8px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;width:120px;cursor:pointer;" readonly onclick="openSearchScreen('cd_forms', ssFormCallback)">
         <span style="cursor:pointer;color:#F59E0B;">★</span>
         <button class="fd-toolbar-btn green">⊕ Add</button>
         <button class="fd-toolbar-btn blue">✏ Edit</button>
