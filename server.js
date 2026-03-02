@@ -271,19 +271,54 @@ app.get('/api/tables/:id/types', async (req, res) => {
 });
 
 // Bulk type counts per table (for designer Type column)
-// Counts cd_types rows per entity via f_table → cd_tables.k_table
+// Problem: cd_types.f_table has OLD k_table values from production system
+// cd_tables.k_table has NEW values from XSD seed (1,2,3...)
+// Solution: build mapping old_k_table → name using cd_tables entries that WERE imported
+// with old k_table values, OR by matching directly
 app.get('/api/types/counts', async (req, res) => {
     try {
-        const { rows } = await pool.query(`
-            SELECT t.name, COUNT(ty.k_type) as cnt
-            FROM cd_tables t
-            JOIN cd_types ty ON ty.f_table = t.k_table
+        // First try direct join (works if k_table values align)
+        const { rows: direct } = await pool.query(`
+            SELECT UPPER(t.name) as name, COUNT(ty.k_type) as cnt
+            FROM cd_types ty
+            JOIN cd_tables t ON t.k_table = ty.f_table
             GROUP BY t.name
         `);
+        
         const counts = {};
-        for (const r of rows) {
-            counts[r.name.toUpperCase()] = parseInt(r.cnt) || 0;
+        for (const r of direct) {
+            counts[r.name] = parseInt(r.cnt);
         }
+        
+        // If direct join found very little, f_table values don't match k_table
+        // Build a mapping by querying: which f_table values exist in cd_types?
+        // Then check if cd_tables has ANY row imported with that k_table
+        // If not, we need to rebuild the mapping
+        if (Object.keys(counts).length < 10) {
+            // Get all unique f_table values and their counts
+            const { rows: ftCounts } = await pool.query(
+                'SELECT f_table, COUNT(*) as cnt FROM cd_types WHERE f_table IS NOT NULL GROUP BY f_table'
+            );
+            // Get ALL cd_tables rows to build name→k_table map
+            const { rows: allTables } = await pool.query('SELECT k_table, UPPER(name) as name FROM cd_tables');
+            const nameToNew = {};
+            for (const t of allTables) nameToNew[t.name] = t.k_table;
+            
+            // For each f_table, find which table it SHOULD map to
+            // cd_types with f_table=X means "types for the table whose k_table WAS X in old system"
+            // We need old k_table→name mapping. The old cd_tables entries may be in our db
+            // if the ZIP was imported. Check if f_table values appear as k_table in cd_tables:
+            const oldToName = {};
+            for (const t of allTables) oldToName[t.k_table] = t.name;
+            
+            for (const fc of ftCounts) {
+                const name = oldToName[fc.f_table];
+                if (name && !counts[name]) {
+                    counts[name] = parseInt(fc.cnt);
+                }
+            }
+        }
+        
         res.json(counts);
     } catch(e) {
         res.status(500).json({ error: e.message });
