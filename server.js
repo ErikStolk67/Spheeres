@@ -1643,50 +1643,48 @@ app.post('/api/import-schema', express.raw({ type: '*/*', limit: '100mb' }), asy
     }
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`MetalSpheeres API running on port ${PORT}`);
-    
-    // Startup health check: if cd_tables is empty, auto-seed from schema
+// Manual endpoint to restore cd_tables from PostgreSQL catalog
+
+// Manual endpoint to restore cd_tables from PostgreSQL catalog
+app.post('/api/restore-cd-tables', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT COUNT(*) as cnt FROM cd_tables');
-        const count = parseInt(rows[0].cnt);
-        console.log(`Health check: cd_tables has ${count} rows`);
-        
-        if (count === 0) {
-            console.log('WARNING: cd_tables is EMPTY! Auto-seeding from PostgreSQL schema...');
-            
-            // Lightweight: just get table names from catalog (no counts)
-            const { rows: catalogTables } = await pool.query(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name"
-            );
-            console.log(`Found ${catalogTables.length} tables in catalog`);
-            
-            const client = await pool.connect();
-            try {
-                await client.query('BEGIN');
-                let tableId = 1;
-                for (const t of catalogTables) {
-                    const upper = t.table_name.toUpperCase();
-                    let fType = 1;
-                    if (upper.includes('_LK_') || upper.startsWith('LK_')) fType = 2;
-                    else if (/^CD_[A-Z]{2,5}_[A-Z]{2,5}$/.test(upper) && !upper.includes('_LK_')) fType = 3;
-                    
-                    await client.query(
-                        'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now()) ON CONFLICT (k_table) DO NOTHING',
-                        [tableId, upper, fType, tableId]
-                    );
-                    tableId++;
-                }
-                await client.query('COMMIT');
-                console.log(`Auto-seeded cd_tables with ${tableId - 1} tables`);
-            } catch(e) {
-                try { await client.query('ROLLBACK'); } catch(e2) {}
-                console.error('Auto-seed failed:', e.message);
-            } finally {
-                client.release();
+        const { rows: catalogTables } = await pool.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name"
+        );
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            let tableId = 1;
+            for (const t of catalogTables) {
+                const upper = t.table_name.toUpperCase();
+                let fType = 1;
+                if (upper.includes('_LK_') || upper.startsWith('LK_')) fType = 2;
+                else if (/^CD_[A-Z]{2,5}_[A-Z]{2,5}$/.test(upper) && !upper.includes('_LK_')) fType = 3;
+                await client.query(
+                    'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now()) ON CONFLICT (k_table) DO NOTHING',
+                    [tableId, upper, fType, tableId]
+                );
+                tableId++;
             }
+            await client.query('COMMIT');
+            res.json({ success: true, tables: tableId - 1 });
+        } catch(e) {
+            try { await client.query('ROLLBACK'); } catch(e2) {}
+            throw e;
+        } finally {
+            client.release();
         }
     } catch(e) {
-        console.error('Health check failed:', e.message);
+        res.status(500).json({ error: e.message });
     }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`MetalSpheeres API running on port ${PORT}`);
+    // Quick non-blocking check
+    pool.query('SELECT COUNT(*) as cnt FROM cd_tables').then(r => {
+        const cnt = r.rows[0].cnt;
+        console.log('cd_tables:', cnt, 'rows');
+        if (parseInt(cnt) === 0) console.log('WARNING: cd_tables empty. POST /api/restore-cd-tables to fix.');
+    }).catch(e => console.log('cd_tables check failed:', e.message));
 });
