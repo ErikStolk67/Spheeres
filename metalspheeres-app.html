@@ -504,7 +504,7 @@
         }
         .te-tree-item:hover { background: #E2E8F0; }
         .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; }
-        .te-tree-item.child { margin-left: 16px; font-size: 12px; }
+        .te-tree-item.child { margin-left: 20px; font-size: 12px; border-left: 2px solid #CBD5E1; padding-left: 12px; color: #334155; }
         .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; }
         .te-tree-item.drag-over-top { border-top: 2px solid #3B82F6; }
         .te-tree-item.drag-over-bottom { border-bottom: 2px solid #3B82F6; }
@@ -5054,9 +5054,13 @@ function renderTypesEditor() {
     // Tree items
     let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
 
-    // Build hierarchy from cd_type_type links
-    const roots = types.filter(t => !t.f_parent);
-    const children = types.filter(t => t.f_parent);
+    // Build hierarchy: determine roots vs children
+    // A type is a root if:
+    // - f_parent is null/undefined, OR
+    // - f_parent doesn't match any k_type in this entity's type list
+    const ktypeSet = new Set(types.map(t => t.k_type));
+    const roots = types.filter(t => !t.f_parent || !ktypeSet.has(t.f_parent));
+    const children = types.filter(t => t.f_parent && ktypeSet.has(t.f_parent));
 
     for (const t of roots) {
         treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_type ? ' active' : '') + '" draggable="true" data-ktype="' + t.k_type + '" onclick="selectType(' + t.k_type + ')" ondragstart="teDragStart(event,' + t.k_type + ')" ondragover="teDragOver(event,' + t.k_type + ')" ondragleave="teDragLeave(event)" ondrop="teDrop(event,' + t.k_type + ')">' + escHtml(t.name || 'Unnamed') + '</div>';
@@ -5253,51 +5257,34 @@ function teDrop(e, targetKtype) {
     
     const rect = e.target.closest('.te-tree-item').getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const oldParent = dragType.f_parent;
+    const y = e.clientY - rect.top;
     
     if (x > 60) {
-        // Make child of target via cd_type_type
+        // Make child of target: set f_parent to target's k_type
         dragType.f_parent = targetKtype;
-        
-        // Remove old link if existed
-        if (oldParent) {
-            fetch(API + '/type-links/' + oldParent + '/' + dragType.k_type, { method: 'DELETE' }).catch(() => {});
-        }
-        // Create new link
-        fetch(API + '/type-links', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parent_id: targetKtype, child_id: dragType.k_type, k_seq: 1 })
-        }).catch(() => {});
     } else {
-        // Move to same level as target
+        // Move to same level as target (same parent)
         dragType.f_parent = targetType.f_parent;
         
-        // Remove old link
-        if (oldParent) {
-            fetch(API + '/type-links/' + oldParent + '/' + dragType.k_type, { method: 'DELETE' }).catch(() => {});
-        }
-        // Create new link if target has a parent
-        if (targetType.f_parent) {
-            fetch(API + '/type-links', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ parent_id: targetType.f_parent, child_id: dragType.k_type, k_seq: 1 })
-            }).catch(() => {});
-        }
-        
-        // Reorder
+        // Reorder in array
         const dragIdx = st.types.indexOf(dragType);
-        const targetIdx = st.types.indexOf(targetType);
         st.types.splice(dragIdx, 1);
         const newTargetIdx = st.types.indexOf(targetType);
-        const y = e.clientY - rect.top;
         const insertIdx = y < rect.height / 2 ? newTargetIdx : newTargetIdx + 1;
         st.types.splice(insertIdx, 0, dragType);
     }
     
     // Update sort values
     st.types.forEach((t, i) => t.sort = i + 1);
+    
+    // Save parent change to API via f_type field
+    if (typeof dragType.k_type === 'number') {
+        fetch(API + '/types/' + dragType.k_type, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: dragType.name, f_type: dragType.f_parent || null })
+        }).catch(() => {});
+    }
     
     _teDragId = null;
     renderTypesEditor();
