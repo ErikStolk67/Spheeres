@@ -1655,22 +1655,21 @@ app.listen(PORT, '0.0.0.0', async () => {
         if (count === 0) {
             console.log('WARNING: cd_tables is EMPTY! Auto-seeding from PostgreSQL schema...');
             
-            // Get all tables from PostgreSQL catalog
-            const schema = await getSchemaFull();
-            const tableNames = Object.keys(schema);
-            console.log(`Found ${tableNames.length} tables in PostgreSQL catalog`);
+            // Lightweight: just get table names from catalog (no counts)
+            const { rows: catalogTables } = await pool.query(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name"
+            );
+            console.log(`Found ${catalogTables.length} tables in catalog`);
             
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
                 let tableId = 1;
-                for (const tableName of tableNames.sort()) {
-                    // Determine f_type from name
-                    const upper = tableName.toUpperCase();
-                    let fType = 1; // entity
-                    if (upper.includes('_LK_') || upper.startsWith('LK_')) fType = 2; // lookup
-                    else if (upper.match(/^CD_[A-Z]{2,5}_[A-Z]{2,5}$/) && !upper.includes('_LK_')) fType = 3; // link
-                    else if (upper.includes('$') || (upper.startsWith('CD_') && upper.split('_').length > 2 && fType !== 3)) fType = 4; // subtable
+                for (const t of catalogTables) {
+                    const upper = t.table_name.toUpperCase();
+                    let fType = 1;
+                    if (upper.includes('_LK_') || upper.startsWith('LK_')) fType = 2;
+                    else if (/^CD_[A-Z]{2,5}_[A-Z]{2,5}$/.test(upper) && !upper.includes('_LK_')) fType = 3;
                     
                     await client.query(
                         'INSERT INTO cd_tables (k_table, name, f_type, sort, createdate, changedate) VALUES ($1, $2, $3, $4, now(), now()) ON CONFLICT (k_table) DO NOTHING',
