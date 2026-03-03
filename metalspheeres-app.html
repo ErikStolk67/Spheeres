@@ -4954,20 +4954,33 @@ let typesEditorState = {
 function openTypesEditor(tableName) {
     typesEditorState.tableName = tableName;
 
-    // Load types from cd_types via entity-types endpoint
+    // Load types from cd_types + hierarchy from cd_type_type
     fetch(API + '/entity-types/' + encodeURIComponent(tableName))
-    .then(r => r.ok ? r.json() : { types: [], k_table: null })
+    .then(r => r.ok ? r.json() : { types: [], links: [], k_table: null })
     .then(data => {
-        typesEditorState.types = (data.types || []).map(t => ({
-            ...t,
-            f_parent: t.f_type  // f_type in cd_types = parent type reference
-        }));
+        const types = data.types || [];
+        const links = data.links || [];
+        
+        // Build parent map from cd_type_type: k_type2 (child) → k_type1 (parent)
+        const parentMap = {};
+        for (const l of links) {
+            parentMap[l.k_type2] = l.k_type1;
+        }
+        
+        // Assign f_parent from cd_type_type
+        for (const t of types) {
+            t.f_parent = parentMap[t.k_type] || null;
+        }
+        
+        typesEditorState.types = types;
+        typesEditorState.links = links;
         typesEditorState.k_table = data.k_table;
-        typesEditorState.selectedId = typesEditorState.types.length > 0 ? typesEditorState.types[0].k_type : null;
+        typesEditorState.selectedId = types.length > 0 ? types[0].k_type : null;
         renderTypesEditor();
     })
     .catch(() => {
         typesEditorState.types = [];
+        typesEditorState.links = [];
         typesEditorState.k_table = null;
         typesEditorState.selectedId = null;
         renderTypesEditor();
@@ -5041,10 +5054,9 @@ function renderTypesEditor() {
     // Tree items
     let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
 
-    // Build hierarchy: root types (no parent), then children
-    const rootTypeId = 19181; // Common root f_type value
-    const roots = types.filter(t => !t.f_parent || t.f_parent === rootTypeId);
-    const children = types.filter(t => t.f_parent && t.f_parent !== rootTypeId);
+    // Build hierarchy from cd_type_type links
+    const roots = types.filter(t => !t.f_parent);
+    const children = types.filter(t => t.f_parent);
 
     for (const t of roots) {
         treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_type ? ' active' : '') + '" draggable="true" data-ktype="' + t.k_type + '" onclick="selectType(' + t.k_type + ')" ondragstart="teDragStart(event,' + t.k_type + ')" ondragover="teDragOver(event,' + t.k_type + ')" ondragleave="teDragLeave(event)" ondrop="teDrop(event,' + t.k_type + ')">' + escHtml(t.name || 'Unnamed') + '</div>';
@@ -5241,16 +5253,40 @@ function teDrop(e, targetKtype) {
     
     const rect = e.target.closest('.te-tree-item').getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const rootTypeId = 19181;
+    const oldParent = dragType.f_parent;
     
     if (x > 60) {
-        // Make child of target
+        // Make child of target via cd_type_type
         dragType.f_parent = targetKtype;
+        
+        // Remove old link if existed
+        if (oldParent) {
+            fetch(API + '/type-links/' + oldParent + '/' + dragType.k_type, { method: 'DELETE' }).catch(() => {});
+        }
+        // Create new link
+        fetch(API + '/type-links', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_id: targetKtype, child_id: dragType.k_type, k_seq: 1 })
+        }).catch(() => {});
     } else {
-        // Move to same level as target (same parent)
+        // Move to same level as target
         dragType.f_parent = targetType.f_parent;
         
-        // Reorder: put drag item next to target
+        // Remove old link
+        if (oldParent) {
+            fetch(API + '/type-links/' + oldParent + '/' + dragType.k_type, { method: 'DELETE' }).catch(() => {});
+        }
+        // Create new link if target has a parent
+        if (targetType.f_parent) {
+            fetch(API + '/type-links', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent_id: targetType.f_parent, child_id: dragType.k_type, k_seq: 1 })
+            }).catch(() => {});
+        }
+        
+        // Reorder
         const dragIdx = st.types.indexOf(dragType);
         const targetIdx = st.types.indexOf(targetType);
         st.types.splice(dragIdx, 1);
@@ -5262,15 +5298,6 @@ function teDrop(e, targetKtype) {
     
     // Update sort values
     st.types.forEach((t, i) => t.sort = i + 1);
-    
-    // Save parent change to API
-    if (typeof dragType.k_type === 'number') {
-        fetch(API + '/types/' + dragType.k_type, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: dragType.name, f_type: dragType.f_parent || null })
-        }).catch(() => {});
-    }
     
     _teDragId = null;
     renderTypesEditor();

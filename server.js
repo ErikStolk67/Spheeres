@@ -326,6 +326,7 @@ app.get('/api/types/counts', async (req, res) => {
 });
 
 // Get types for a specific entity from cd_types via cd_tables lookup
+// Also returns hierarchy from cd_type_type
 app.get('/api/entity-types/:entityName', async (req, res) => {
     const entityName = req.params.entityName.toUpperCase();
     try {
@@ -335,17 +336,69 @@ app.get('/api/entity-types/:entityName', async (req, res) => {
             [entityName]
         );
         if (tableRes.rows.length === 0) {
-            return res.json({ types: [], k_table: null });
+            return res.json({ types: [], links: [], k_table: null });
         }
         const k_table = tableRes.rows[0].k_table;
         
         // Get types from cd_types where f_table matches
         const typesRes = await pool.query(
-            'SELECT k_type, name, f_type, f_icon, "default", sort FROM cd_types WHERE f_table = $1 ORDER BY sort, name',
+            'SELECT k_type, name, f_type, f_icon, "default", sort, flowfolder, memo_plaintext, f_kind, f_lifestatus FROM cd_types WHERE f_table = $1 ORDER BY sort, name',
             [k_table]
         );
         
-        res.json({ types: typesRes.rows, k_table });
+        // Get hierarchy links from cd_type_type for these types
+        const typeIds = typesRes.rows.map(t => t.k_type);
+        let links = [];
+        if (typeIds.length > 0) {
+            const linksRes = await pool.query(
+                'SELECT k_type1, k_type2, k_seq FROM cd_type_type WHERE k_type1 = ANY($1) OR k_type2 = ANY($1) ORDER BY k_type1, k_seq',
+                [typeIds]
+            );
+            links = linksRes.rows;
+        }
+        
+        res.json({ types: typesRes.rows, links, k_table });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Manage type hierarchy via cd_type_type
+app.post('/api/type-links', express.json(), async (req, res) => {
+    const { parent_id, child_id, k_seq } = req.body;
+    try {
+        await pool.query(
+            'INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, $3, now(), now()) ON CONFLICT DO NOTHING',
+            [parent_id, child_id, k_seq || 1]
+        );
+        res.json({ success: true });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/type-links/:parentId/:childId', async (req, res) => {
+    try {
+        await pool.query(
+            'DELETE FROM cd_type_type WHERE k_type1 = $1 AND k_type2 = $2',
+            [req.params.parentId, req.params.childId]
+        );
+        res.json({ success: true });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/type-links/reorder', express.json(), async (req, res) => {
+    const { parent_id, children } = req.body; // children = [{k_type, k_seq}]
+    try {
+        for (const c of children) {
+            await pool.query(
+                'UPDATE cd_type_type SET k_seq = $1, changedate = now() WHERE k_type1 = $2 AND k_type2 = $3',
+                [c.k_seq, parent_id, c.k_type]
+            );
+        }
+        res.json({ success: true });
     } catch(e) {
         res.status(500).json({ error: e.message });
     }
