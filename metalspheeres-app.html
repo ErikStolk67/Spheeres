@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script>
     window.onerror = function(msg, url, line, col, err) {
@@ -3471,6 +3472,11 @@ async function importMultipleFiles(files) {
 }
 
 async function importDroppedFile(file) {
+    // ZIP files: unzip on client side via importXmlFile
+    if (file.name.toLowerCase().endsWith('.zip')) {
+        const fakeInput = { files: [file], value: '' };
+        return importXmlFile(fakeInput);
+    }
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
     showImportBar('Reading ' + file.name + ' (' + sizeMB + ' MB)...');
     try {
@@ -3552,37 +3558,63 @@ async function importXmlFile(input) {
     input.value = '';
     
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    showImportBar('Uploading ' + file.name + ' (' + sizeMB + ' MB)...');
+    showImportBar('Reading ' + file.name + ' (' + sizeMB + ' MB)...');
     
     try {
-        const resp = await fetch(API + '/import-xml', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: file
-        });
+        const isZip = file.name.toLowerCase().endsWith('.zip');
+        let xmlFiles = [];
         
-        const startResult = await resp.json();
-        
-        if (!startResult.success) {
-            hideImportBar();
-            showImportReport({ error: startResult.error || 'Failed to start import' });
-            return;
-        }
-        
-        const result = await pollImportStatus();
-        hideImportBar();
-        
-        if (result && result.success) {
-            sessionStorage.removeItem('ms_schema');
-            await loadSchemaFromDB();
-            showImportReport(result);
-            renderContent();
+        if (isZip && typeof JSZip !== 'undefined') {
+            // Unzip on CLIENT side to avoid server memory issues
+            const zip = await JSZip.loadAsync(file);
+            const entries = Object.keys(zip.files).filter(n => n.toLowerCase().endsWith('.xml') && !zip.files[n].dir);
+            showImportBar('Extracting ' + entries.length + ' XML files from ZIP...');
+            for (const name of entries) {
+                const content = await zip.files[name].async('string');
+                xmlFiles.push({ name, content });
+            }
         } else {
-            showImportReport(result || { error: 'No result from import' });
+            const content = await file.text();
+            xmlFiles.push({ name: file.name, content });
         }
+        
+        // Send each XML separately to keep server memory low
+        const allResults = [];
+        for (let i = 0; i < xmlFiles.length; i++) {
+            const xf = xmlFiles[i];
+            showImportBar('Importing ' + (i+1) + '/' + xmlFiles.length + ': ' + xf.name + '...');
+            try {
+                const resp = await fetch(API + '/import-xml', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: new Blob([xf.content], { type: 'text/xml' })
+                });
+                const startResult = await resp.json();
+                if (startResult.success) {
+                    const result = await pollImportStatus();
+                    if (result) allResults.push(result);
+                } else {
+                    allResults.push({ success: false, error: startResult.error, totalRows: 0, tablesProcessed: 0, details: [] });
+                }
+            } catch(e) {
+                allResults.push({ success: false, error: e.message, totalRows: 0, tablesProcessed: 0, details: [] });
+            }
+        }
+        
+        hideImportBar();
+        const merged = { success: true, totalRows: 0, tablesProcessed: 0, details: [] };
+        for (const r of allResults) {
+            merged.totalRows += r.totalRows || 0;
+            merged.tablesProcessed += r.tablesProcessed || 0;
+            merged.details = merged.details.concat(r.details || []);
+        }
+        sessionStorage.removeItem('ms_schema');
+        await loadSchemaFromDB();
+        showImportReport(merged);
+        renderContent();
     } catch (err) {
         hideImportBar();
-        showImportReport({ error: 'Server error: ' + err.message });
+        showImportReport({ error: 'Import error: ' + err.message });
     }
 }
 
