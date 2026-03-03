@@ -9,8 +9,8 @@ Single-page app: one HTML file + Node.js backend.
 
 | Item | Value |
 |------|-------|
-| Frontend | `metalspheeres-app.html` (~5400 lines, HTML + CSS + JS) |
-| Backend | `server.js` (~1550 lines, Node.js/Express) |
+| Frontend | `metalspheeres-app.html` (~5550 lines, HTML + CSS + JS) |
+| Backend | `server.js` (~1690 lines, Node.js/Express) |
 | Database | PostgreSQL on Neon (cloud) |
 | Hosting | Render.com free tier, auto-deploy from GitHub `main` |
 | URL | https://spheeres.onrender.com |
@@ -21,7 +21,7 @@ Single-page app: one HTML file + Node.js backend.
 ```
 metalspheeres-app.html  — Single-page app (ALL frontend code)
 server.js               — Express API server
-package.json            — Dependencies (express, pg)
+package.json            — Dependencies (express, pg, adm-zip, cors)
 database/
   003_xsd_migration.sql — Table DDL (original schema)
   004_xsd_alignment.sql — ALTER TABLE additions
@@ -278,8 +278,10 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 | `/api/tables/sort` | PUT | Bulk update sort: `{ order: [{name, sort}] }` |
 | `/api/tables/:id/fields` | GET | Fields for a table |
 | `/api/fields` | GET | All fields joined with tables |
-| `/api/tables/:id/types` | GET/POST | Types for a table |
-| `/api/types/counts` | GET | Type count per table name (for Type column) |
+| `/api/tables/:id/types` | GET/POST | Types for a table (uses f_table, not k_table) |
+| `/api/types/:id` | PUT/DELETE | Update or delete a type in cd_types |
+| `/api/types/counts` | GET | Type count per entity via cd_types JOIN cd_tables |
+| `/api/entity-types/:entityName` | GET | Types for entity by name: resolves name→k_table→cd_types |
 
 ### 5.2 Data & Stats
 
@@ -288,32 +290,43 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 | `/api/stats/counts` | GET | Record counts per table |
 | `/api/raw/:table?limit=&offset=&search=` | GET | Raw table data, paginated. Search queries ALL text/varchar columns with ILIKE |
 | `/api/data/:table` | POST | Insert/update data |
-| `/api/types/counts` | GET | COUNT(DISTINCT f_type) in actual table data (not cd_types) |
 | `/api/tables/sort/init` | POST | Fill NULL sort values in cd_tables with contiguous numbers |
 | `/api/backup` | GET | Export all CD_ table data as JSON |
 
-### 5.3 Admin
+### 5.3 Import & Export
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/api/import-xml` | POST | Import XML data into existing tables (async, non-blocking) |
+| `/api/import-status` | GET | Live import progress polling |
+| `/api/import-schema` | POST | Import Verspaning-style schema XML |
 | `/api/seed` | POST | Seed dictionary |
 | `/api/seed-xsd` | POST | Seed from XSD field data |
 | `/api/build-tables` | POST | Create PostgreSQL tables from dictionary |
-| `/api/migrate` | POST | Run migrations |
-| `/api/import-xml` | POST | Import XML data into existing tables |
-| `/api/import-schema` | POST | Import Verspaning-style schema XML |
+| `/api/restore-cd-tables` | POST | Restore cd_tables from PostgreSQL catalog (emergency recovery) |
 
-### 5.4 Schema Import (XSD/ZIP)
+### 5.4 Debug
 
-The import processes Spheeres XSD files and:
-1. Parses table/field definitions from XML
-2. Classifies tables using `getTableFType()` in server.js:
-   - Starts with `LK_` or `CD_LK_` → f_type 2 (lookup)
-   - No `_` in base → f_type 1 (entity)
-   - 2 parts with ≤5 chars each → f_type 3 (link)
-   - Otherwise → f_type 4 (subtable)
-3. Inserts into `cd_tables` with correct f_type and sort = tableId
-4. Inserts fields into `cd_fields` + link records into `cd_tabl_fiel`
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/debug/errors` | GET | Import status, last 20 errors, memory usage in MB |
+
+### 5.5 Import System (XML/ZIP)
+
+**Architecture: client-side unzip + server-side async**
+
+1. Frontend detects ZIP → uses JSZip (CDN) to extract XML files in browser
+2. Each XML file sent individually to `/api/import-xml` (keeps server memory low)
+3. Server responds immediately with `{success: true, message: 'Import started'}`
+4. Import runs in background, updates `_importStatus` with progress
+5. Frontend polls `/api/import-status` every 1s, shows status bar (bottom-right, non-blocking)
+6. On completion, import report shows per-table results
+
+**Critical: NO TRUNCATE.** Import uses UPSERT (ON CONFLICT DO UPDATE) to prevent data loss if interrupted.
+
+**k_table mapping issue:** cd_types.f_table contains original production k_table values (e.g. 20166, 19722). cd_tables.k_table may have different values from XSD seed (1, 2, 3...). After ZIP import, cd_tables gets the original k_table values, and the JOIN works correctly.
+
+**Startup health check:** On server start, checks if cd_tables is empty and logs a warning. Does NOT auto-seed (was causing boot crashes). Use `POST /api/restore-cd-tables` for manual recovery.
 
 ---
 
@@ -660,8 +673,13 @@ The type system works as follows:
 
 - **CD_TYPES** is the central lookup table for all F_TYPE values
 - `cd_types.f_table` → FK to `cd_tables.k_table` — determines which entity the type belongs to
-- `cd_types.f_type` → FK to `cd_types.k_type` — subtypes (parent type)
+- `cd_types.f_type` → FK to `cd_types.k_type` — parent type (hierarchy)
 - `cd_types.k_type` → PK, the value stored in F_TYPE columns of entity records
+- `cd_types.flowfolder` → boolean, marks flow folder types
+- `cd_types.memo_plaintext` → description text
+- `cd_types.f_kind` → kind classification
+- `cd_types.f_icon` → icon reference
+- `cd_types.sort` → display order
 
 To get types for entity "COMPANIES":
 1. Find k_table: `SELECT k_table FROM cd_tables WHERE name = 'COMPANIES'` → e.g. 42
@@ -669,12 +687,44 @@ To get types for entity "COMPANIES":
 
 API: `GET /api/entity-types/:entityName` returns `{ types: [...], k_table: N }`
 
-- Type "-" (dash) is always present as the default for screens
-- Per type value, a separate consult screen can be configured
-- New types inherit from the "-" screen
-- The `default` boolean in cd_types marks the default type for new records
+**Type column in Database Designer matrix:**
+- Shows count of types from cd_types for each entity
+- Number in blue+bold when types exist, dash `–` when none
+- Always clickable → opens Types Editor
+- Count comes from `GET /api/types/counts` (JOIN cd_types on cd_tables)
 
-### 12.7 Link Labels in Toolbox
+### 12.7 Types Editor
+
+Opens when clicking Type count in the matrix. Two-panel layout:
+
+**Left panel — Tree:**
+- Hierarchical tree of types for the entity
+- Root types: f_type = 19181 (common root) or null
+- Children: f_type points to parent's k_type, shown indented
+- Drag & drop:
+  - Up/down: reorder within same level
+  - Right (>60px): make child of drop target
+  - Blue indicators show drop position
+  - Changes saved to API immediately (f_type updated)
+- "+" button: creates new type (POST /api/tables/:k_table/types)
+- Default "—" item always shown at top
+
+**Right panel — Properties (General tab):**
+- Name: editable, saved on Save
+- Type: Entity type (dropdown)
+- Kind: from f_kind
+- Icon: icon selector
+- Flow folder: checkbox (flowfolder field)
+- Status: Enable/Disable
+- Description: memo_plaintext
+
+**Additional tabs (planned):**
+- Status designer
+- Business Roles
+- Kinds
+- Business Roles's Type Security
+
+### 12.8 Link Labels in Toolbox
 
 The link direction determines the label shown:
 
@@ -702,6 +752,11 @@ The link direction determines the label shown:
 | 9 | **cd_fields mostly NULL** | XSD import only sets name+type+sort. f_kind, f_format etc. need data export to fill. |
 | 10 | **Headers must be WHITE** | Entity names on both axes: #fff. Meta columns: lighter than matrix. NOT zone-colored. |
 | 11 | **Drag is column-based** | Drag on horizontal axis (column headers), NOT row headers. Within same block only. |
+| 12 | **k_table mismatch** | cd_types.f_table has original production k_table values. cd_tables.k_table may differ after XSD seed. ZIP import fixes this by overwriting cd_tables with original PKs. |
+| 13 | **Render OOM on large uploads** | Server crashes on 8MB+ files. ZIP must be extracted client-side (JSZip). Individual XMLs sent one at a time. |
+| 14 | **No TRUNCATE in imports** | TRUNCATE was removed. Import uses UPSERT. If TRUNCATE is reintroduced, a crash mid-import will leave tables empty. |
+| 15 | **Import status is per-file** | When importing a ZIP with multiple XMLs, _importStatus only shows the last file's result. Frontend merges results from all files. |
+| 16 | **Express 5.x** | The project uses Express 5.2.1 (not v4). Some middleware patterns differ. |
 
 ---
 
@@ -729,6 +784,15 @@ The link direction determines the label shown:
 | v0.9.5 | e684def | Google-style Search Screen across all text fields |
 | v0.9.6 | da6d331 | Unified search: entity search + record search |
 | v0.9.7 | 35da66d | Designers search CD tables, Form Designer → cd_forms |
+| v0.9.8 | 2777ba5 | Types system: cd_types as central lookup, GET /api/entity-types/:name |
+| v0.9.9 | 1f2856d | Type column shows cd_types count per entity (JOIN, not DISTINCT scan) |
+| v0.9.10 | 820d07f | Types Editor loads real cd_types data, correct column names |
+| — | d3750f5 | Non-blocking import: status bar instead of full-screen overlay |
+| — | 49c41a0 | Client-side ZIP unzip (JSZip), individual XMLs sent to server |
+| — | f272959 | Fix missing _importStatus declaration |
+| — | d480338 | Lightweight startup health check (no more getSchemaFull at boot) |
+| — | 1dad6d9 | Remove blocking auto-seed, instant server start |
+| — | d435b49 | Types tree: drag & drop to reorder and create hierarchy |
 
 ---
 
@@ -748,7 +812,10 @@ The link direction determines the label shown:
 - Search screen: each designer searches its own CD table
 
 ### ❌ DO NOT:
-- Modify table structures (no ALTER TABLE, no CREATE TABLE, no CAST)
+- Modify table structures (no ALTER TABLE, no CREATE TABLE, no DROP)
+- Use TRUNCATE in imports (use UPSERT instead)
+- Send large files (>2MB) to server in one request (unzip client-side)
+- Block startup with heavy queries (no getSchemaFull at boot)
 - Add F_ column scanning for relationship detection
 - Add search fields, filter bars, or legends to the Database Designer
 - Color entity headers/names (only matrix cells are colored)
@@ -759,6 +826,7 @@ The link direction determines the label shown:
 - Introduce CD/SYS/User background colors on row/column headers
 - Show entities/subs/links as children in Lookup Editor (only LK_ tables)
 - Use entity dropdown selectors in designers (use search screen instead)
+- Push during an active import (redeploy interrupts background work)
 
 ### 🔍 WHEN IN DOUBT:
 - Look at the reference screenshots uploaded by the user
