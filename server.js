@@ -945,6 +945,9 @@ app.post('/api/seed', async (req, res) => {
 // Format: <CD_Verspaning><CD_TABLENAME><field>val</field>...</CD_TABLENAME>...</CD_Verspaning>
 // ============================================================================
 
+// Import status tracking
+let _importStatus = { running: false, progress: '', results: null, error: null };
+
 // Debug: last errors log
 let _lastErrors = [];
 function logError(context, err) {
