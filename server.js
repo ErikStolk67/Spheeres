@@ -945,8 +945,28 @@ app.post('/api/seed', async (req, res) => {
 // Format: <CD_Verspaning><CD_TABLENAME><field>val</field>...</CD_TABLENAME>...</CD_Verspaning>
 // ============================================================================
 
-// Import status tracking
-let _importStatus = { running: false, progress: '', results: null, error: null };
+// Debug: last errors log
+let _lastErrors = [];
+function logError(context, err) {
+    const entry = { time: new Date().toISOString(), context, message: err.message || String(err) };
+    _lastErrors.push(entry);
+    if (_lastErrors.length > 20) _lastErrors.shift();
+    console.error(context + ':', err.message || err);
+}
+
+// Catch unhandled errors so server doesn't crash silently
+process.on('uncaughtException', (err) => {
+    logError('UNCAUGHT', err);
+    _importStatus = { running: false, progress: 'Crashed', results: null, error: 'Server crash: ' + err.message };
+});
+process.on('unhandledRejection', (reason) => {
+    logError('UNHANDLED_REJECTION', { message: String(reason) });
+    _importStatus = { running: false, progress: 'Crashed', results: null, error: 'Unhandled: ' + String(reason) };
+});
+
+app.get('/api/debug/errors', (req, res) => {
+    res.json({ importStatus: _importStatus, lastErrors: _lastErrors, memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) });
+});
 
 app.get('/api/import-status', (req, res) => {
     res.json(_importStatus);
@@ -968,7 +988,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
     try {
         client = await pool.connect();
     } catch(e) {
-        console.error('Import: failed to connect to DB:', e.message);
+        logError('Import DB connect', e);
         _importStatus = { running: false, progress: 'Error', results: null, error: 'DB connection failed: ' + e.message };
         return;
     }
@@ -1028,7 +1048,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
-            console.error('Import: no records found in XML');
+            logError('Import parse', {message:'No records found in XML'});
             _importStatus = { running: false, progress: 'Done', results: null, error: 'No records found in file' };
             client.release();
             return;
@@ -1177,7 +1197,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         invalidateSchemaCache();
         _importStatus = { running: false, progress: 'Done', results: { success: true, tablesProcessed: importResults.length, totalRows, details: importResults }, error: null };
     } catch (err) {
-        console.error('Import ERROR:', err.message);
+        logError('Import', err);
         try { await client.query('ROLLBACK'); } catch(e) {}
         _importStatus = { running: false, progress: 'Error', results: null, error: err.message };
     } finally {
