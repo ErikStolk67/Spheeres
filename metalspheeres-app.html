@@ -4949,22 +4949,24 @@ let typesEditorState = {
 function openTypesEditor(tableName) {
     typesEditorState.tableName = tableName;
 
-    // Try to load from API
-    const tableId = tableMap[tableName];
-    if (apiAvailable && tableId) {
-        fetch(API + '/tables/' + tableId + '/types')
-        .then(r => r.ok ? r.json() : [])
-        .then(types => {
-            typesEditorState.types = types;
-            typesEditorState.selectedId = types.length > 0 ? types[0].k_type : null;
-            renderTypesEditor();
-        })
-        .catch(() => {
-            loadSampleTypes(tableName);
-        });
-    } else {
-        loadSampleTypes(tableName);
-    }
+    // Load types from cd_types via entity-types endpoint
+    fetch(API + '/entity-types/' + encodeURIComponent(tableName))
+    .then(r => r.ok ? r.json() : { types: [], k_table: null })
+    .then(data => {
+        typesEditorState.types = (data.types || []).map(t => ({
+            ...t,
+            f_parent: t.f_type  // f_type in cd_types = parent type reference
+        }));
+        typesEditorState.k_table = data.k_table;
+        typesEditorState.selectedId = typesEditorState.types.length > 0 ? typesEditorState.types[0].k_type : null;
+        renderTypesEditor();
+    })
+    .catch(() => {
+        typesEditorState.types = [];
+        typesEditorState.k_table = null;
+        typesEditorState.selectedId = null;
+        renderTypesEditor();
+    });
 }
 
 function loadSampleTypes(tableName) {
@@ -5034,29 +5036,35 @@ function renderTypesEditor() {
     // Tree items
     let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
 
-    // Build hierarchy: root types first, then children
-    const roots = types.filter(t => !t.f_parent);
-    const children = types.filter(t => t.f_parent);
+    // Build hierarchy: root types (no parent), then children
+    const rootTypeId = 19181; // Common root f_type value
+    const roots = types.filter(t => !t.f_parent || t.f_parent === rootTypeId);
+    const children = types.filter(t => t.f_parent && t.f_parent !== rootTypeId);
 
     for (const t of roots) {
-        treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_type ? ' active' : '') + '" onclick="selectType(\'' + t.k_type + '\')">' + escHtml(t.name) + '</div>';
-        // Find children
+        treeHtml += '<div class="te-tree-item' + (st.selectedId === t.k_type ? ' active' : '') + '" onclick="selectType(' + t.k_type + ')">' + escHtml(t.name || 'Unnamed') + '</div>';
+        // Find children of this type
         for (const c of children.filter(ch => ch.f_parent === t.k_type)) {
-            treeHtml += '<div class="te-tree-item child' + (st.selectedId === c.k_type ? ' active' : '') + '" onclick="selectType(\'' + c.k_type + '\')">' + escHtml(c.name) + '</div>';
+            treeHtml += '<div class="te-tree-item child' + (st.selectedId === c.k_type ? ' active' : '') + '" onclick="selectType(' + c.k_type + ')">' + escHtml(c.name || 'Unnamed') + '</div>';
         }
+    }
+    // Orphan children (parent not in this entity's types)
+    const rootIds = new Set(roots.map(r => r.k_type));
+    for (const c of children.filter(ch => !rootIds.has(ch.f_parent))) {
+        treeHtml += '<div class="te-tree-item' + (st.selectedId === c.k_type ? ' active' : '') + '" onclick="selectType(' + c.k_type + ')">' + escHtml(c.name || 'Unnamed') + '</div>';
     }
 
     // General tab form
     let formHtml = '';
     if (sel) {
         formHtml = '<div class="te-form">' +
-            '<div class="te-form-row"><div class="te-form-label">Name</div><div class="te-form-value"><input class="te-form-input" id="teName" value="' + escAttr(sel.name) + '"></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Name</div><div class="te-form-value"><input class="te-form-input" id="teName" value="' + escAttr(sel.name || '') + '" onchange="updateTypeField(\'name\',this.value)"></div></div>' +
             '<div class="te-form-row"><div class="te-form-label">Type</div><div class="te-form-value"><select class="te-form-input" id="teType"><option selected>Entity type</option></select></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Kind</div><div class="te-form-value"><select class="te-form-input" id="teKind"><option value=""></option></select></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Kind</div><div class="te-form-value"><select class="te-form-input" id="teKind"><option value="">—</option></select></div></div>' +
             '<div class="te-form-row"><div class="te-form-label">Icon</div><div class="te-form-value"><div class="te-icon-select">Select icon</div></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Flow folder</div><div class="te-form-value"><label class="te-form-check"><input type="checkbox" id="teFlowFolder" ' + (sel.flow_folder ? 'checked' : '') + '></label></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Status</div><div class="te-form-value"><select class="te-form-input" id="teStatus"><option>Enable</option><option>Disable</option></select></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Description</div><div class="te-form-value"><textarea class="te-form-textarea" id="teDesc">' + escHtml(sel.memo || '') + '</textarea></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Flow folder</div><div class="te-form-value"><label class="te-form-check"><input type="checkbox" id="teFlowFolder" ' + (sel.flowfolder ? 'checked' : '') + ' onchange="updateTypeField(\'flowfolder\',this.checked)"></label></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Status</div><div class="te-form-value"><select class="te-form-input" id="teStatus"><option ' + (sel.f_lifestatus !== 0 ? 'selected' : '') + '>Enable</option><option ' + (sel.f_lifestatus === 0 ? 'selected' : '') + '>Disable</option></select></div></div>' +
+            '<div class="te-form-row"><div class="te-form-label">Description</div><div class="te-form-value"><textarea class="te-form-textarea" id="teDesc" onchange="updateTypeField(\'memo_plaintext\',this.value)">' + escHtml(sel.memo_plaintext || '') + '</textarea></div></div>' +
         '</div>';
     } else {
         formHtml = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Default type — no properties to edit</div></div>';
@@ -5095,16 +5103,16 @@ function renderTypesEditor() {
 }
 
 function selectType(id) {
-    typesEditorState.selectedId = id;
+    typesEditorState.selectedId = id ? parseInt(id) : null;
     renderTypesEditor();
 }
 
 function addType() {
     const st = typesEditorState;
-    const tableId = tableMap[st.tableName];
+    const k_table = st.k_table;
 
-    if (apiAvailable && tableId) {
-        fetch(API + '/tables/' + tableId + '/types', {
+    if (k_table) {
+        fetch(API + '/tables/' + k_table + '/types', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'New Type' })
@@ -5112,6 +5120,7 @@ function addType() {
         .then(r => r.json())
         .then(data => {
             if (data.k_type) {
+                data.f_parent = data.f_type;
                 st.types.push(data);
                 st.selectedId = data.k_type;
                 renderTypesEditor();
@@ -5120,7 +5129,7 @@ function addType() {
         .catch(err => alert('Error: ' + err.message));
     } else {
         // In-memory
-        const newType = { k_type: 'temp_' + Date.now(), name: 'New Type', memo: '', flow_folder: false, f_parent: null };
+        const newType = { k_type: 'temp_' + Date.now(), name: 'New Type', memo_plaintext: '', flowfolder: false, f_parent: null };
         st.types.push(newType);
         st.selectedId = newType.k_type;
         renderTypesEditor();
@@ -5136,6 +5145,12 @@ function copyType() {
     alert('Copy creates a tree image reference of "' + sel.name + '" (not a new record). This feature will be connected to cd_type_type.');
 }
 
+function updateTypeField(field, value) {
+    const st = typesEditorState;
+    const sel = st.types.find(t => t.k_type === st.selectedId);
+    if (sel) sel[field] = value;
+}
+
 function saveType() {
     const st = typesEditorState;
     if (!st.selectedId) { closeTypesEditor(); return; }
@@ -5148,16 +5163,16 @@ function saveType() {
     const sel = st.types.find(t => t.k_type === st.selectedId);
     if (sel) {
         sel.name = nameEl.value;
-        sel.memo = descEl ? descEl.value : '';
-        sel.flow_folder = flowEl ? flowEl.checked : false;
+        sel.memo_plaintext = descEl ? descEl.value : '';
+        sel.flowfolder = flowEl ? flowEl.checked : false;
     }
 
-    // Save to API if available
-    if (apiAvailable && sel && !sel.k_type.startsWith('temp_')) {
+    // Save to API
+    if (sel && typeof sel.k_type === 'number') {
         fetch(API + '/types/' + sel.k_type, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: sel.name, memo: sel.memo, flow_folder: sel.flow_folder })
+            body: JSON.stringify({ name: sel.name, memo_plaintext: sel.memo_plaintext, flowfolder: sel.flowfolder })
         }).catch(() => {});
     }
 

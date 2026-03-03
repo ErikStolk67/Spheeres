@@ -265,7 +265,7 @@ app.get('/api/controls', async (req, res) => {
 
 app.get('/api/tables/:id/types', async (req, res) => {
     const { rows } = await pool.query(
-        'SELECT * FROM cd_types WHERE k_table = $1 ORDER BY sort_order, name', [req.params.id]
+        'SELECT * FROM cd_types WHERE f_table = $1 ORDER BY sort, name', [req.params.id]
     );
     res.json(rows);
 });
@@ -354,14 +354,17 @@ app.get('/api/entity-types/:entityName', async (req, res) => {
 app.post('/api/tables/:id/types', async (req, res) => {
     const { name } = req.body;
     try {
+        // Get next k_type (max + 1)
+        const maxRes = await pool.query('SELECT COALESCE(MAX(k_type), 0) + 1 as next FROM cd_types');
+        const nextK = maxRes.rows[0].next;
         const sortRes = await pool.query(
-            'SELECT COALESCE(MAX(sort), 0) + 1 as next FROM cd_types WHERE k_table = $1', [req.params.id]
+            'SELECT COALESCE(MAX(sort), 0) + 1 as next FROM cd_types WHERE f_table = $1', [req.params.id]
         );
         const { rows } = await pool.query(`
-            INSERT INTO cd_types (k_type, k_table, name, alias, sort)
-            VALUES (gen_random_uuid(), $1, $2, $2, $3)
+            INSERT INTO cd_types (k_type, f_table, name, sort, createdate, changedate)
+            VALUES ($1, $2, $3, $4, now(), now())
             RETURNING *
-        `, [req.params.id, name || 'New Type', sortRes.rows[0].next]);
+        `, [nextK, req.params.id, name || 'New Type', sortRes.rows[0].next]);
         res.json(rows[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -369,12 +372,12 @@ app.post('/api/tables/:id/types', async (req, res) => {
 });
 
 app.put('/api/types/:id', async (req, res) => {
-    const { name, memo, flow_folder, kind, icon } = req.body;
+    const { name, memo_plaintext, flowfolder, f_kind, f_icon, f_type } = req.body;
     try {
         const { rows } = await pool.query(`
-            UPDATE cd_types SET name=$2, memo=$3, flow_folder=$4, kind=$5, icon=$6, changedate=NOW()
+            UPDATE cd_types SET name=$2, memo_plaintext=$3, flowfolder=$4, f_kind=$5, f_icon=$6, f_type=$7, changedate=now()
             WHERE k_type=$1 RETURNING *
-        `, [req.params.id, name, memo || null, flow_folder || false, kind || null, icon || null]);
+        `, [req.params.id, name, memo_plaintext || null, flowfolder || false, f_kind || null, f_icon || null, f_type || null]);
         res.json(rows[0] || { error: 'Not found' });
     } catch (err) {
         res.status(500).json({ error: err.message });
