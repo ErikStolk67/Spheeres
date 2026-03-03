@@ -498,17 +498,17 @@
         .te-tree-filter { flex: 1; padding: 4px 8px; border: 1px solid #D1D5DB; border-radius: 4px; font-size: 11px; }
         .te-tree-sort { width: 26px; height: 26px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #64748B; }
         .te-tree-item {
-            padding: 6px 10px; margin: 2px 0; border-radius: 6px; font-size: 13px;
-            cursor: grab; color: #334155; transition: background 0.1s, margin-left 0.15s;
-            user-select: none;
+            padding: 8px 12px; margin: 3px 0; border-radius: 6px; font-size: 13px;
+            cursor: grab; color: #334155; user-select: none;
+            background: #F1F5F9; border: 1px solid #E2E8F0;
         }
-        .te-tree-item:hover { background: #E2E8F0; }
-        .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; }
-        .te-tree-item.child { margin-left: 20px; font-size: 12px; border-left: 2px solid #CBD5E1; padding-left: 12px; color: #334155; }
-        .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; }
+        .te-tree-item:hover { background: #E2E8F0; border-color: #CBD5E1; }
+        .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; border-color: #93C5FD; }
+        .te-tree-item.child { margin-left: 20px; }
+        .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; }
         .te-tree-item.drag-over-top { border-top: 2px solid #3B82F6; }
         .te-tree-item.drag-over-bottom { border-bottom: 2px solid #3B82F6; }
-        .te-tree-item.drag-over-child { border-left: 3px solid #3B82F6; margin-left: 16px; }
+        .te-tree-item.drag-over-child { border-left: 3px solid #3B82F6; margin-left: 20px; }
         .te-tree-item.dragging { opacity: 0.4; }
 
         .te-props { flex: 1; padding: 0; overflow-y: auto; }
@@ -5098,10 +5098,10 @@ function renderTypesEditor() {
             if (!t) continue;
             const isActive = st.selectedNodeId === n.nodeId;
             const indent = depth * 20;
-            const cloneLabel = n.isClone ? ' <span style="color:#94A3B8;font-size:10px;">(clone)</span>' : '';
+            const cloneLabel = '';
             html += '<div class="te-tree-item' + (isActive ? ' active' : '') + (depth > 0 ? ' child' : '') + '"' +
                 ' draggable="true" data-nodeid="' + n.nodeId + '"' +
-                ' style="' + (depth > 0 ? 'margin-left:' + indent + 'px;' : '') + (n.isClone ? 'border-left-style:dashed;' : '') + '"' +
+                ' style="' + (depth > 0 ? 'margin-left:' + indent + 'px;' : '') + '"' +
                 ' onclick="selectType(' + n.nodeId + ')"' +
                 ' ondragstart="teDragStart(event,' + n.nodeId + ')"' +
                 ' ondragover="teDragOver(event,' + n.nodeId + ')"' +
