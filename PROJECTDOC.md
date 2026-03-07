@@ -793,6 +793,9 @@ The link direction determines the label shown:
 | — | d480338 | Lightweight startup health check (no more getSchemaFull at boot) |
 | — | 1dad6d9 | Remove blocking auto-seed, instant server start |
 | — | d435b49 | Types tree: drag & drop to reorder and create hierarchy |
+| v0.9.12 | 1011cf3 | Types Editor rewrite: cd_type_type hierarchy, proven drag & drop |
+| v0.9.13-17 | various | Version display, deploy indicator, timestamp fixes |
+| v0.9.18 | bf2c34a | Fix drag in app (text node handling), Query Editor, import composite PK fix |
 
 ---
 
