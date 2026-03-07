@@ -4984,16 +4984,26 @@ function openTypesEditor(tableName) {
         const links = data.links || [];
         
         // Build tree nodes from cd_type_type links
-        // Each link = one tree node (child under parent)
-        // Types with no link as child = root nodes
-        const childKtypes = new Set(links.map(l => l.k_type2));
+        // Root nodes: types where isroot = true (or 1)
+        // Child nodes: one tree node per cd_type_type link
+        // A type with isroot=1 that ALSO appears as child = clone (appears twice)
         let treeNodes = [];
         let nodeId = 1;
         
-        // Root nodes: types that don't appear as k_type2 in any link
+        // Root nodes: isroot flag from cd_types
         for (const t of types) {
-            if (!childKtypes.has(t.k_type)) {
+            if (t.isroot) {
                 treeNodes.push({ nodeId: nodeId++, k_type: t.k_type, parentKtype: null, isClone: false, sort: t.sort || 0 });
+            }
+        }
+        
+        // If no isroot flags set, fallback: types not appearing as k_type2
+        if (treeNodes.length === 0) {
+            const childKtypes = new Set(links.map(l => l.k_type2));
+            for (const t of types) {
+                if (!childKtypes.has(t.k_type)) {
+                    treeNodes.push({ nodeId: nodeId++, k_type: t.k_type, parentKtype: null, isClone: false, sort: t.sort || 0 });
+                }
             }
         }
         

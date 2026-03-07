@@ -342,7 +342,7 @@ app.get('/api/entity-types/:entityName', async (req, res) => {
         
         // Get types from cd_types where f_table matches
         const typesRes = await pool.query(
-            'SELECT k_type, name, f_type, f_icon, "default", sort, flowfolder, memo_plaintext, f_kind, f_lifestatus FROM cd_types WHERE f_table = $1 ORDER BY sort, name',
+            'SELECT k_type, name, f_type, f_icon, "default", sort, flowfolder, memo_plaintext, f_kind, f_lifestatus, isroot FROM cd_types WHERE f_table = $1 ORDER BY sort, name',
             [k_table]
         );
         
