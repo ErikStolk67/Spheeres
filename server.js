@@ -389,6 +389,20 @@ app.delete('/api/type-links/:parentId/:childId', async (req, res) => {
     }
 });
 
+app.post('/api/type-links/bulk-delete', express.json(), async (req, res) => {
+    const { type_ids } = req.body;
+    if (!type_ids || !Array.isArray(type_ids)) return res.status(400).json({ error: 'type_ids required' });
+    try {
+        await pool.query(
+            'DELETE FROM cd_type_type WHERE k_type1 = ANY($1) OR k_type2 = ANY($1)',
+            [type_ids]
+        );
+        res.json({ success: true });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.put('/api/type-links/reorder', express.json(), async (req, res) => {
     const { parent_id, children } = req.body; // children = [{k_type, k_seq}]
     try {

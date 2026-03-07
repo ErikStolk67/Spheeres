@@ -505,11 +505,11 @@
         }
         .te-tree-item:hover { background: #E2E8F0; }
         .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; font-weight: 400; width: auto; }
-        .te-tree-item.drag-over-top { border-top: 2px solid #3B82F6; }
-        .te-tree-item.drag-over-bottom { border-bottom: 2px solid #3B82F6; }
-        .te-tree-item.drag-over-child { border-left: 3px solid #3B82F6; }
-        .te-tree-item.drag-over-left { border-right: 3px solid #3B82F6; }
-        .te-tree-item.dragging { opacity: 0.4; }
+        .te-tree-item[data-zone="above"] { border-top: 3px solid #3B82F6; }
+        .te-tree-item[data-zone="below"] { border-bottom: 3px solid #3B82F6; }
+        .te-tree-item[data-zone="right"] { background: #DBEAFE; border-color: #3B82F6; }
+        .te-tree-item[data-zone="left"] { background: #FEF3C7; border-color: #F59E0B; }
+        .te-tree-item.dragging { opacity: 0.3; }
 
         .te-props { flex: 1; padding: 0; overflow-y: auto; }
 
@@ -4963,227 +4963,98 @@ function createNewSubTable(parentTable) {
 }
 
 // ============================================================================
-// TYPES EDITOR
+// TYPES EDITOR — uses cd_types (unique records) + cd_type_type (hierarchy links)
 // ============================================================================
-let typesEditorState = {
+
+var _teState = {
     tableName: '',
-    types: [],       // cd_types records (unique, from DB)
-    treeNodes: [],   // tree items: { nodeId, k_type, parentKtype, isClone, sort }
-    links: [],       // cd_type_type rows
-    selectedNodeId: null,
-    k_table: null,
+    types: [],    // cd_types records
+    links: [],    // cd_type_type rows {k_type1: parent, k_type2: child, k_seq}
+    k_table: null
 };
+var _teDragKey = null;
+var _teDropZone = null;
+var _teDropTargetKey = null;
 
 function openTypesEditor(tableName) {
-    typesEditorState.tableName = tableName;
-
+    _teState.tableName = tableName;
     fetch(API + '/entity-types/' + encodeURIComponent(tableName))
-    .then(r => r.ok ? r.json() : { types: [], links: [], k_table: null })
-    .then(data => {
-        const types = data.types || [];
-        const links = data.links || [];
-        
-        // Build tree nodes from cd_type_type links
-        // Root nodes: types where isroot = true (or 1)
-        // Child nodes: one tree node per cd_type_type link
-        // A type with isroot=1 that ALSO appears as child = clone (appears twice)
-        let treeNodes = [];
-        let nodeId = 1;
-        
-        // Root nodes: isroot flag from cd_types
-        for (const t of types) {
-            if (t.isroot) {
-                treeNodes.push({ nodeId: nodeId++, k_type: t.k_type, parentKtype: null, isClone: false, sort: t.sort || 0 });
-            }
-        }
-        
-        // If no isroot flags set, fallback: types not appearing as k_type2
-        if (treeNodes.length === 0) {
-            const childKtypes = new Set(links.map(l => l.k_type2));
-            for (const t of types) {
-                if (!childKtypes.has(t.k_type)) {
-                    treeNodes.push({ nodeId: nodeId++, k_type: t.k_type, parentKtype: null, isClone: false, sort: t.sort || 0 });
-                }
-            }
-        }
-        
-        // Child nodes: one tree node per link
-        for (const l of links) {
-            treeNodes.push({ nodeId: nodeId++, k_type: l.k_type2, parentKtype: l.k_type1, isClone: false, sort: l.k_seq || 0 });
-        }
-        
-        // Check for clones: if a k_type appears multiple times in treeNodes
-        const ktypeCounts = {};
-        for (const n of treeNodes) {
-            ktypeCounts[n.k_type] = (ktypeCounts[n.k_type] || 0) + 1;
-        }
-        for (const n of treeNodes) {
-            if (ktypeCounts[n.k_type] > 1) {
-                // First occurrence is the "real" one, others are clones
-                ktypeCounts[n.k_type]--;
-                if (ktypeCounts[n.k_type] > 0) n.isClone = true;
-            }
-        }
-        // Reset: mark the FIRST occurrence as real, rest as clone
-        const seenKtype = {};
-        for (const n of treeNodes) {
-            if (seenKtype[n.k_type]) {
-                n.isClone = true;
-            } else {
-                n.isClone = false;
-                seenKtype[n.k_type] = true;
-            }
-        }
-        
-        typesEditorState.types = types;
-        typesEditorState.treeNodes = treeNodes;
-        typesEditorState.links = links;
-        typesEditorState.k_table = data.k_table;
-        typesEditorState.selectedNodeId = treeNodes.length > 0 ? treeNodes[0].nodeId : null;
+    .then(function(r) { return r.ok ? r.json() : { types: [], links: [], k_table: null }; })
+    .then(function(data) {
+        _teState.types = data.types || [];
+        _teState.links = data.links || [];
+        _teState.k_table = data.k_table;
         renderTypesEditor();
     })
-    .catch(() => {
-        typesEditorState.types = [];
-        typesEditorState.treeNodes = [];
-        typesEditorState.links = [];
-        typesEditorState.k_table = null;
-        typesEditorState.selectedNodeId = null;
+    .catch(function() {
+        _teState.types = [];
+        _teState.links = [];
+        _teState.k_table = null;
         renderTypesEditor();
     });
 }
 
-function loadSampleTypes(tableName) {
-    // Sample types per table for demo
-    const sampleTypes = {
-        "SYS_USERS": ["Administrator","User","Guest","Portal","API","Service"],
-        "SYS_LOGS": ["Error","Warning","Info","Debug"],
-        "SYS_GLOBALS": ["Setting","Counter","Flag","Config","Parameter","Cache","Template","Registry","Variable"],
-        "SYS_LOCKS": ["Record","Table"],
-        "SYS_OBJECTS": ["File","Image"],
-        "SYS_QUEUES": ["Email","Notification","Export","Import","Sync","Process","Report","Webhook","Scheduled","Batch","Archive"],
-        "SYS_RIGHTS": ["Read","Write","Admin"],
-        "SYS_SECURITY": ["Login","Token"],
-        "SYS_SESSIONS": ["Active"],
-        "SYS_THINGS": ["Item"],
-        "SYS_THESAURI": ["Category","Tag","Keyword","Subject","Domain","Concept","Term","Abbreviation","Synonym","Antonym","Broader","Narrower"],
-        "SYS_TRANSPORTS": ["Export","Import"],
-        "SYS_COMMANDS": ["Query","Action","Script","Trigger","Batch","Macro","Schedule","Plugin","Hook"],
-        "SYS_COMPETENCES": ["Skill","Certificate","Training","Assessment"],
-        "SYS_PLANNING": ["Task","Milestone","Phase","Sprint","Iteration","Meeting","Deadline"],
-        "SYS_HOOK": ["Before","After","Instead"],
-        "SYS_HISTORY": ["Change"],
-        "ACTIONS": ["Task","Call","Meeting"],
-        "STATS": ["Counter","Metric"],
-        "CONTACTS": ["Customer","Supplier","Partner","Employee","Lead"],
-        "COMPANIES": ["Customer","Supplier","Partner","Prospect"],
-        "PROJECTS": ["Internal","External","Development","Research","Maintenance","Support"],
-        "CASES": ["Bug","Feature","Support","Incident","Change","Problem","Request","Enhancement"],
-        "OPPORTUNITIES": ["New","Qualified","Proposal","Negotiation","Closed"],
-        "AGENDA": ["Meeting","Task","Reminder"],
-        "DOCUMENTS": ["Contract","Invoice","Quote","Report","Spec","Manual","Template"],
-        "CD_DICTIONARIES": ["Master","Slave"],
-        "CD_DATABASES": ["Local","Remote","Cloud"],
-        "CD_TABLES": ["Entity","Link","Sub","Lookup","View"],
-        "CD_FIELDS": ["Data","Relation","Calculated","Virtual"],
-        "CD_CONTROLS": ["Input","Display","Action","Container"],
-        "CD_TYPES": ["Entity","Process","Document"],
-        "CD_LIFESTATUSES": ["Active","Inactive","Draft","Archived"],
-        "CD_FORMS": ["Default","Custom","Print","Mobile"],
-        "CD_ROLES": ["Admin","User","Guest"],
-        "CD_FOLDERS": ["Root","Sub"],
-        "CD_FUNCTIONS": ["API","Canvas","Trigger"],
-        "CD_CANVASES": ["Process","Integration","Automation"],
-        "CD_LICENSES": ["Standard","Professional","Enterprise"],
-        "CD_TRANSLATIONS": ["EN","NL","DE","FR"],
-        "CD_DICTIONARYCOMPONENTS": ["Core","Extension"],
-        "CD_DICTIONARYCOMPARISONS": ["Schema","Data"],
-    };
-    
-    const names = sampleTypes[tableName] || ["Default"];
-    typesEditorState.types = names.map((n, i) => ({
-        k_type: 'sample_' + i,
-        name: n,
-        memo: '',
-        flow_folder: false,
-        f_parent: null,
-    }));
-    typesEditorState.selectedId = typesEditorState.types[0].k_type;
-    renderTypesEditor();
+function _teGetType(id) {
+    for (var i = 0; i < _teState.types.length; i++) {
+        if (_teState.types[i].k_type === id) return _teState.types[i];
+    }
+    return null;
 }
 
 function renderTypesEditor() {
-    const st = typesEditorState;
-    const typeMap = {};
-    for (const t of st.types) typeMap[t.k_type] = t;
-    
-    const selNode = st.treeNodes.find(n => n.nodeId === st.selectedNodeId);
-    const sel = selNode ? typeMap[selNode.k_type] : null;
+    var st = _teState;
+    var treeHtml = '<div class="te-tree-item default-type">-</div>';
 
-    // Determine which k_types are roots (appear in treeNodes with parentKtype===null)
-    const rootKtypes = new Set(st.treeNodes.filter(n => !n.parentKtype).map(n => n.k_type));
+    // Render tree following the query logic:
+    // L1 = roots (isroot=true), L2 = children via links
+    // If child.isroot=true, do NOT expand its subtree (shown under its own root entry)
+    function addChildren(parentId, depth) {
+        for (var i = 0; i < st.links.length; i++) {
+            var lnk = st.links[i];
+            if (lnk.k_type1 !== parentId) continue;
+            var childType = _teGetType(lnk.k_type2);
+            if (!childType) continue;
 
-    // Build tree HTML recursively
-    // Subtrees only render under ROOT occurrence, NOT under sub occurrence
-    function renderChildren(parentKtype, depth) {
-        let html = '';
-        const children = st.treeNodes.filter(n => n.parentKtype === parentKtype).sort((a, b) => a.sort - b.sort);
-        for (const n of children) {
-            const t = typeMap[n.k_type];
-            if (!t) continue;
-            const indent = depth * 24;
-            html += '<div class="te-tree-item"' +
-                ' draggable="true" data-nodeid="' + n.nodeId + '"' +
-                ' style="' + (depth > 0 ? 'margin-left:' + indent + 'px;' : '') + '"' +
-                ' ondragstart="teDragStart(event,' + n.nodeId + ')"' +
-                ' ondragover="teDragOver(event,' + n.nodeId + ')"' +
-                ' ondragleave="teDragLeave(event)"' +
-                ' ondrop="teDrop(event,' + n.nodeId + ')">' +
-                escHtml(t.name || 'Unnamed') + '</div>';
-            // Render subtree only if this is the ROOT occurrence of this k_type
-            // If this k_type is a root AND we're currently rendering it as root (depth 0 / parentKtype null)
-            // OR if this k_type is NOT a root (only appears as sub), render its children
-            const isRootOccurrence = !n.parentKtype;
-            const hasRootVersion = rootKtypes.has(n.k_type);
-            if (isRootOccurrence || !hasRootVersion) {
-                html += renderChildren(n.k_type, depth + 1);
+            var nodeKey = lnk.k_type2 + ':' + lnk.k_type1;
+            var indent = depth * 24;
+            treeHtml += '<div class="te-tree-item" draggable="true"' +
+                ' data-key="' + nodeKey + '" data-id="' + lnk.k_type2 + '" data-parent="' + lnk.k_type1 + '"' +
+                ' style="margin-left:' + indent + 'px;">' +
+                escHtml(childType.name || 'Unnamed') + '</div>';
+
+            // Only expand if child is NOT a root (matching query: AND T1.ISROOT=0)
+            if (!childType.isroot) {
+                addChildren(lnk.k_type2, depth + 1);
             }
         }
-        return html;
-    }
-    
-    let treeHtml = '<div class="te-tree-item default-type">-</div>';
-    treeHtml += renderChildren(null, 0);
-
-    // General tab form
-    let formHtml = '';
-    if (sel) {
-        formHtml = '<div class="te-form">' +
-            '<div class="te-form-row"><div class="te-form-label">Name</div><div class="te-form-value"><input class="te-form-input" id="teName" value="' + escAttr(sel.name || '') + '" onchange="updateTypeField(\'name\',this.value)"' + (selNode.isClone ? ' disabled style="opacity:0.6"' : '') + '></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Type</div><div class="te-form-value"><select class="te-form-input" id="teType"><option selected>Entity type</option></select></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Kind</div><div class="te-form-value"><select class="te-form-input" id="teKind"><option value="">—</option></select></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Icon</div><div class="te-form-value"><div class="te-icon-select">Select icon</div></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Flow folder</div><div class="te-form-value"><label class="te-form-check"><input type="checkbox" id="teFlowFolder" ' + (sel.flowfolder ? 'checked' : '') + ' onchange="updateTypeField(\'flowfolder\',this.checked)"' + (selNode.isClone ? ' disabled' : '') + '></label></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Status</div><div class="te-form-value"><select class="te-form-input" id="teStatus"><option ' + (sel.f_lifestatus !== 0 ? 'selected' : '') + '>Enable</option><option ' + (sel.f_lifestatus === 0 ? 'selected' : '') + '>Disable</option></select></div></div>' +
-            '<div class="te-form-row"><div class="te-form-label">Description</div><div class="te-form-value"><textarea class="te-form-textarea" id="teDesc" onchange="updateTypeField(\'memo_plaintext\',this.value)"' + (selNode.isClone ? ' disabled style="opacity:0.6"' : '') + '>' + escHtml(sel.memo_plaintext || '') + '</textarea></div></div>' +
-            (selNode.isClone ? '<div style="padding:8px 12px;color:#94A3B8;font-size:11px;font-style:italic;">This is a clone — properties are read-only. Edit the original type to change values.</div>' : '') +
-        '</div>';
-    } else {
-        formHtml = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Default type — no properties to edit</div></div>';
     }
 
-    const popup = document.getElementById('typesEditorPopup');
+    // Render roots
+    for (var i = 0; i < st.types.length; i++) {
+        var t = st.types[i];
+        if (!t.isroot) continue;
+        var nodeKey = t.k_type + ':root';
+        treeHtml += '<div class="te-tree-item" draggable="true"' +
+            ' data-key="' + nodeKey + '" data-id="' + t.k_type + '" data-parent="root">' +
+            escHtml(t.name || 'Unnamed') + '</div>';
+        addChildren(t.k_type, 1);
+    }
+
+    var formHtml = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Select a type by dragging or use + to add</div></div>';
+
+    var popup = document.getElementById('typesEditorPopup');
     popup.innerHTML = '<div class="popup te-popup">' +
         '<div class="te-title">Types of <strong>' + st.tableName + '</strong></div>' +
         '<div class="te-toolbar">' +
-            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;font-size:16px;padding:4px 10px;" onclick="addType()" title="Add new type">+</button>' +
-            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;padding:4px 10px;" onclick="cloneType()" title="Clone type (create link under different parent)">&#9744;</button>' +
-            '<button class="fe-btn fe-btn-ok" onclick="saveTypes()">Save</button>' +
+            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;font-size:16px;padding:4px 10px;" onclick="teAddType()" title="Add new type">+</button>' +
+            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;padding:4px 10px;" onclick="teCloneType()" title="Clone selected type">&#9744;</button>' +
+            '<button class="fe-btn fe-btn-ok" onclick="teSaveAll()">Save</button>' +
             '<button class="fe-btn fe-btn-cancel" onclick="closeTypesEditor()">Cancel</button>' +
         '</div>' +
         '<div class="te-body">' +
-            '<div class="te-tree">' +
+            '<div class="te-tree" id="teTreePanel">' +
                 '<div class="te-tree-header">' +
-                    '<input class="te-tree-filter" placeholder="—" />' +
+                    '<input class="te-tree-filter" placeholder="\u2014" />' +
                     '<button class="te-tree-sort" title="Sort">&#8693;</button>' +
                 '</div>' +
                 treeHtml +
@@ -5201,115 +5072,247 @@ function renderTypesEditor() {
         '</div>' +
     '</div>';
     popup.classList.add('open');
+
+    // Attach drag events via delegation on tree panel
+    var treePanel = document.getElementById('teTreePanel');
+    if (treePanel && !treePanel._teEventsAttached) {
+        treePanel._teEventsAttached = true;
+
+        treePanel.addEventListener('dragstart', function(e) {
+            var el = e.target.closest('.te-tree-item');
+            if (!el || el.classList.contains('default-type')) return;
+            _teDragKey = el.getAttribute('data-key');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', _teDragKey);
+            el.classList.add('dragging');
+        });
+
+        treePanel.addEventListener('dragover', function(e) {
+            var el = e.target.closest('.te-tree-item');
+            if (!el || el.classList.contains('default-type')) return;
+            var key = el.getAttribute('data-key');
+            if (key === _teDragKey) return;
+
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            var items = treePanel.querySelectorAll('.te-tree-item');
+            for (var j = 0; j < items.length; j++) items[j].removeAttribute('data-zone');
+
+            var rect = el.getBoundingClientRect();
+            var rx = e.clientX - rect.left;
+            var ry = e.clientY - rect.top;
+            var zone;
+            if (rx < rect.width * 0.25) zone = 'left';
+            else if (rx > rect.width * 0.75) zone = 'right';
+            else if (ry < rect.height * 0.5) zone = 'above';
+            else zone = 'below';
+
+            el.setAttribute('data-zone', zone);
+            _teDropZone = zone;
+            _teDropTargetKey = key;
+        });
+
+        treePanel.addEventListener('dragleave', function(e) {
+            var el = e.target.closest('.te-tree-item');
+            if (el) el.removeAttribute('data-zone');
+        });
+
+        treePanel.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var items = treePanel.querySelectorAll('.te-tree-item');
+            for (var j = 0; j < items.length; j++) {
+                items[j].removeAttribute('data-zone');
+                items[j].classList.remove('dragging');
+            }
+
+            if (!_teDragKey || !_teDropTargetKey || _teDragKey === _teDropTargetKey) {
+                _teDragKey = null;
+                return;
+            }
+
+            var dp = _teDragKey.split(':');
+            var dragId = parseInt(dp[0]);
+            var dragParent = dp[1] === 'root' ? null : parseInt(dp[1]);
+
+            var tp = _teDropTargetKey.split(':');
+            var targetId = parseInt(tp[0]);
+            var targetParent = tp[1] === 'root' ? null : parseInt(tp[1]);
+
+            var dragType = _teGetType(dragId);
+            var targetType = _teGetType(targetId);
+            var zone = _teDropZone || 'below';
+            var st = _teState;
+
+            if (!dragType || !targetType) { _teDragKey = null; return; }
+
+            if (zone === 'right') {
+                // Make child of target
+                if (dragParent !== null) {
+                    // Remove old link
+                    for (var i = st.links.length - 1; i >= 0; i--) {
+                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
+                            st.links.splice(i, 1); break;
+                        }
+                    }
+                } else {
+                    dragType.isroot = false;
+                }
+                st.links.push({ k_type1: targetId, k_type2: dragId, k_seq: null });
+
+            } else if (zone === 'left') {
+                // Promote up one level
+                if (dragParent === null) {
+                    // already root
+                } else {
+                    // Find grandparent
+                    var grandparent = null;
+                    for (var i = 0; i < st.links.length; i++) {
+                        if (st.links[i].k_type2 === dragParent) {
+                            grandparent = st.links[i].k_type1;
+                            break;
+                        }
+                    }
+                    // Remove old link
+                    for (var i = st.links.length - 1; i >= 0; i--) {
+                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
+                            st.links.splice(i, 1); break;
+                        }
+                    }
+                    if (grandparent === null) {
+                        // Parent was a root → promote to root
+                        var parentType = _teGetType(dragParent);
+                        if (parentType && parentType.isroot) {
+                            dragType.isroot = true;
+                        }
+                    } else {
+                        st.links.push({ k_type1: grandparent, k_type2: dragId, k_seq: null });
+                    }
+                }
+
+            } else {
+                // above/below: reorder at target's level
+                if (dragParent !== null) {
+                    for (var i = st.links.length - 1; i >= 0; i--) {
+                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
+                            st.links.splice(i, 1); break;
+                        }
+                    }
+                } else {
+                    dragType.isroot = false;
+                }
+
+                if (targetParent !== null) {
+                    st.links.push({ k_type1: targetParent, k_type2: dragId, k_seq: null });
+                } else {
+                    dragType.isroot = true;
+                    // Reorder roots
+                    var di = st.types.indexOf(dragType);
+                    st.types.splice(di, 1);
+                    var ti = st.types.indexOf(targetType);
+                    if (zone === 'below') ti++;
+                    st.types.splice(ti, 0, dragType);
+                }
+            }
+
+            _teDragKey = null;
+            _teDropZone = null;
+            _teDropTargetKey = null;
+            renderTypesEditor();
+        });
+    }
 }
 
-function selectType(nodeId) {
-    typesEditorState.selectedNodeId = nodeId ? parseInt(nodeId) : null;
-    renderTypesEditor();
-}
-
-function addType() {
-    const st = typesEditorState;
-    const k_table = st.k_table;
-    if (!k_table) return;
-
-    fetch(API + '/tables/' + k_table + '/types', {
+function teAddType() {
+    var st = _teState;
+    if (!st.k_table) return;
+    fetch(API + '/tables/' + st.k_table + '/types', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'New Type' })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.k_type) {
+            data.isroot = true;
             st.types.push(data);
-            const nodeId = Math.max(0, ...st.treeNodes.map(n => n.nodeId)) + 1;
-            st.treeNodes.push({ nodeId, k_type: data.k_type, parentKtype: null, isClone: false, sort: 999 });
-            st.selectedNodeId = nodeId;
             renderTypesEditor();
         }
     })
-    .catch(err => alert('Error: ' + err.message));
+    .catch(function(err) { alert('Error: ' + err.message); });
 }
 
-function cloneType() {
-    const st = typesEditorState;
-    const selNode = st.treeNodes.find(n => n.nodeId === st.selectedNodeId);
-    if (!selNode) { alert('Select a type first'); return; }
-    
-    // Clone: same k_type, root position, marked as clone
-    const nodeId = Math.max(0, ...st.treeNodes.map(n => n.nodeId)) + 1;
-    st.treeNodes.push({ nodeId, k_type: selNode.k_type, parentKtype: null, isClone: true, sort: 999 });
-    st.selectedNodeId = nodeId;
-    renderTypesEditor();
+function teCloneType() {
+    // TODO: prompt for which type to clone, add as new root entry pointing to same k_type
+    alert('Clone: select a type in the tree, then drag it to create a second occurrence under a different parent.');
 }
 
-function updateTypeField(field, value) {
-    const st = typesEditorState;
-    const selNode = st.treeNodes.find(n => n.nodeId === st.selectedNodeId);
-    if (!selNode || selNode.isClone) return;
-    const t = st.types.find(t => t.k_type === selNode.k_type);
-    if (t) t[field] = value;
-}
+function teSaveAll() {
+    var st = _teState;
 
-function saveTypes() {
-    const st = typesEditorState;
-    
-    // 1. Deduplicate: remove nodes with same k_type + same parent
-    const seen = {};
-    const toRemove = [];
-    for (const n of st.treeNodes) {
-        const key = n.k_type + ':' + (n.parentKtype || 'root');
-        if (seen[key]) {
-            toRemove.push(n.nodeId);
-        } else {
+    // Deduplicate links: same parent+child only once
+    var seen = {};
+    var uniqueLinks = [];
+    for (var i = 0; i < st.links.length; i++) {
+        var key = st.links[i].k_type1 + ':' + st.links[i].k_type2;
+        if (!seen[key]) {
             seen[key] = true;
+            uniqueLinks.push(st.links[i]);
         }
     }
-    st.treeNodes = st.treeNodes.filter(n => !toRemove.includes(n.nodeId));
-    
-    // 2. Determine which types are roots (parentKtype === null)
-    const rootKtypes = new Set(st.treeNodes.filter(n => !n.parentKtype).map(n => n.k_type));
-    
-    // 3. Build new cd_type_type links from tree (only non-root nodes)
-    const newLinks = [];
-    for (const n of st.treeNodes) {
-        if (n.parentKtype) {
-            newLinks.push({ parent_id: n.parentKtype, child_id: n.k_type, k_seq: n.sort });
-        }
-    }
-    
-    // 4. Delete all old links, then insert new ones
-    const deletePromises = st.links.map(l =>
-        fetch(API + '/type-links/' + l.k_type1 + '/' + l.k_type2, { method: 'DELETE' }).catch(() => {})
-    );
-    
-    Promise.all(deletePromises).then(() => {
-        return Promise.all(newLinks.map(l =>
-            fetch(API + '/type-links', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(l)
-            }).catch(() => {})
-        ));
-    }).then(() => {
-        // 5. Update type properties + isroot for each type
-        for (const t of st.types) {
-            if (typeof t.k_type === 'number') {
-                const isRoot = rootKtypes.has(t.k_type);
-                fetch(API + '/types/' + t.k_type, {
-                    method: 'PUT',
+
+    // Also deduplicate: if a type is root AND appears as child under the same logic, that's fine (clone)
+
+    // 1. Delete ALL old links for types in this entity
+    var oldLinks = st.links; // original from DB (before edits... but we mutated st.links)
+    // We need to delete all links involving these type IDs and rewrite
+    var typeIds = st.types.map(function(t) { return t.k_type; });
+
+    // Delete all existing links for these types
+    fetch(API + '/type-links/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type_ids: typeIds })
+    }).catch(function() {
+        // Fallback: delete one by one
+        // This path runs if bulk-delete doesn't exist
+    }).then(function() {
+        // 2. Insert new links
+        var promises = [];
+        for (var i = 0; i < uniqueLinks.length; i++) {
+            promises.push(
+                fetch(API + '/type-links', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: t.name,
-                        memo_plaintext: t.memo_plaintext,
-                        flowfolder: t.flowfolder,
-                        isroot: isRoot
+                        parent_id: uniqueLinks[i].k_type1,
+                        child_id: uniqueLinks[i].k_type2,
+                        k_seq: i + 1
                     })
-                }).catch(() => {});
+                }).catch(function() {})
+            );
+        }
+        return Promise.all(promises);
+    }).then(function() {
+        // 3. Update isroot on each type
+        var promises = [];
+        for (var i = 0; i < st.types.length; i++) {
+            var t = st.types[i];
+            if (typeof t.k_type === 'number') {
+                promises.push(
+                    fetch(API + '/types/' + t.k_type, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: t.name, isroot: t.isroot || false })
+                    }).catch(function() {})
+                );
             }
         }
+        return Promise.all(promises);
     });
-    
+
     closeTypesEditor();
 }
 
@@ -5317,139 +5320,15 @@ function closeTypesEditor() {
     document.getElementById('typesEditorPopup').classList.remove('open');
 }
 
-// Types tree drag & drop
-let _teDragNodeId = null;
-let _teDropIndicator = null; // 'above', 'below', 'child'
-
-function teDragStart(e, nodeId) {
-    _teDragNodeId = nodeId;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(nodeId));
-    // Use setTimeout so the element doesn't disappear immediately
-    setTimeout(function() {
-        var el = document.querySelector('[data-nodeid="' + nodeId + '"]');
-        if (el) el.classList.add('dragging');
-    }, 0);
-}
-
-function teDragOver(e, targetNodeId) {
-    if (_teDragNodeId === null || _teDragNodeId === targetNodeId) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    
-    // Clear all indicators
-    var items = document.querySelectorAll('.te-tree-item');
-    for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left');
-    }
-    
-    var el = e.currentTarget;
-    if (!el || !el.classList.contains('te-tree-item')) el = e.target.closest('.te-tree-item');
-    if (!el) return;
-    
-    var rect = el.getBoundingClientRect();
-    var relX = e.clientX - rect.left;
-    var relY = e.clientY - rect.top;
-    var h = rect.height;
-    var w = rect.width;
-    
-    if (relX < w * 0.2) {
-        // Drag to left edge → move up one level
-        el.classList.add('drag-over-left');
-        _teDropIndicator = 'left';
-    } else if (relX > w * 0.7) {
-        // Drag to right side → make child
-        el.classList.add('drag-over-child');
-        _teDropIndicator = 'child';
-    } else if (relY < h * 0.5) {
-        el.classList.add('drag-over-top');
-        _teDropIndicator = 'above';
-    } else {
-        el.classList.add('drag-over-bottom');
-        _teDropIndicator = 'below';
-    }
-}
-
-function teDragLeave(e) {
-    var el = e.target.closest('.te-tree-item');
-    if (el) {
-        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left');
-    }
-}
-
-function teDrop(e, targetNodeId) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Clean up all visual indicators
-    var items = document.querySelectorAll('.te-tree-item');
-    for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left', 'dragging');
-    }
-    
-    if (_teDragNodeId === null || _teDragNodeId === targetNodeId) {
-        _teDragNodeId = null;
-        return;
-    }
-    
-    var st = typesEditorState;
-    var dragNode = null;
-    var targetNode = null;
-    for (var i = 0; i < st.treeNodes.length; i++) {
-        if (st.treeNodes[i].nodeId === _teDragNodeId) dragNode = st.treeNodes[i];
-        if (st.treeNodes[i].nodeId === targetNodeId) targetNode = st.treeNodes[i];
-    }
-    if (!dragNode || !targetNode) { _teDragNodeId = null; return; }
-    
-    var indicator = _teDropIndicator || 'below';
-    
-    if (indicator === 'child') {
-        // Make dragNode a child of targetNode's k_type
-        dragNode.parentKtype = targetNode.k_type;
-    } else if (indicator === 'left') {
-        // Move dragNode up one level: to targetNode's grandparent
-        // Find targetNode's parent node to get grandparent
-        var targetParent = null;
-        for (var j = 0; j < st.treeNodes.length; j++) {
-            if (st.treeNodes[j].k_type === targetNode.parentKtype && !st.treeNodes[j].parentKtype) {
-                targetParent = st.treeNodes[j];
-                break;
-            }
-            if (st.treeNodes[j].k_type === targetNode.parentKtype) {
-                targetParent = st.treeNodes[j];
-            }
-        }
-        // Set to grandparent's parent, or null (root) if no grandparent
-        dragNode.parentKtype = targetParent ? targetParent.parentKtype : null;
-    } else {
-        // Place dragNode at same level as targetNode (same parent)
-        dragNode.parentKtype = targetNode.parentKtype;
-        
-        // Reorder in the array
-        var dragIdx = st.treeNodes.indexOf(dragNode);
-        st.treeNodes.splice(dragIdx, 1);
-        var targetIdx = st.treeNodes.indexOf(targetNode);
-        if (indicator === 'below') targetIdx++;
-        st.treeNodes.splice(targetIdx, 0, dragNode);
-    }
-    
-    // Reassign sort values
-    for (var i = 0; i < st.treeNodes.length; i++) {
-        st.treeNodes[i].sort = i + 1;
-    }
-    
-    _teDragNodeId = null;
-    _teDropIndicator = null;
-    renderTypesEditor();
-}
-
-// Clean up on dragend (fires even if drop didn't happen)
+// Global dragend cleanup
 document.addEventListener('dragend', function() {
-    _teDragNodeId = null;
-    _teDropIndicator = null;
+    _teDragKey = null;
+    _teDropZone = null;
+    _teDropTargetKey = null;
     var items = document.querySelectorAll('.te-tree-item');
     for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left', 'dragging');
+        items[i].removeAttribute('data-zone');
+        items[i].classList.remove('dragging');
     }
 });
 
