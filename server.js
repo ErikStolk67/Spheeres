@@ -21,6 +21,10 @@ const pool = new Pool({
 // DICTIONARY ENDPOINTS
 // ============================================================================
 
+app.get('/api/version', (req, res) => {
+    res.json({ version: 'v0.9.12', build: '2026-03-07 22:00' });
+});
+
 app.get('/api/dictionaries', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM cd_dictionaries ORDER BY name');
     res.json(rows);

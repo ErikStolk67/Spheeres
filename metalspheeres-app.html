@@ -13,8 +13,8 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.7';
-    const MS_BUILD = '2026-03-01 14:00';
+    const MS_VERSION = 'v0.9.12';
+    const MS_BUILD = '2026-03-07 22:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -842,6 +842,7 @@
 
         <div class="sidebar-toggle">
             <div id="sidebarVersion" style="padding:4px 16px;font-size:10px;color:#94A3B8;"></div>
+            <div id="deployStatus" style="padding:0 16px 8px;font-size:10px;"></div>
             <button class="sidebar-collapse-btn" onclick="toggleSidebar()">
                 <i data-lucide="menu" style="width:16px;height:16px;color:#64748B;"></i>
             </button>
@@ -1051,7 +1052,31 @@ function renderSidebar() {
 
     menu.innerHTML = html;
     const verEl = document.getElementById('sidebarVersion');
-    if (verEl) verEl.textContent = MS_VERSION;
+    if (verEl) verEl.textContent = MS_VERSION + ' · ' + MS_BUILD;
+    
+    // Deploy status: check if server version matches
+    var deployEl = document.getElementById('deployStatus');
+    if (deployEl) {
+        deployEl.innerHTML = '<span style="color:#F59E0B;">⟳ checking...</span>';
+        fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d) {
+            if (d.version === MS_VERSION) {
+                deployEl.innerHTML = '<span style="color:#16A34A;">✓ live</span>';
+            } else {
+                deployEl.innerHTML = '<span style="color:#F59E0B;">⟳ deploying... (server: ' + d.version + ')</span>';
+                // Poll every 10s until versions match
+                var pollId = setInterval(function() {
+                    fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d2) {
+                        if (d2.version === MS_VERSION) {
+                            deployEl.innerHTML = '<span style="color:#16A34A;">✓ live</span>';
+                            clearInterval(pollId);
+                        }
+                    }).catch(function() {});
+                }, 10000);
+            }
+        }).catch(function() {
+            deployEl.innerHTML = '<span style="color:#DC2626;">✗ offline</span>';
+        });
+    }
     lucide.createIcons();
 }
 
