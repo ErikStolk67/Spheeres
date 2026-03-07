@@ -425,12 +425,12 @@ app.post('/api/tables/:id/types', async (req, res) => {
 });
 
 app.put('/api/types/:id', async (req, res) => {
-    const { name, memo_plaintext, flowfolder, f_kind, f_icon, f_type } = req.body;
+    const { name, memo_plaintext, flowfolder, f_kind, f_icon, f_type, isroot } = req.body;
     try {
         const { rows } = await pool.query(`
-            UPDATE cd_types SET name=$2, memo_plaintext=$3, flowfolder=$4, f_kind=$5, f_icon=$6, f_type=$7, changedate=now()
+            UPDATE cd_types SET name=$2, memo_plaintext=$3, flowfolder=$4, f_kind=$5, f_icon=$6, f_type=$7, isroot=$8, changedate=now()
             WHERE k_type=$1 RETURNING *
-        `, [req.params.id, name, memo_plaintext || null, flowfolder || false, f_kind || null, f_icon || null, f_type || null]);
+        `, [req.params.id, name, memo_plaintext || null, flowfolder || false, f_kind || null, f_icon || null, f_type || null, isroot === undefined ? null : isroot]);
         res.json(rows[0] || { error: 'Not found' });
     } catch (err) {
         res.status(500).json({ error: err.message });

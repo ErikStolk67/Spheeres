@@ -498,15 +498,14 @@
         .te-tree-filter { flex: 1; padding: 4px 8px; border: 1px solid #D1D5DB; border-radius: 4px; font-size: 11px; }
         .te-tree-sort { width: 26px; height: 26px; border: 1px solid #D1D5DB; border-radius: 4px; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #64748B; }
         .te-tree-item {
-            padding: 7px 14px; margin: 2px 0; border-radius: 5px; font-size: 13px;
+            padding: 5px 10px; margin: 2px 0; border-radius: 4px; font-size: 12px;
             cursor: grab; color: #1E293B; user-select: none;
             background: #F1F5F9; border: 1px solid #D1D5DB;
-            font-weight: 500;
+            font-weight: 500; width: fit-content;
         }
         .te-tree-item:hover { background: #E2E8F0; }
         .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; border-color: #93C5FD; }
-        .te-tree-item.child { /* indent set inline via style */ }
-        .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; font-weight: 400; }
+        .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; font-weight: 400; width: auto; }
         .te-tree-item.drag-over-top { border-top: 2px solid #3B82F6; }
         .te-tree-item.drag-over-bottom { border-bottom: 2px solid #3B82F6; }
         .te-tree-item.drag-over-child { border-left: 3px solid #3B82F6; }
@@ -5120,6 +5119,10 @@ function renderTypesEditor() {
     const selNode = st.treeNodes.find(n => n.nodeId === st.selectedNodeId);
     const sel = selNode ? typeMap[selNode.k_type] : null;
 
+    // Track which k_types have already been rendered with their subtree
+    // to avoid duplicating the entire sub-hierarchy for clones
+    const renderedSubtrees = new Set();
+
     // Build tree HTML recursively
     function renderChildren(parentKtype, depth) {
         let html = '';
@@ -5129,7 +5132,7 @@ function renderTypesEditor() {
             if (!t) continue;
             const isActive = st.selectedNodeId === n.nodeId;
             const indent = depth * 24;
-            html += '<div class="te-tree-item' + (isActive ? ' active' : '') + (depth > 0 ? ' child' : '') + '"' +
+            html += '<div class="te-tree-item' + (isActive ? ' active' : '') + '"' +
                 ' draggable="true" data-nodeid="' + n.nodeId + '"' +
                 ' style="' + (depth > 0 ? 'margin-left:' + indent + 'px;' : '') + '"' +
                 ' onclick="selectType(' + n.nodeId + ')"' +
@@ -5138,13 +5141,16 @@ function renderTypesEditor() {
                 ' ondragleave="teDragLeave(event)"' +
                 ' ondrop="teDrop(event,' + n.nodeId + ')">' +
                 escHtml(t.name || 'Unnamed') + '</div>';
-            // Recurse for children of this node's k_type
-            html += renderChildren(n.k_type, depth + 1);
+            // Only render subtree once per k_type (skip for clones that already have a rendered subtree)
+            if (!renderedSubtrees.has(n.k_type)) {
+                renderedSubtrees.add(n.k_type);
+                html += renderChildren(n.k_type, depth + 1);
+            }
         }
         return html;
     }
     
-    let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedNodeId ? ' active' : '') + '" onclick="selectType(null)">—</div>';
+    let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedNodeId ? ' active' : '') + '" onclick="selectType(null)">-</div>';
     treeHtml += renderChildren(null, 0);
 
     // General tab form
@@ -5260,7 +5266,10 @@ function saveTypes() {
     }
     st.treeNodes = st.treeNodes.filter(n => !toRemove.includes(n.nodeId));
     
-    // 2. Build new cd_type_type links from tree
+    // 2. Determine which types are roots (parentKtype === null)
+    const rootKtypes = new Set(st.treeNodes.filter(n => !n.parentKtype).map(n => n.k_type));
+    
+    // 3. Build new cd_type_type links from tree (only non-root nodes)
     const newLinks = [];
     for (const n of st.treeNodes) {
         if (n.parentKtype) {
@@ -5268,7 +5277,7 @@ function saveTypes() {
         }
     }
     
-    // 3. Delete old links, then insert new ones
+    // 4. Delete all old links, then insert new ones
     const deletePromises = st.links.map(l =>
         fetch(API + '/type-links/' + l.k_type1 + '/' + l.k_type2, { method: 'DELETE' }).catch(() => {})
     );
@@ -5282,13 +5291,19 @@ function saveTypes() {
             }).catch(() => {})
         ));
     }).then(() => {
-        // 4. Save changed type properties (non-clones)
+        // 5. Update type properties + isroot for each type
         for (const t of st.types) {
             if (typeof t.k_type === 'number') {
+                const isRoot = rootKtypes.has(t.k_type);
                 fetch(API + '/types/' + t.k_type, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: t.name, memo_plaintext: t.memo_plaintext, flowfolder: t.flowfolder })
+                    body: JSON.stringify({
+                        name: t.name,
+                        memo_plaintext: t.memo_plaintext,
+                        flowfolder: t.flowfolder,
+                        isroot: isRoot
+                    })
                 }).catch(() => {});
             }
         }
@@ -5307,7 +5322,8 @@ let _teDragNodeId = null;
 function teDragStart(e, nodeId) {
     _teDragNodeId = nodeId;
     e.dataTransfer.effectAllowed = 'move';
-    e.target.classList.add('dragging');
+    e.dataTransfer.setData('text/plain', String(nodeId));
+    setTimeout(() => e.target.classList.add('dragging'), 0);
 }
 
 function teDragOver(e, targetNodeId) {
