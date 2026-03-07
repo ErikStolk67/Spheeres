@@ -5075,174 +5075,121 @@ function renderTypesEditor() {
     '</div>';
     popup.classList.add('open');
 
+
     // Update props panel for current selection
     _teUpdateProps();
-
-    // Attach events via delegation on tree panel
-    var treePanel = document.getElementById('teTreePanel');
-    if (treePanel && !treePanel._teEventsAttached) {
-        treePanel._teEventsAttached = true;
-
-        // CLICK: select type (updates props, does NOT re-render tree)
-        treePanel.addEventListener('click', function(e) {
-            var el = e.target.closest('.te-tree-item');
-            if (!el || el.classList.contains('default-type')) return;
-            var id = parseInt(el.getAttribute('data-id'));
-            _teState.selectedId = id;
-            // Update active class
-            var items = treePanel.querySelectorAll('.te-tree-item');
-            for (var j = 0; j < items.length; j++) items[j].classList.remove('active');
-            el.classList.add('active');
-            // Update properties panel only
-            _teUpdateProps();
-        });
-
-        treePanel.addEventListener('dragstart', function(e) {
-            var el = e.target.closest('.te-tree-item');
-            if (!el || el.classList.contains('default-type')) return;
-            _teDragKey = el.getAttribute('data-key');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', _teDragKey);
-            el.classList.add('dragging');
-        });
-
-        treePanel.addEventListener('dragover', function(e) {
-            var el = e.target.closest('.te-tree-item');
-            if (!el || el.classList.contains('default-type')) return;
-            var key = el.getAttribute('data-key');
-            if (key === _teDragKey) return;
-
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-
-            var items = treePanel.querySelectorAll('.te-tree-item');
-            for (var j = 0; j < items.length; j++) items[j].removeAttribute('data-zone');
-
-            var rect = el.getBoundingClientRect();
-            var rx = e.clientX - rect.left;
-            var ry = e.clientY - rect.top;
-            var zone;
-            if (rx < rect.width * 0.25) zone = 'left';
-            else if (rx > rect.width * 0.75) zone = 'right';
-            else if (ry < rect.height * 0.5) zone = 'above';
-            else zone = 'below';
-
-            el.setAttribute('data-zone', zone);
-            _teDropZone = zone;
-            _teDropTargetKey = key;
-        });
-
-        treePanel.addEventListener('dragleave', function(e) {
-            var el = e.target.closest('.te-tree-item');
-            if (el) el.removeAttribute('data-zone');
-        });
-
-        treePanel.addEventListener('drop', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            var items = treePanel.querySelectorAll('.te-tree-item');
-            for (var j = 0; j < items.length; j++) {
-                items[j].removeAttribute('data-zone');
-                items[j].classList.remove('dragging');
-            }
-
-            if (!_teDragKey || !_teDropTargetKey || _teDragKey === _teDropTargetKey) {
-                _teDragKey = null;
-                return;
-            }
-
-            var dp = _teDragKey.split(':');
-            var dragId = parseInt(dp[0]);
-            var dragParent = dp[1] === 'root' ? null : parseInt(dp[1]);
-
-            var tp = _teDropTargetKey.split(':');
-            var targetId = parseInt(tp[0]);
-            var targetParent = tp[1] === 'root' ? null : parseInt(tp[1]);
-
-            var dragType = _teGetType(dragId);
-            var targetType = _teGetType(targetId);
-            var zone = _teDropZone || 'below';
-            var st = _teState;
-
-            if (!dragType || !targetType) { _teDragKey = null; return; }
-
-            if (zone === 'right') {
-                // Make child of target
-                if (dragParent !== null) {
-                    // Remove old link
-                    for (var i = st.links.length - 1; i >= 0; i--) {
-                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
-                            st.links.splice(i, 1); break;
-                        }
-                    }
-                } else {
-                    dragType.isroot = false;
-                }
-                st.links.push({ k_type1: targetId, k_type2: dragId, k_seq: null });
-
-            } else if (zone === 'left') {
-                // Promote up one level
-                if (dragParent === null) {
-                    // already root
-                } else {
-                    // Find grandparent
-                    var grandparent = null;
-                    for (var i = 0; i < st.links.length; i++) {
-                        if (st.links[i].k_type2 === dragParent) {
-                            grandparent = st.links[i].k_type1;
-                            break;
-                        }
-                    }
-                    // Remove old link
-                    for (var i = st.links.length - 1; i >= 0; i--) {
-                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
-                            st.links.splice(i, 1); break;
-                        }
-                    }
-                    if (grandparent === null) {
-                        // Parent was a root → promote to root
-                        var parentType = _teGetType(dragParent);
-                        if (parentType && parentType.isroot) {
-                            dragType.isroot = true;
-                        }
-                    } else {
-                        st.links.push({ k_type1: grandparent, k_type2: dragId, k_seq: null });
-                    }
-                }
-
-            } else {
-                // above/below: reorder at target's level
-                if (dragParent !== null) {
-                    for (var i = st.links.length - 1; i >= 0; i--) {
-                        if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) {
-                            st.links.splice(i, 1); break;
-                        }
-                    }
-                } else {
-                    dragType.isroot = false;
-                }
-
-                if (targetParent !== null) {
-                    st.links.push({ k_type1: targetParent, k_type2: dragId, k_seq: null });
-                } else {
-                    dragType.isroot = true;
-                    // Reorder roots
-                    var di = st.types.indexOf(dragType);
-                    st.types.splice(di, 1);
-                    var ti = st.types.indexOf(targetType);
-                    if (zone === 'below') ti++;
-                    st.types.splice(ti, 0, dragType);
-                }
-            }
-
-            _teDragKey = null;
-            _teDropZone = null;
-            _teDropTargetKey = null;
-            renderTypesEditor();
-        });
-    }
 }
+
+// TYPE EDITOR EVENTS — document-level delegation via IIFE (runs once, works after any re-render)
+(function() {
+    function tp() { return document.getElementById('teTreePanel'); }
+    function items() { return document.querySelectorAll('.te-tree-item'); }
+
+    document.addEventListener('click', function(e) {
+        var p = tp(); if (!p || !p.contains(e.target)) return;
+        var el = e.target.closest('.te-tree-item');
+        if (!el || el.classList.contains('default-type')) return;
+        var id = parseInt(el.getAttribute('data-id'));
+        if (!id) return;
+        _teState.selectedId = id;
+        var all = items();
+        for (var j = 0; j < all.length; j++) all[j].classList.remove('active');
+        el.classList.add('active');
+        _teUpdateProps();
+    });
+
+    document.addEventListener('dragstart', function(e) {
+        var p = tp(); if (!p || !p.contains(e.target)) return;
+        var el = e.target.closest('.te-tree-item');
+        if (!el || el.classList.contains('default-type')) return;
+        _teDragKey = el.getAttribute('data-key');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', _teDragKey);
+        el.classList.add('dragging');
+    });
+
+    document.addEventListener('dragover', function(e) {
+        var p = tp(); if (!p || !p.contains(e.target)) return;
+        var el = e.target.closest('.te-tree-item');
+        if (!el || el.classList.contains('default-type')) return;
+        var key = el.getAttribute('data-key');
+        if (key === _teDragKey) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var all = items();
+        for (var j = 0; j < all.length; j++) all[j].removeAttribute('data-zone');
+        var rect = el.getBoundingClientRect();
+        var rx = e.clientX - rect.left;
+        var ry = e.clientY - rect.top;
+        var zone;
+        if (rx < rect.width * 0.25) zone = 'left';
+        else if (rx > rect.width * 0.75) zone = 'right';
+        else if (ry < rect.height * 0.5) zone = 'above';
+        else zone = 'below';
+        el.setAttribute('data-zone', zone);
+        _teDropZone = zone;
+        _teDropTargetKey = key;
+    });
+
+    document.addEventListener('dragleave', function(e) {
+        var el = e.target.closest('.te-tree-item');
+        if (el) el.removeAttribute('data-zone');
+    });
+
+    document.addEventListener('drop', function(e) {
+        var p = tp(); if (!p || !p.contains(e.target)) return;
+        e.preventDefault(); e.stopPropagation();
+        var all = items();
+        for (var j = 0; j < all.length; j++) { all[j].removeAttribute('data-zone'); all[j].classList.remove('dragging'); }
+        if (!_teDragKey || !_teDropTargetKey || _teDragKey === _teDropTargetKey) { _teDragKey = null; return; }
+
+        var dp = _teDragKey.split(':');
+        var dragId = parseInt(dp[0]);
+        var dragParent = dp[1] === 'root' ? null : parseInt(dp[1]);
+        var tpp = _teDropTargetKey.split(':');
+        var targetId = parseInt(tpp[0]);
+        var targetParent = tpp[1] === 'root' ? null : parseInt(tpp[1]);
+        var dragType = _teGetType(dragId);
+        var targetType = _teGetType(targetId);
+        var zone = _teDropZone || 'below';
+        var st = _teState;
+        if (!dragType || !targetType) { _teDragKey = null; return; }
+
+        if (zone === 'right') {
+            if (dragParent !== null) {
+                for (var i = st.links.length - 1; i >= 0; i--) { if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) { st.links.splice(i, 1); break; } }
+            } else { dragType.isroot = false; }
+            st.links.push({ k_type1: targetId, k_type2: dragId, k_seq: null });
+        } else if (zone === 'left') {
+            if (dragParent !== null) {
+                var gp = null;
+                for (var i = 0; i < st.links.length; i++) { if (st.links[i].k_type2 === dragParent) { gp = st.links[i].k_type1; break; } }
+                for (var i = st.links.length - 1; i >= 0; i--) { if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) { st.links.splice(i, 1); break; } }
+                if (gp === null) { var pt = _teGetType(dragParent); if (pt && pt.isroot) dragType.isroot = true; }
+                else { st.links.push({ k_type1: gp, k_type2: dragId, k_seq: null }); }
+            }
+        } else {
+            if (dragParent !== null) {
+                for (var i = st.links.length - 1; i >= 0; i--) { if (st.links[i].k_type1 === dragParent && st.links[i].k_type2 === dragId) { st.links.splice(i, 1); break; } }
+            } else { dragType.isroot = false; }
+            if (targetParent !== null) { st.links.push({ k_type1: targetParent, k_type2: dragId, k_seq: null }); }
+            else {
+                dragType.isroot = true;
+                var di = st.types.indexOf(dragType); st.types.splice(di, 1);
+                var ti = st.types.indexOf(targetType); if (zone === 'below') ti++;
+                st.types.splice(ti, 0, dragType);
+            }
+        }
+        _teDragKey = null; _teDropZone = null; _teDropTargetKey = null;
+        renderTypesEditor();
+    });
+
+    document.addEventListener('dragend', function() {
+        _teDragKey = null; _teDropZone = null; _teDropTargetKey = null;
+        var all = items();
+        for (var i = 0; i < all.length; i++) { all[i].removeAttribute('data-zone'); all[i].classList.remove('dragging'); }
+    });
+})();
 
 function _teUpdateProps() {
     var container = document.getElementById('tePropsContent');
@@ -5371,17 +5318,6 @@ function closeTypesEditor() {
     document.getElementById('typesEditorPopup').classList.remove('open');
 }
 
-// Global dragend cleanup
-document.addEventListener('dragend', function() {
-    _teDragKey = null;
-    _teDropZone = null;
-    _teDropTargetKey = null;
-    var items = document.querySelectorAll('.te-tree-item');
-    for (var i = 0; i < items.length; i++) {
-        items[i].removeAttribute('data-zone');
-        items[i].classList.remove('dragging');
-    }
-});
 
 // ============================================================================
 // QUERY EDITOR
