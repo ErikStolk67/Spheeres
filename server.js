@@ -1816,19 +1816,22 @@ app.listen(PORT, '0.0.0.0', () => {
         if (parseInt(cnt) === 0) console.log('WARNING: cd_tables empty. POST /api/restore-cd-tables to fix.');
     }).catch(e => console.log('cd_tables check failed:', e.message));
     
-    // Auto-repair missing cd_type_type links
+    // Auto-repair missing cd_type_type links (direct insert, ignore if exists)
     const repairs = [
-        { k_type1: 35138, k_type2: 35139 }, // TMS project → TMS fase
-        { k_type1: 35138, k_type2: 35137 }, // TMS project → VarOrder
+        [35138, 35139], // TMS project → TMS fase
+        [35138, 35137], // TMS project → VarOrder
     ];
-    for (const r of repairs) {
-        pool.query('SELECT 1 FROM cd_type_type WHERE k_type1=$1 AND k_type2=$2', [r.k_type1, r.k_type2])
-            .then(res => {
-                if (res.rows.length === 0) {
-                    return pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now())', [r.k_type1, r.k_type2]);
-                }
-            })
-            .then(() => console.log('Link OK:', r.k_type1, '→', r.k_type2))
-            .catch(e => console.log('Link repair failed:', r.k_type1, '→', r.k_type2, e.message));
-    }
+    repairs.forEach(function(r) {
+        pool.query('SELECT count(*) as c FROM cd_type_type WHERE k_type1=$1 AND k_type2=$2', [r[0], r[1]])
+        .then(function(res) {
+            if (parseInt(res.rows[0].c) === 0) {
+                console.log('INSERTING missing link:', r[0], '->', r[1]);
+                return pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now())', [r[0], r[1]]);
+            } else {
+                console.log('Link exists:', r[0], '->', r[1]);
+            }
+        })
+        .then(function() { console.log('Link done:', r[0], '->', r[1]); })
+        .catch(function(e) { console.error('LINK REPAIR ERROR:', r[0], '->', r[1], e.message, e.detail || ''); });
+    });
 });
