@@ -1261,9 +1261,6 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             // Skip per-column ALTER for speed - data that's too long will be truncated
             
             let inserted = 0, errors = 0, lastError = '';
-            
-            // Batch insert for speed: build multi-row VALUES
-            const pkCol = Object.keys(dbCols).find(c => pkCols.includes(c));
             const BATCH_SIZE = 100;
             
             for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
@@ -1291,12 +1288,20 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     
                     if (cols.length === 0) continue;
                     try {
-                        if (pkCol && cols.includes(`"${pkCol}"`)) {
-                            const updateSet = cols.filter(c => c !== `"${pkCol}"`).map(c => `${c} = EXCLUDED.${c}`).join(', ');
-                            if (updateSet) {
-                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO UPDATE SET ${updateSet}`, vals);
+                        if (pkCols.length > 0) {
+                            // Build conflict columns (supports composite PKs)
+                            const conflictCols = pkCols.filter(pk => cols.includes(`"${pk}"`));
+                            if (conflictCols.length > 0) {
+                                const conflictStr = conflictCols.map(c => `"${c}"`).join(',');
+                                const updateCols = cols.filter(c => !conflictCols.includes(c.replace(/"/g, '')));
+                                if (updateCols.length > 0) {
+                                    const updateSet = updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ');
+                                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT (${conflictStr}) DO UPDATE SET ${updateSet}`, vals);
+                                } else {
+                                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT (${conflictStr}) DO NOTHING`, vals);
+                                }
                             } else {
-                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${pkCol}") DO NOTHING`, vals);
+                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
                             }
                         } else {
                             await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
