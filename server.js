@@ -22,7 +22,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.12', build: '2026-03-07 22:00' });
+    res.json({ version: 'v0.9.13', build: '2026-03-07 23:00' });
 });
 
 app.get('/api/dictionaries', async (req, res) => {

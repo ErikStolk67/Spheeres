@@ -13,8 +13,8 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.12';
-    const MS_BUILD = '2026-03-07 22:00';
+    const MS_VERSION = 'v0.9.13';
+    const MS_BUILD = '2026-03-07 23:00';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -865,6 +865,8 @@
                 </div>
                 <i data-lucide="bell" class="topbar-icon" style="width:18px;height:18px;"></i>
                 <i data-lucide="settings" class="topbar-icon" style="width:18px;height:18px;"></i>
+                <span id="topbarVersion" style="font-size:10px;color:#94A3B8;margin-right:4px;"></span>
+                <span id="topbarDeploy" style="font-size:10px;margin-right:4px;"></span>
                 <div class="avatar"><i data-lucide="circle-user" style="width:18px;height:18px;color:#fff;"></i></div>
             </div>
         </div>
@@ -1053,30 +1055,34 @@ function renderSidebar() {
     menu.innerHTML = html;
     const verEl = document.getElementById('sidebarVersion');
     if (verEl) verEl.textContent = MS_VERSION + ' · ' + MS_BUILD;
+    var topVer = document.getElementById('topbarVersion');
+    if (topVer) topVer.textContent = MS_VERSION;
     
     // Deploy status: check if server version matches
-    var deployEl = document.getElementById('deployStatus');
-    if (deployEl) {
-        deployEl.innerHTML = '<span style="color:#F59E0B;">⟳ checking...</span>';
-        fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d) {
-            if (d.version === MS_VERSION) {
-                deployEl.innerHTML = '<span style="color:#16A34A;">✓ live</span>';
-            } else {
-                deployEl.innerHTML = '<span style="color:#F59E0B;">⟳ deploying... (server: ' + d.version + ')</span>';
-                // Poll every 10s until versions match
-                var pollId = setInterval(function() {
-                    fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d2) {
-                        if (d2.version === MS_VERSION) {
-                            deployEl.innerHTML = '<span style="color:#16A34A;">✓ live</span>';
-                            clearInterval(pollId);
-                        }
-                    }).catch(function() {});
-                }, 10000);
-            }
-        }).catch(function() {
-            deployEl.innerHTML = '<span style="color:#DC2626;">✗ offline</span>';
-        });
+    function updateDeployStatus(text, color) {
+        var els = [document.getElementById('deployStatus'), document.getElementById('topbarDeploy')];
+        for (var i = 0; i < els.length; i++) {
+            if (els[i]) els[i].innerHTML = '<span style="color:' + color + ';">' + text + '</span>';
+        }
     }
+    updateDeployStatus('⟳', '#F59E0B');
+    fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.version === MS_VERSION) {
+            updateDeployStatus('✓', '#16A34A');
+        } else {
+            updateDeployStatus('⟳ ' + d.version, '#F59E0B');
+            var pollId = setInterval(function() {
+                fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d2) {
+                    if (d2.version === MS_VERSION) {
+                        updateDeployStatus('✓', '#16A34A');
+                        clearInterval(pollId);
+                    }
+                }).catch(function() {});
+            }, 10000);
+        }
+    }).catch(function() {
+        updateDeployStatus('✗', '#DC2626');
+    });
     lucide.createIcons();
 }
 
