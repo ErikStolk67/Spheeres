@@ -504,11 +504,11 @@
             font-weight: 500; width: 65%;
         }
         .te-tree-item:hover { background: #E2E8F0; }
-        .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; border-color: #93C5FD; }
         .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; font-weight: 400; width: auto; }
         .te-tree-item.drag-over-top { border-top: 2px solid #3B82F6; }
         .te-tree-item.drag-over-bottom { border-bottom: 2px solid #3B82F6; }
         .te-tree-item.drag-over-child { border-left: 3px solid #3B82F6; }
+        .te-tree-item.drag-over-left { border-right: 3px solid #3B82F6; }
         .te-tree-item.dragging { opacity: 0.4; }
 
         .te-props { flex: 1; padding: 0; overflow-y: auto; }
@@ -5130,12 +5130,10 @@ function renderTypesEditor() {
         for (const n of children) {
             const t = typeMap[n.k_type];
             if (!t) continue;
-            const isActive = st.selectedNodeId === n.nodeId;
             const indent = depth * 24;
-            html += '<div class="te-tree-item' + (isActive ? ' active' : '') + '"' +
+            html += '<div class="te-tree-item"' +
                 ' draggable="true" data-nodeid="' + n.nodeId + '"' +
                 ' style="' + (depth > 0 ? 'margin-left:' + indent + 'px;' : '') + '"' +
-                ' onclick="selectType(' + n.nodeId + ')"' +
                 ' ondragstart="teDragStart(event,' + n.nodeId + ')"' +
                 ' ondragover="teDragOver(event,' + n.nodeId + ')"' +
                 ' ondragleave="teDragLeave(event)"' +
@@ -5153,7 +5151,7 @@ function renderTypesEditor() {
         return html;
     }
     
-    let treeHtml = '<div class="te-tree-item default-type' + (!st.selectedNodeId ? ' active' : '') + '" onclick="selectType(null)">-</div>';
+    let treeHtml = '<div class="te-tree-item default-type">-</div>';
     treeHtml += renderChildren(null, 0);
 
     // General tab form
@@ -5342,7 +5340,7 @@ function teDragOver(e, targetNodeId) {
     // Clear all indicators
     var items = document.querySelectorAll('.te-tree-item');
     for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left');
     }
     
     var el = e.currentTarget;
@@ -5353,8 +5351,14 @@ function teDragOver(e, targetNodeId) {
     var relX = e.clientX - rect.left;
     var relY = e.clientY - rect.top;
     var h = rect.height;
+    var w = rect.width;
     
-    if (relX > rect.width * 0.5) {
+    if (relX < w * 0.2) {
+        // Drag to left edge → move up one level
+        el.classList.add('drag-over-left');
+        _teDropIndicator = 'left';
+    } else if (relX > w * 0.7) {
+        // Drag to right side → make child
         el.classList.add('drag-over-child');
         _teDropIndicator = 'child';
     } else if (relY < h * 0.5) {
@@ -5369,7 +5373,7 @@ function teDragOver(e, targetNodeId) {
 function teDragLeave(e) {
     var el = e.target.closest('.te-tree-item');
     if (el) {
-        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
+        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left');
     }
 }
 
@@ -5380,7 +5384,7 @@ function teDrop(e, targetNodeId) {
     // Clean up all visual indicators
     var items = document.querySelectorAll('.te-tree-item');
     for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'dragging');
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left', 'dragging');
     }
     
     if (_teDragNodeId === null || _teDragNodeId === targetNodeId) {
@@ -5402,6 +5406,21 @@ function teDrop(e, targetNodeId) {
     if (indicator === 'child') {
         // Make dragNode a child of targetNode's k_type
         dragNode.parentKtype = targetNode.k_type;
+    } else if (indicator === 'left') {
+        // Move dragNode up one level: to targetNode's grandparent
+        // Find targetNode's parent node to get grandparent
+        var targetParent = null;
+        for (var j = 0; j < st.treeNodes.length; j++) {
+            if (st.treeNodes[j].k_type === targetNode.parentKtype && !st.treeNodes[j].parentKtype) {
+                targetParent = st.treeNodes[j];
+                break;
+            }
+            if (st.treeNodes[j].k_type === targetNode.parentKtype) {
+                targetParent = st.treeNodes[j];
+            }
+        }
+        // Set to grandparent's parent, or null (root) if no grandparent
+        dragNode.parentKtype = targetParent ? targetParent.parentKtype : null;
     } else {
         // Place dragNode at same level as targetNode (same parent)
         dragNode.parentKtype = targetNode.parentKtype;
@@ -5430,7 +5449,7 @@ document.addEventListener('dragend', function() {
     _teDropIndicator = null;
     var items = document.querySelectorAll('.te-tree-item');
     for (var i = 0; i < items.length; i++) {
-        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'dragging');
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'drag-over-left', 'dragging');
     }
 });
 
