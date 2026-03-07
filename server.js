@@ -22,7 +22,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.15', build: new Date().toISOString().slice(0, 16).replace('T', ' ') });
+    res.json({ version: 'v0.9.16', build: new Date().toISOString().slice(0, 16).replace('T', ' ') });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1822,8 +1822,13 @@ app.listen(PORT, '0.0.0.0', () => {
         { k_type1: 35138, k_type2: 35137 }, // TMS project → VarOrder
     ];
     for (const r of repairs) {
-        pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now()) ON CONFLICT DO NOTHING', [r.k_type1, r.k_type2])
-            .then(() => console.log('Repaired link:', r.k_type1, '→', r.k_type2))
-            .catch(() => {});
+        pool.query('SELECT 1 FROM cd_type_type WHERE k_type1=$1 AND k_type2=$2', [r.k_type1, r.k_type2])
+            .then(res => {
+                if (res.rows.length === 0) {
+                    return pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now())', [r.k_type1, r.k_type2]);
+                }
+            })
+            .then(() => console.log('Link OK:', r.k_type1, '→', r.k_type2))
+            .catch(e => console.log('Link repair failed:', r.k_type1, '→', r.k_type2, e.message));
     }
 });
