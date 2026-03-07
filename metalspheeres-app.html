@@ -13,7 +13,7 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.17';
+    const MS_VERSION = 'v0.9.18';
     const MS_BUILD = '';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
@@ -5047,6 +5047,7 @@ function renderTypesEditor() {
     // L1 = roots (isroot=true), L2 = children via links
     // If child.isroot=true, do NOT expand its subtree (shown under its own root entry)
     function addChildren(parentId, depth) {
+        if (depth > 10) return; // safety limit
         for (var i = 0; i < st.links.length; i++) {
             var lnk = st.links[i];
             if (lnk.k_type1 !== parentId) continue;
@@ -5060,8 +5061,8 @@ function renderTypesEditor() {
                 ' style="margin-left:' + indent + 'px;">' +
                 escHtml(childType.name || 'Unnamed') + '</div>';
 
-            // Only expand if child is NOT a root (matching query: AND T1.ISROOT=0)
-            if (!childType.isroot) {
+            // Expand subtree only if: child is NOT a root AND not a self-link
+            if (!childType.isroot && lnk.k_type2 !== lnk.k_type1) {
                 addChildren(lnk.k_type2, depth + 1);
             }
         }
@@ -5120,24 +5121,38 @@ function renderTypesEditor() {
 (function() {
     function tp() { return document.getElementById('teTreePanel'); }
     function items() { return document.querySelectorAll('.te-tree-item'); }
+    function inTree(e) {
+        var p = tp();
+        if (!p) return false;
+        var t = e.target;
+        if (t.nodeType === 3) t = t.parentNode; // text node → parent element
+        return p.contains(t);
+    }
+    function getItem(e) {
+        var t = e.target;
+        if (t.nodeType === 3) t = t.parentNode;
+        var el = t.closest ? t.closest('.te-tree-item') : null;
+        return (el && !el.classList.contains('default-type')) ? el : null;
+    }
 
     document.addEventListener('click', function(e) {
-        var p = tp(); if (!p || !p.contains(e.target)) return;
-        var el = e.target.closest('.te-tree-item');
-        if (!el || el.classList.contains('default-type')) return;
+        var el = getItem(e);
+        if (!el || !inTree(e)) return;
         var id = parseInt(el.getAttribute('data-id'));
         if (!id) return;
         _teState.selectedId = id;
         var all = items();
         for (var j = 0; j < all.length; j++) all[j].classList.remove('active');
-        el.classList.add('active');
+        // Highlight all instances of this k_type
+        for (var j = 0; j < all.length; j++) {
+            if (parseInt(all[j].getAttribute('data-id')) === id) all[j].classList.add('active');
+        }
         _teUpdateProps();
     });
 
     document.addEventListener('dragstart', function(e) {
-        var p = tp(); if (!p || !p.contains(e.target)) return;
-        var el = e.target.closest('.te-tree-item');
-        if (!el || el.classList.contains('default-type')) return;
+        var el = getItem(e);
+        if (!el || !inTree(e)) return;
         _teDragKey = el.getAttribute('data-key');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', _teDragKey);
@@ -5145,9 +5160,9 @@ function renderTypesEditor() {
     });
 
     document.addEventListener('dragover', function(e) {
-        var p = tp(); if (!p || !p.contains(e.target)) return;
-        var el = e.target.closest('.te-tree-item');
-        if (!el || el.classList.contains('default-type')) return;
+        if (!_teDragKey) return;
+        var el = getItem(e);
+        if (!el || !inTree(e)) return;
         var key = el.getAttribute('data-key');
         if (key === _teDragKey) return;
         e.preventDefault();
@@ -5168,12 +5183,14 @@ function renderTypesEditor() {
     });
 
     document.addEventListener('dragleave', function(e) {
-        var el = e.target.closest('.te-tree-item');
+        var t = e.target;
+        if (t.nodeType === 3) t = t.parentNode;
+        var el = t.closest ? t.closest('.te-tree-item') : null;
         if (el) el.removeAttribute('data-zone');
     });
 
     document.addEventListener('drop', function(e) {
-        var p = tp(); if (!p || !p.contains(e.target)) return;
+        if (!inTree(e)) return;
         e.preventDefault(); e.stopPropagation();
         var all = items();
         for (var j = 0; j < all.length; j++) { all[j].removeAttribute('data-zone'); all[j].classList.remove('dragging'); }
