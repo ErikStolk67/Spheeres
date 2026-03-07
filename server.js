@@ -9,7 +9,13 @@ const AdmZip = require('adm-zip');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), {
+    setHeaders: function(res, filePath) {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+    }
+}));
 
 // Use Railway DATABASE_URL or fallback to local
 const pool = new Pool({
@@ -22,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.16', build: new Date().toISOString().slice(0, 16).replace('T', ' ') });
+    res.json({ version: 'v0.9.17', build: new Date().toISOString().slice(0, 16).replace('T', ' ') });
 });
 
 // One-time repair: restore missing cd_type_type links
