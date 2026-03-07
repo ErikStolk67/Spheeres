@@ -504,6 +504,7 @@
             font-weight: 500; width: 65%;
         }
         .te-tree-item:hover { background: #E2E8F0; }
+        .te-tree-item.active { background: #E0F2FE; border-color: #93C5FD; }
         .te-tree-item.default-type { color: #94A3B8; font-style: italic; cursor: default; background: none; border: none; font-weight: 400; width: auto; }
         .te-tree-item[data-zone="above"] { border-top: 3px solid #3B82F6; }
         .te-tree-item[data-zone="below"] { border-bottom: 3px solid #3B82F6; }
@@ -4970,7 +4971,8 @@ var _teState = {
     tableName: '',
     types: [],    // cd_types records
     links: [],    // cd_type_type rows {k_type1: parent, k_type2: child, k_seq}
-    k_table: null
+    k_table: null,
+    selectedId: null  // k_type of selected type (for properties panel + clone)
 };
 var _teDragKey = null;
 var _teDropZone = null;
@@ -5040,7 +5042,7 @@ function renderTypesEditor() {
         addChildren(t.k_type, 1);
     }
 
-    var formHtml = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Select a type by dragging or use + to add</div></div>';
+    var formHtml = '<div id="tePropsContent"></div>';
 
     var popup = document.getElementById('typesEditorPopup');
     popup.innerHTML = '<div class="popup te-popup">' +
@@ -5073,10 +5075,27 @@ function renderTypesEditor() {
     '</div>';
     popup.classList.add('open');
 
-    // Attach drag events via delegation on tree panel
+    // Update props panel for current selection
+    _teUpdateProps();
+
+    // Attach events via delegation on tree panel
     var treePanel = document.getElementById('teTreePanel');
     if (treePanel && !treePanel._teEventsAttached) {
         treePanel._teEventsAttached = true;
+
+        // CLICK: select type (updates props, does NOT re-render tree)
+        treePanel.addEventListener('click', function(e) {
+            var el = e.target.closest('.te-tree-item');
+            if (!el || el.classList.contains('default-type')) return;
+            var id = parseInt(el.getAttribute('data-id'));
+            _teState.selectedId = id;
+            // Update active class
+            var items = treePanel.querySelectorAll('.te-tree-item');
+            for (var j = 0; j < items.length; j++) items[j].classList.remove('active');
+            el.classList.add('active');
+            // Update properties panel only
+            _teUpdateProps();
+        });
 
         treePanel.addEventListener('dragstart', function(e) {
             var el = e.target.closest('.te-tree-item');
@@ -5225,6 +5244,30 @@ function renderTypesEditor() {
     }
 }
 
+function _teUpdateProps() {
+    var container = document.getElementById('tePropsContent');
+    if (!container) return;
+    var sel = _teState.selectedId ? _teGetType(_teState.selectedId) : null;
+    if (!sel) {
+        container.innerHTML = '<div class="te-form"><div style="padding:20px;color:#94A3B8;font-style:italic;">Click a type to view properties</div></div>';
+        return;
+    }
+    container.innerHTML = '<div class="te-form">' +
+        '<div class="te-form-row"><div class="te-form-label">Name</div><div class="te-form-value"><input class="te-form-input" id="teName" value="' + escAttr(sel.name || '') + '" onchange="teFieldChange(\'name\',this.value)"></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Type</div><div class="te-form-value"><select class="te-form-input"><option selected>Entity type</option></select></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Kind</div><div class="te-form-value"><select class="te-form-input"><option value="">—</option></select></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Icon</div><div class="te-form-value"><div class="te-icon-select" style="padding:6px 10px;border:1px solid #D1D5DB;border-radius:4px;color:#94A3B8;cursor:pointer;">Select icon</div></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Flow folder</div><div class="te-form-value"><label><input type="checkbox" id="teFlowFolder" ' + (sel.flowfolder ? 'checked' : '') + ' onchange="teFieldChange(\'flowfolder\',this.checked)"></label></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Status</div><div class="te-form-value"><select class="te-form-input"><option>Enable</option><option>Disable</option></select></div></div>' +
+        '<div class="te-form-row"><div class="te-form-label">Description</div><div class="te-form-value"><textarea class="te-form-textarea" id="teDesc" onchange="teFieldChange(\'memo_plaintext\',this.value)">' + escHtml(sel.memo_plaintext || '') + '</textarea></div></div>' +
+    '</div>';
+}
+
+function teFieldChange(field, value) {
+    var sel = _teState.selectedId ? _teGetType(_teState.selectedId) : null;
+    if (sel) sel[field] = value;
+}
+
 function teAddType() {
     var st = _teState;
     if (!st.k_table) return;
@@ -5238,6 +5281,7 @@ function teAddType() {
         if (data.k_type) {
             data.isroot = true;
             st.types.push(data);
+            st.selectedId = data.k_type;
             renderTypesEditor();
         }
     })
@@ -5245,8 +5289,15 @@ function teAddType() {
 }
 
 function teCloneType() {
-    // TODO: prompt for which type to clone, add as new root entry pointing to same k_type
-    alert('Clone: select a type in the tree, then drag it to create a second occurrence under a different parent.');
+    var st = _teState;
+    if (!st.selectedId) { alert('Click a type first to select it'); return; }
+    var sel = _teGetType(st.selectedId);
+    if (!sel) return;
+    
+    // Clone = make this type also a root (if not already)
+    // Or add a link from a different parent — for now, make it a root copy
+    sel.isroot = true;
+    renderTypesEditor();
 }
 
 function teSaveAll() {
