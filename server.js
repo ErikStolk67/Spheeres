@@ -26,7 +26,7 @@ app.get('/api/version', (req, res) => {
 });
 
 // One-time repair: restore missing cd_type_type links
-app.post('/api/repair-links', async (req, res) => {
+app.all('/api/repair-links', async (req, res) => {
     try {
         const repairs = [
             { k_type1: 35138, k_type2: 35139 }, // TMS project → TMS fase
