@@ -13,8 +13,8 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.14';
-    const MS_BUILD = '2026-03-07 23:30';
+    const MS_VERSION = 'v0.9.15';
+    const MS_BUILD = '';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -1054,7 +1054,7 @@ function renderSidebar() {
 
     menu.innerHTML = html;
     const verEl = document.getElementById('sidebarVersion');
-    if (verEl) verEl.textContent = MS_VERSION + ' · ' + MS_BUILD;
+    if (verEl) verEl.textContent = MS_VERSION;
     var topVer = document.getElementById('topbarVersion');
     if (topVer) topVer.textContent = MS_VERSION;
     
@@ -1069,12 +1069,14 @@ function renderSidebar() {
     fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d) {
         if (d.version === MS_VERSION) {
             updateDeployStatus('✓', '#16A34A');
+            if (verEl) verEl.textContent = MS_VERSION + ' · ' + d.build;
         } else {
             updateDeployStatus('⟳ ' + d.version, '#F59E0B');
             var pollId = setInterval(function() {
                 fetch(API + '/version').then(function(r) { return r.json(); }).then(function(d2) {
                     if (d2.version === MS_VERSION) {
                         updateDeployStatus('✓', '#16A34A');
+                        if (verEl) verEl.textContent = MS_VERSION + ' · ' + d2.build;
                         clearInterval(pollId);
                     }
                 }).catch(function() {});

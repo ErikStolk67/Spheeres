@@ -22,7 +22,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.14', build: '2026-03-07 23:30' });
+    res.json({ version: 'v0.9.15', build: new Date().toISOString().slice(0, 16).replace('T', ' ') });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1815,4 +1815,15 @@ app.listen(PORT, '0.0.0.0', () => {
         console.log('cd_tables:', cnt, 'rows');
         if (parseInt(cnt) === 0) console.log('WARNING: cd_tables empty. POST /api/restore-cd-tables to fix.');
     }).catch(e => console.log('cd_tables check failed:', e.message));
+    
+    // Auto-repair missing cd_type_type links
+    const repairs = [
+        { k_type1: 35138, k_type2: 35139 }, // TMS project → TMS fase
+        { k_type1: 35138, k_type2: 35137 }, // TMS project → VarOrder
+    ];
+    for (const r of repairs) {
+        pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now()) ON CONFLICT DO NOTHING', [r.k_type1, r.k_type2])
+            .then(() => console.log('Repaired link:', r.k_type1, '→', r.k_type2))
+            .catch(() => {});
+    }
 });
