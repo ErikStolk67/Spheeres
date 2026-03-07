@@ -22,7 +22,28 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.13', build: '2026-03-07 23:00' });
+    res.json({ version: 'v0.9.14', build: '2026-03-07 23:30' });
+});
+
+// One-time repair: restore missing cd_type_type links
+app.post('/api/repair-links', async (req, res) => {
+    try {
+        const repairs = [
+            { k_type1: 35138, k_type2: 35139 }, // TMS project → TMS fase
+            { k_type1: 35138, k_type2: 35137 }, // TMS project → VarOrder
+        ];
+        let inserted = 0;
+        for (const r of repairs) {
+            const exists = await pool.query('SELECT 1 FROM cd_type_type WHERE k_type1=$1 AND k_type2=$2', [r.k_type1, r.k_type2]);
+            if (exists.rows.length === 0) {
+                await pool.query('INSERT INTO cd_type_type (k_type1, k_type2, k_seq, createdate, changedate) VALUES ($1, $2, 1, now(), now())', [r.k_type1, r.k_type2]);
+                inserted++;
+            }
+        }
+        res.json({ success: true, inserted });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get('/api/dictionaries', async (req, res) => {

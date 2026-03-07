@@ -13,8 +13,8 @@
     window.onerror = function(msg, url, line, col, err) {
         document.body.innerHTML = '<div style="padding:40px;color:red;font-family:monospace;"><h2>JS Error</h2><p>' + msg + '</p><p>Line: ' + line + '</p><pre>' + (err && err.stack || '') + '</pre></div>';
     };
-    const MS_VERSION = 'v0.9.13';
-    const MS_BUILD = '2026-03-07 23:00';
+    const MS_VERSION = 'v0.9.14';
+    const MS_BUILD = '2026-03-07 23:30';
     // Fallback: if lucide didn't load, create a stub that renders text icons
     if (typeof lucide === 'undefined') {
         window.lucide = {
@@ -5001,9 +5001,10 @@ function createNewSubTable(parentTable) {
 var _teState = {
     tableName: '',
     types: [],    // cd_types records
-    links: [],    // cd_type_type rows {k_type1: parent, k_type2: child, k_seq}
+    links: [],    // CURRENT cd_type_type rows (mutated by drag)
+    originalLinks: [], // ORIGINAL links from DB (never mutated)
     k_table: null,
-    selectedId: null  // k_type of selected type (for properties panel + clone)
+    selectedId: null
 };
 var _teDragKey = null;
 var _teDropZone = null;
@@ -5016,7 +5017,9 @@ function openTypesEditor(tableName) {
     .then(function(data) {
         _teState.types = data.types || [];
         _teState.links = data.links || [];
+        _teState.originalLinks = JSON.parse(JSON.stringify(data.links || []));
         _teState.k_table = data.k_table;
+        _teState.selectedId = null;
         renderTypesEditor();
     })
     .catch(function() {
@@ -5281,67 +5284,57 @@ function teCloneType() {
 function teSaveAll() {
     var st = _teState;
 
-    // Deduplicate links: same parent+child only once
-    var seen = {};
-    var uniqueLinks = [];
-    for (var i = 0; i < st.links.length; i++) {
-        var key = st.links[i].k_type1 + ':' + st.links[i].k_type2;
-        if (!seen[key]) {
-            seen[key] = true;
-            uniqueLinks.push(st.links[i]);
-        }
+    // Build sets for comparison
+    function linkKey(l) { return l.k_type1 + ':' + l.k_type2; }
+    
+    var originalSet = {};
+    for (var i = 0; i < st.originalLinks.length; i++) {
+        originalSet[linkKey(st.originalLinks[i])] = st.originalLinks[i];
     }
-
-    // Also deduplicate: if a type is root AND appears as child under the same logic, that's fine (clone)
-
-    // 1. Delete ALL old links for types in this entity
-    var oldLinks = st.links; // original from DB (before edits... but we mutated st.links)
-    // We need to delete all links involving these type IDs and rewrite
-    var typeIds = st.types.map(function(t) { return t.k_type; });
-
-    // Delete all existing links for these types
-    fetch(API + '/type-links/bulk-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type_ids: typeIds })
-    }).catch(function() {
-        // Fallback: delete one by one
-        // This path runs if bulk-delete doesn't exist
-    }).then(function() {
-        // 2. Insert new links
-        var promises = [];
-        for (var i = 0; i < uniqueLinks.length; i++) {
-            promises.push(
-                fetch(API + '/type-links', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        parent_id: uniqueLinks[i].k_type1,
-                        child_id: uniqueLinks[i].k_type2,
-                        k_seq: i + 1
-                    })
-                }).catch(function() {})
-            );
-        }
-        return Promise.all(promises);
-    }).then(function() {
-        // 3. Update isroot on each type
-        var promises = [];
-        for (var i = 0; i < st.types.length; i++) {
-            var t = st.types[i];
-            if (typeof t.k_type === 'number') {
-                promises.push(
-                    fetch(API + '/types/' + t.k_type, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name: t.name, isroot: t.isroot || false })
-                    }).catch(function() {})
-                );
-            }
-        }
-        return Promise.all(promises);
+    
+    var currentSet = {};
+    for (var i = 0; i < st.links.length; i++) {
+        currentSet[linkKey(st.links[i])] = st.links[i];
+    }
+    
+    // Find links to DELETE (in original but not in current)
+    var toDelete = [];
+    for (var key in originalSet) {
+        if (!currentSet[key]) toDelete.push(originalSet[key]);
+    }
+    
+    // Find links to INSERT (in current but not in original)
+    var toInsert = [];
+    for (var key in currentSet) {
+        if (!originalSet[key]) toInsert.push(currentSet[key]);
+    }
+    
+    // Execute deletes
+    var deletePromises = toDelete.map(function(l) {
+        return fetch(API + '/type-links/' + l.k_type1 + '/' + l.k_type2, { method: 'DELETE' }).catch(function() {});
     });
-
+    
+    Promise.all(deletePromises).then(function() {
+        // Execute inserts
+        return Promise.all(toInsert.map(function(l, idx) {
+            return fetch(API + '/type-links', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent_id: l.k_type1, child_id: l.k_type2, k_seq: idx + 1 })
+            }).catch(function() {});
+        }));
+    }).then(function() {
+        // Update isroot + name on changed types only
+        return Promise.all(st.types.map(function(t) {
+            if (typeof t.k_type !== 'number') return Promise.resolve();
+            return fetch(API + '/types/' + t.k_type, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: t.name, isroot: t.isroot || false, flowfolder: t.flowfolder || false, memo_plaintext: t.memo_plaintext || null })
+            }).catch(function() {});
+        }));
+    });
+    
     closeTypesEditor();
 }
 
