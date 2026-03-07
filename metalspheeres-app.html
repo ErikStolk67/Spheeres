@@ -512,6 +512,20 @@
         .te-tree-item.dragging { opacity: 0.4; }
 
         .te-props { flex: 1; padding: 0; overflow-y: auto; }
+
+        /* Query Editor */
+        .qe-popup { width: 90vw; max-width: 1100px; height: 80vh; display: flex; flex-direction: column; }
+        .qe-title { font-size: 16px; font-weight: 600; padding: 16px 20px 8px; }
+        .qe-toolbar { display: flex; gap: 8px; padding: 0 20px 12px; align-items: center; }
+        .qe-sql { flex: 1; display: flex; flex-direction: column; padding: 0 20px; }
+        .qe-sql textarea { width: 100%; min-height: 100px; max-height: 200px; font-family: 'Courier New', monospace; font-size: 13px; padding: 10px; border: 1px solid #D1D5DB; border-radius: 6px; resize: vertical; tab-size: 2; }
+        .qe-status { padding: 6px 20px; font-size: 11px; color: #64748B; }
+        .qe-results { flex: 1; overflow: auto; padding: 0 20px 16px; }
+        .qe-results table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .qe-results th { background: #F1F5F9; border: 1px solid #E2E8F0; padding: 6px 8px; text-align: left; font-weight: 600; color: #334155; position: sticky; top: 0; }
+        .qe-results td { border: 1px solid #E2E8F0; padding: 4px 8px; color: #475569; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .qe-results tr:hover td { background: #F8FAFC; }
+        .qe-error { color: #DC2626; padding: 12px; background: #FEF2F2; border-radius: 6px; font-size: 13px; font-family: monospace; }
         .te-tabs {
             display: flex; gap: 0; border-bottom: 1px solid #E2E8F0; padding: 0 16px; background: #fff;
         }
@@ -862,6 +876,8 @@
 <div class="popup-overlay" id="addFieldPopup"></div>
 <!-- Types Editor Popup Overlay -->
 <div class="popup-overlay" id="typesEditorPopup"></div>
+<!-- Query Editor Popup Overlay -->
+<div class="popup-overlay" id="queryEditorPopup"></div>
 <!-- Loading Overlay (quick ops only) -->
 <div class="loading-overlay" id="loadingOverlay">
     <div class="loading-spinner"></div>
@@ -1825,6 +1841,7 @@ function renderDbDesigner() {
         actionBtns = '<button onclick="backupDB()" style="padding:6px 14px;border-radius:6px;border:1px solid #6B7280;background:#F9FAFB;color:#374151;font-size:12px;font-weight:600;cursor:pointer;">💾 Backup</button>' +
         '<button onclick="buildTables()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">🏗 Build Tables</button>' +
         '<button onclick="rebuildDB()" style="padding:6px 14px;border-radius:6px;border:1px solid #10B981;background:#ECFDF5;color:#047857;font-size:12px;font-weight:600;cursor:pointer;">&#128295; Rebuild DB</button>' +
+        '<button onclick="openQueryEditor()" style="padding:6px 14px;border-radius:6px;border:1px solid #7C3AED;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">⌨ Query</button>' +
         '<button onclick="clearAll()" style="padding:6px 14px;border-radius:6px;border:1px solid #EF4444;background:#FEF2F2;color:#DC2626;font-size:12px;font-weight:600;cursor:pointer;">&#128465; Clear All</button>' +
         '<button onclick="seedDictionary()" style="padding:6px 14px;border-radius:6px;border:1px solid #3B82F6;background:#EFF6FF;color:#1D4ED8;font-size:12px;font-weight:600;cursor:pointer;">&#9729; Seed to DB</button>' +
         '<button onclick="document.getElementById(\'xmlFileInput\').click()" style="padding:6px 14px;border-radius:6px;border:1px solid #8B5CF6;background:#F5F3FF;color:#6D28D9;font-size:12px;font-weight:600;cursor:pointer;">&#128229; Import XML/ZIP</button>' +
@@ -4033,11 +4050,14 @@ document.addEventListener('click', function(e) {
     if (e.target.id === 'fieldPopup') closePopup();
     if (e.target.id === 'addFieldPopup') closeAddFieldPopup();
     if (e.target.id === 'typesEditorPopup') closeTypesEditor();
+    if (e.target.id === 'queryEditorPopup') closeQueryEditor();
 });
 // Close on Escape
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        if (document.getElementById('addFieldPopup').classList.contains('open')) {
+        if (document.getElementById('queryEditorPopup').classList.contains('open')) {
+            closeQueryEditor();
+        } else if (document.getElementById('addFieldPopup').classList.contains('open')) {
             closeAddFieldPopup();
         } else if (document.getElementById('typesEditorPopup').classList.contains('open')) {
             closeTypesEditor();
@@ -5341,6 +5361,117 @@ function teDrop(e, targetNodeId) {
     st.treeNodes.forEach((n, i) => n.sort = i + 1);
     _teDragNodeId = null;
     renderTypesEditor();
+}
+
+// ============================================================================
+// QUERY EDITOR
+// ============================================================================
+function openQueryEditor() {
+    const popup = document.getElementById('queryEditorPopup');
+    popup.innerHTML = '<div class="popup qe-popup">' +
+        '<div class="qe-title">Query Editor</div>' +
+        '<div class="qe-toolbar">' +
+            '<button class="fe-btn fe-btn-ok" onclick="runQuery()" title="Run (Ctrl+Enter)">&#9654; Run</button>' +
+            '<button class="fe-btn" style="border:1px solid #D1D5DB;background:#fff;color:#334155;" onclick="clearQuery()">Clear</button>' +
+            '<button class="fe-btn fe-btn-cancel" onclick="closeQueryEditor()">Close</button>' +
+        '</div>' +
+        '<div class="qe-sql">' +
+            '<textarea id="qeSql" placeholder="SELECT * FROM cd_tables LIMIT 10" spellcheck="false"></textarea>' +
+        '</div>' +
+        '<div class="qe-status" id="qeStatus">Ready — SELECT queries only</div>' +
+        '<div class="qe-results" id="qeResults"></div>' +
+    '</div>';
+    popup.classList.add('open');
+    
+    // Focus textarea
+    setTimeout(() => {
+        const ta = document.getElementById('qeSql');
+        if (ta) {
+            ta.focus();
+            ta.addEventListener('keydown', function(e) {
+                // Ctrl+Enter to run
+                if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runQuery(); }
+                // Tab to indent
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.selectionStart;
+                    this.value = this.value.substring(0, start) + '  ' + this.value.substring(this.selectionEnd);
+                    this.selectionStart = this.selectionEnd = start + 2;
+                }
+            });
+        }
+    }, 100);
+}
+
+async function runQuery() {
+    const ta = document.getElementById('qeSql');
+    const status = document.getElementById('qeStatus');
+    const results = document.getElementById('qeResults');
+    if (!ta || !ta.value.trim()) return;
+    
+    status.textContent = 'Running...';
+    status.style.color = '#64748B';
+    results.innerHTML = '';
+    
+    try {
+        const resp = await fetch(API + '/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sql: ta.value.trim() })
+        });
+        const data = await resp.json();
+        
+        if (!resp.ok) {
+            status.textContent = 'Error';
+            status.style.color = '#DC2626';
+            results.innerHTML = '<div class="qe-error">' + escHtml(data.error || 'Unknown error') + '</div>';
+            return;
+        }
+        
+        status.textContent = data.rowCount + ' rows — ' + data.elapsed + 'ms';
+        status.style.color = '#16A34A';
+        
+        if (!data.rows || data.rows.length === 0) {
+            results.innerHTML = '<div style="padding:12px;color:#94A3B8;font-style:italic;">No rows returned</div>';
+            return;
+        }
+        
+        // Build results table
+        const cols = data.fields.map(f => f.name);
+        let html = '<table><thead><tr>';
+        for (const c of cols) html += '<th>' + escHtml(c) + '</th>';
+        html += '</tr></thead><tbody>';
+        
+        for (const row of data.rows) {
+            html += '<tr>';
+            for (const c of cols) {
+                const val = row[c];
+                const display = val === null ? '<span style="color:#CBD5E1;">NULL</span>' : escHtml(String(val));
+                html += '<td title="' + escAttr(String(val)) + '">' + display + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        results.innerHTML = html;
+        
+    } catch(e) {
+        status.textContent = 'Error';
+        status.style.color = '#DC2626';
+        results.innerHTML = '<div class="qe-error">' + escHtml(e.message) + '</div>';
+    }
+}
+
+function clearQuery() {
+    const ta = document.getElementById('qeSql');
+    const status = document.getElementById('qeStatus');
+    const results = document.getElementById('qeResults');
+    if (ta) ta.value = '';
+    if (status) { status.textContent = 'Ready — SELECT queries only'; status.style.color = '#64748B'; }
+    if (results) results.innerHTML = '';
+}
+
+function closeQueryEditor() {
+    document.getElementById('queryEditorPopup').classList.remove('open');
 }
 
 // ============================================================================

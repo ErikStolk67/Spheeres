@@ -448,6 +448,34 @@ app.delete('/api/types/:id', async (req, res) => {
 });
 
 // ============================================================================
+// QUERY ENDPOINT - SELECT only, for query editor
+// ============================================================================
+app.post('/api/query', express.json(), async (req, res) => {
+    const { sql } = req.body;
+    if (!sql) return res.status(400).json({ error: 'No SQL provided' });
+    
+    // Only allow SELECT queries (no mutations)
+    const trimmed = sql.trim().toUpperCase();
+    if (!trimmed.startsWith('SELECT') && !trimmed.startsWith('WITH')) {
+        return res.status(400).json({ error: 'Only SELECT queries are allowed' });
+    }
+    
+    try {
+        const start = Date.now();
+        const result = await pool.query(sql);
+        const elapsed = Date.now() - start;
+        res.json({
+            rows: result.rows,
+            rowCount: result.rowCount,
+            fields: result.fields ? result.fields.map(f => ({ name: f.name, dataTypeID: f.dataTypeID })) : [],
+            elapsed
+        });
+    } catch(e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+// ============================================================================
 // STATISTICS ENDPOINTS
 // ============================================================================
 
