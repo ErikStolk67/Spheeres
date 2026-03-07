@@ -501,7 +501,7 @@
             padding: 5px 10px; margin: 2px 0; border-radius: 4px; font-size: 12px;
             cursor: grab; color: #1E293B; user-select: none;
             background: #F1F5F9; border: 1px solid #D1D5DB;
-            font-weight: 500; width: fit-content;
+            font-weight: 500; width: 65%;
         }
         .te-tree-item:hover { background: #E2E8F0; }
         .te-tree-item.active { background: #E0F2FE; color: #0369A1; font-weight: 600; border-color: #93C5FD; }
@@ -5119,11 +5119,11 @@ function renderTypesEditor() {
     const selNode = st.treeNodes.find(n => n.nodeId === st.selectedNodeId);
     const sel = selNode ? typeMap[selNode.k_type] : null;
 
-    // Track which k_types have already been rendered with their subtree
-    // to avoid duplicating the entire sub-hierarchy for clones
-    const renderedSubtrees = new Set();
+    // Determine which k_types are roots (appear in treeNodes with parentKtype===null)
+    const rootKtypes = new Set(st.treeNodes.filter(n => !n.parentKtype).map(n => n.k_type));
 
     // Build tree HTML recursively
+    // Subtrees only render under ROOT occurrence, NOT under sub occurrence
     function renderChildren(parentKtype, depth) {
         let html = '';
         const children = st.treeNodes.filter(n => n.parentKtype === parentKtype).sort((a, b) => a.sort - b.sort);
@@ -5141,9 +5141,12 @@ function renderTypesEditor() {
                 ' ondragleave="teDragLeave(event)"' +
                 ' ondrop="teDrop(event,' + n.nodeId + ')">' +
                 escHtml(t.name || 'Unnamed') + '</div>';
-            // Only render subtree once per k_type (skip for clones that already have a rendered subtree)
-            if (!renderedSubtrees.has(n.k_type)) {
-                renderedSubtrees.add(n.k_type);
+            // Render subtree only if this is the ROOT occurrence of this k_type
+            // If this k_type is a root AND we're currently rendering it as root (depth 0 / parentKtype null)
+            // OR if this k_type is NOT a root (only appears as sub), render its children
+            const isRootOccurrence = !n.parentKtype;
+            const hasRootVersion = rootKtypes.has(n.k_type);
+            if (isRootOccurrence || !hasRootVersion) {
                 html += renderChildren(n.k_type, depth + 1);
             }
         }
@@ -5318,76 +5321,118 @@ function closeTypesEditor() {
 
 // Types tree drag & drop
 let _teDragNodeId = null;
+let _teDropIndicator = null; // 'above', 'below', 'child'
 
 function teDragStart(e, nodeId) {
     _teDragNodeId = nodeId;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(nodeId));
-    setTimeout(() => e.target.classList.add('dragging'), 0);
+    // Use setTimeout so the element doesn't disappear immediately
+    setTimeout(function() {
+        var el = document.querySelector('[data-nodeid="' + nodeId + '"]');
+        if (el) el.classList.add('dragging');
+    }, 0);
 }
 
 function teDragOver(e, targetNodeId) {
+    if (_teDragNodeId === null || _teDragNodeId === targetNodeId) return;
     e.preventDefault();
-    if (_teDragNodeId === targetNodeId) return;
+    e.dataTransfer.dropEffect = 'move';
     
-    document.querySelectorAll('.te-tree-item').forEach(el => {
-        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
-    });
+    // Clear all indicators
+    var items = document.querySelectorAll('.te-tree-item');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
+    }
     
-    const el = e.target.closest('.te-tree-item');
+    var el = e.currentTarget;
+    if (!el || !el.classList.contains('te-tree-item')) el = e.target.closest('.te-tree-item');
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const x = e.clientX - rect.left;
     
-    if (x > 60) {
+    var rect = el.getBoundingClientRect();
+    var relX = e.clientX - rect.left;
+    var relY = e.clientY - rect.top;
+    var h = rect.height;
+    
+    if (relX > rect.width * 0.5) {
         el.classList.add('drag-over-child');
-    } else if (y < rect.height / 2) {
+        _teDropIndicator = 'child';
+    } else if (relY < h * 0.5) {
         el.classList.add('drag-over-top');
+        _teDropIndicator = 'above';
     } else {
         el.classList.add('drag-over-bottom');
+        _teDropIndicator = 'below';
     }
 }
 
 function teDragLeave(e) {
-    const el = e.target.closest('.te-tree-item');
-    if (el) el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
+    var el = e.target.closest('.te-tree-item');
+    if (el) {
+        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child');
+    }
 }
 
 function teDrop(e, targetNodeId) {
     e.preventDefault();
-    document.querySelectorAll('.te-tree-item').forEach(el => {
-        el.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'dragging');
-    });
+    e.stopPropagation();
     
-    if (!_teDragNodeId || _teDragNodeId === targetNodeId) return;
-    
-    const st = typesEditorState;
-    const dragNode = st.treeNodes.find(n => n.nodeId === _teDragNodeId);
-    const targetNode = st.treeNodes.find(n => n.nodeId === targetNodeId);
-    if (!dragNode || !targetNode) return;
-    
-    const el = e.target.closest('.te-tree-item');
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    if (x > 60) {
-        dragNode.parentKtype = targetNode.k_type;
-    } else {
-        dragNode.parentKtype = targetNode.parentKtype;
-        const dragIdx = st.treeNodes.indexOf(dragNode);
-        st.treeNodes.splice(dragIdx, 1);
-        const newTargetIdx = st.treeNodes.indexOf(targetNode);
-        const insertIdx = y < rect.height / 2 ? newTargetIdx : newTargetIdx + 1;
-        st.treeNodes.splice(insertIdx, 0, dragNode);
+    // Clean up all visual indicators
+    var items = document.querySelectorAll('.te-tree-item');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'dragging');
     }
     
-    st.treeNodes.forEach((n, i) => n.sort = i + 1);
+    if (_teDragNodeId === null || _teDragNodeId === targetNodeId) {
+        _teDragNodeId = null;
+        return;
+    }
+    
+    var st = typesEditorState;
+    var dragNode = null;
+    var targetNode = null;
+    for (var i = 0; i < st.treeNodes.length; i++) {
+        if (st.treeNodes[i].nodeId === _teDragNodeId) dragNode = st.treeNodes[i];
+        if (st.treeNodes[i].nodeId === targetNodeId) targetNode = st.treeNodes[i];
+    }
+    if (!dragNode || !targetNode) { _teDragNodeId = null; return; }
+    
+    var indicator = _teDropIndicator || 'below';
+    
+    if (indicator === 'child') {
+        // Make dragNode a child of targetNode's k_type
+        dragNode.parentKtype = targetNode.k_type;
+    } else {
+        // Place dragNode at same level as targetNode (same parent)
+        dragNode.parentKtype = targetNode.parentKtype;
+        
+        // Reorder in the array
+        var dragIdx = st.treeNodes.indexOf(dragNode);
+        st.treeNodes.splice(dragIdx, 1);
+        var targetIdx = st.treeNodes.indexOf(targetNode);
+        if (indicator === 'below') targetIdx++;
+        st.treeNodes.splice(targetIdx, 0, dragNode);
+    }
+    
+    // Reassign sort values
+    for (var i = 0; i < st.treeNodes.length; i++) {
+        st.treeNodes[i].sort = i + 1;
+    }
+    
     _teDragNodeId = null;
+    _teDropIndicator = null;
     renderTypesEditor();
 }
+
+// Clean up on dragend (fires even if drop didn't happen)
+document.addEventListener('dragend', function() {
+    _teDragNodeId = null;
+    _teDropIndicator = null;
+    var items = document.querySelectorAll('.te-tree-item');
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove('drag-over-top', 'drag-over-bottom', 'drag-over-child', 'dragging');
+    }
+});
 
 // ============================================================================
 // QUERY EDITOR
