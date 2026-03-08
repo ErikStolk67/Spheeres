@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.28', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.29', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1392,6 +1392,18 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                             console.log('cd_type_type INSERT FAILED row:', JSON.stringify(row).substring(0, 200), 'err:', e.message);
                         }
                     }
+                }
+            }
+            
+            // Recreate correct composite unique constraint on all K_ columns
+            const kColsForConstraint = Object.keys(dbCols).filter(c => /^k_[a-z]/.test(c) && c !== 'k_seq').sort();
+            if (kColsForConstraint.length >= 2) {
+                try {
+                    const colList = kColsForConstraint.map(c => `"${c}"`).join(',');
+                    await client.query(`ALTER TABLE "${tableName}" ADD CONSTRAINT "${tableName}_composite_uq" UNIQUE (${colList})`);
+                    console.log('Import: created composite UNIQUE on', tableName, ':', kColsForConstraint.join('+'));
+                } catch(e) {
+                    console.log('Import: composite constraint failed for', tableName, ':', e.message);
                 }
             }
             
