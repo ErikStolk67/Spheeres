@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.26', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.27', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1336,7 +1336,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             const BATCH_SIZE = 100;
             
             await client.query(`DELETE FROM "${tableName}"`);
-            console.log('Import:', tableName, '- DELETE+INSERT, rows:', rows.length);
+            console.log('Import:', tableName, '- DELETE+INSERT, source rows:', rows.length);
 
             // Process all rows with plain INSERT
             for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
@@ -1371,22 +1371,21 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     } catch (e) {
                         try { await client.query('ROLLBACK TO SAVEPOINT sp_row'); } catch(e2) {}
                         errors++;
-                        if (errors <= 3) lastError = e.message;
+                        if (errors <= 5) lastError = e.message;
+                        if (tableName === 'cd_type_type' && errors <= 5) {
+                            console.log('cd_type_type INSERT FAILED row:', JSON.stringify(row).substring(0, 200), 'err:', e.message);
+                        }
                     }
                 }
             }
             
+            console.log('Import:', tableName, '- inserted:', inserted, 'errors:', errors, lastError ? 'lastErr:' + lastError.substring(0, 100) : '');
+            
             totalRows += inserted;
             
-            if (errors > 0) {
-                // Rollback this table's changes
-                try { await client.query(`ROLLBACK TO SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
-                importResults.push({ table: tableName, rows: 0, total: rows.length, errors, lastError });
-            } else {
-                // Release savepoint on success
-                try { await client.query(`RELEASE SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
-                importResults.push({ table: tableName, rows: inserted, total: rows.length, errors: 0, lastError: '' });
-            }
+            // Release table savepoint (keep all successful inserts, even if some rows failed)
+            try { await client.query(`RELEASE SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
+            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
             _importStatus.progress = `Imported ${importResults.length}/${tableNames.length} tables (${totalRows} rows)`;
         }
         
