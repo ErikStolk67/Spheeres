@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.19', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.20', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1262,49 +1262,28 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 WHERE tc.table_schema='public' AND tc.table_name=$1 AND tc.constraint_type='PRIMARY KEY'
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
+            const hasRealConstraint = pkResult.rows.length > 0;
             
-            // Fallback PK for link tables and subtables when DB has no/insufficient PK:
-            // - Link table (≥2 K_ columns): first two K_ columns + K_SEQ if exists
-            // - Subtable (1 K_ column + K_SEQ): that K_ column + K_SEQ
-            if (pkCols.length <= 1) {
+            // For tables WITHOUT a real DB constraint (link tables, subtables):
+            // Use DELETE + plain INSERT (ON CONFLICT requires a real constraint)
+            let useDeleteInsert = false;
+            if (!hasRealConstraint) {
                 const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_') && c !== 'k_seq').sort();
                 const hasKseq = !!dbCols['k_seq'];
-                if (kCols.length >= 2) {
-                    // Link table
-                    pkCols.length = 0;
-                    pkCols.push(kCols[0], kCols[1]);
-                    if (hasKseq) pkCols.push('k_seq');
-                    console.log('Import: link table PK for', tableName, ':', JSON.stringify(pkCols));
-                } else if (kCols.length === 1 && hasKseq) {
-                    // Subtable
-                    pkCols.length = 0;
-                    pkCols.push(kCols[0], 'k_seq');
-                    console.log('Import: subtable PK for', tableName, ':', JSON.stringify(pkCols));
+                if (kCols.length >= 2 || (kCols.length === 1 && hasKseq)) {
+                    useDeleteInsert = true;
+                    console.log('Import:', tableName, '- no DB constraint, DELETE+INSERT, rows:', rows.length);
                 }
             }
-            
-            // Log PK info for debugging
-            if (tableName === 'cd_type_type' || pkCols.length > 1) {
-                console.log('Import PK for', tableName, ':', JSON.stringify(pkCols), 'rows to import:', rows.length);
-            }
-            
-            // Note: varchar columns are widened to text on first import only if needed
-            // Skip per-column ALTER for speed - data that's too long will be truncated
             
             let inserted = 0, errors = 0, lastError = '';
             const BATCH_SIZE = 100;
             
-            // For tables WITHOUT a PK: delete all existing rows first, then plain INSERT
-            // This handles link tables like cd_type_type that have no PK constraint
-            if (pkCols.length === 0) {
-                try {
-                    await client.query(`DELETE FROM "${tableName}"`);
-                    console.log('Import: no PK for', tableName, '- deleted all rows, will insert', rows.length);
-                } catch(e) {
-                    console.log('Import: delete failed for', tableName, ':', e.message);
-                }
+            // Delete all existing rows for tables without constraints
+            if (useDeleteInsert) {
+                await client.query(`DELETE FROM "${tableName}"`);
             }
-            
+
             for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
                 const batch = rows.slice(bi, bi + BATCH_SIZE);
                 
@@ -1330,7 +1309,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     
                     if (cols.length === 0) continue;
                     try {
-                        if (pkCols.length > 0) {
+                        if (hasRealConstraint && pkCols.length > 0) {
                             // Build conflict columns (supports composite PKs)
                             const conflictCols = pkCols.filter(pk => cols.includes(`"${pk}"`));
                             if (conflictCols.length > 0) {
