@@ -391,7 +391,10 @@ Categorizes ALL tables (not just entities) into zones and types.
 **Classification rules** (same for all zones):
 1. `$` in name → subtable
 2. `_LK_` in name or base starts with `LK_` → lookup
-3. Base has exactly 2 parts with each ≤5 chars → link
+3. Base has exactly 2 parts of exactly 4 letters each → link table (e.g. CD_TABL_FIEL, CD_TYPE_TYPE)
+4. Base has 2 parts where at least one is more than 4 letters → subtable (e.g. CD_TABL_TABSETTINGS, CD_FIEL_FIELDVALUE)
+
+Note: the 4-letter abbreviations generally correspond to entity names (TABL=TABLES, FIEL=FIELDS, TYPE=TYPES). Exceptions exist where 4 letters would cause duplicates (e.g. PRPL=PLANNING).
 4. Base has `_` (other) → subtable
 5. No `_` in base → entity
 
