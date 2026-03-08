@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.29', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.30', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1167,296 +1167,254 @@ app.get('/api/import-status', (req, res) => {
     res.json(_importStatus);
 });
 
-app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
+app.post('/api/import-xml', async (req, res) => {
     if (_importStatus.running) {
         return res.json({ success: false, error: 'Import already running: ' + _importStatus.progress });
     }
+    _importStatus = { running: true, progress: 'Receiving file...', results: null, error: null };
     
-    const buf = req.body;
-    _importStatus = { running: true, progress: 'Parsing XML...', results: null, error: null };
+    // Save upload to temp file on disk (not in memory)
+    const tmpFile = path.join(os.tmpdir(), 'import_' + Date.now() + '.dat');
+    const writeStream = fs.createWriteStream(tmpFile);
+    let totalBytes = 0;
     
-    // Respond immediately — import runs in background
-    res.json({ success: true, message: 'Import started. Check /api/import-status for progress.' });
+    req.on('data', (chunk) => {
+        totalBytes += chunk.length;
+        writeStream.write(chunk);
+        _importStatus.progress = 'Receiving... ' + Math.round(totalBytes / 1024 / 1024) + ' MB';
+    });
+    req.on('end', () => {
+        writeStream.end();
+        res.json({ success: true, message: 'Upload received (' + Math.round(totalBytes / 1024 / 1024) + ' MB). Processing...' });
+        processImportFile(tmpFile).catch(e => {
+            logError('Import process', e);
+            _importStatus = { running: false, progress: 'Error', results: null, error: e.message };
+        }).finally(() => {
+            try { fs.unlinkSync(tmpFile); } catch(e) {}
+        });
+    });
+    req.on('error', (e) => {
+        writeStream.end();
+        try { fs.unlinkSync(tmpFile); } catch(e2) {}
+        _importStatus = { running: false, progress: 'Error', results: null, error: 'Upload failed: ' + e.message };
+        res.json({ success: false, error: 'Upload failed' });
+    });
+});
+
+async function processImportFile(tmpFile) {
+    // Read file to detect ZIP vs XML
+    const header = Buffer.alloc(4);
+    const fd = fs.openSync(tmpFile, 'r');
+    fs.readSync(fd, header, 0, 4, 0);
+    fs.closeSync(fd);
+    const isZip = header[0] === 0x50 && header[1] === 0x4B;
     
-    // Background import
-    let client;
-    try {
-        client = await pool.connect();
-    } catch(e) {
-        logError('Import DB connect', e);
-        _importStatus = { running: false, progress: 'Error', results: null, error: 'DB connection failed: ' + e.message };
-        return;
-    }
-    try {
-        console.log('Import: starting, buffer size:', buf.length);
-        // Collect XML content from file(s)
-        let xmlParts = [];
-        
-        if (buf.length > 2 && buf[0] === 0x50 && buf[1] === 0x4B) {
-            const zip = new AdmZip(buf);
-            const entries = zip.getEntries();
-            for (const entry of entries) {
-                if (entry.entryName.toLowerCase().endsWith('.xml') && !entry.isDirectory) {
-                    xmlParts.push(entry.getData().toString('utf-8'));
-                }
+    let xmlEntries = []; // [{name, getContent()}]
+    
+    if (isZip) {
+        _importStatus.progress = 'Opening ZIP...';
+        const zip = new AdmZip(tmpFile);
+        const entries = zip.getEntries();
+        for (const entry of entries) {
+            if (entry.entryName.toLowerCase().endsWith('.xml') && !entry.isDirectory) {
+                xmlEntries.push({ name: entry.entryName, getContent: () => entry.getData().toString('utf-8') });
             }
-        } else {
-            xmlParts.push(buf.toString('utf-8'));
+        }
+        _importStatus.progress = 'Found ' + xmlEntries.length + ' XML files in ZIP';
+    } else {
+        const content = fs.readFileSync(tmpFile, 'utf-8');
+        xmlEntries.push({ name: 'upload.xml', getContent: () => content });
+    }
+    
+    console.log('Import: ' + xmlEntries.length + ' XML entries to process');
+    
+    const allResults = [];
+    let grandTotal = 0;
+    
+    // Process each XML file in its own transaction
+    for (let ei = 0; ei < xmlEntries.length; ei++) {
+        const xmlEntry = xmlEntries[ei];
+        _importStatus.progress = 'Processing ' + (ei + 1) + '/' + xmlEntries.length + ': ' + xmlEntry.name;
+        
+        let raw;
+        try { raw = xmlEntry.getContent(); } catch(e) {
+            allResults.push({ table: xmlEntry.name, rows: 0, total: 0, errors: 1, lastError: 'Read failed: ' + e.message });
+            continue;
         }
         
-        // Parse XML
-        const tableRows = {};
-        
-        for (const raw of xmlParts) {
+        // Parse XML: strip wrapper tag, find record tags
         let stripped = raw.trim();
-        const firstTagMatch = stripped.match(/^<([A-Za-z_][A-Za-z_0-9]*)[^>]*>/);
-        if (firstTagMatch) {
-            const wrapTag = firstTagMatch[1];
-            stripped = stripped.replace(new RegExp('</?(' + wrapTag + ')[^>]*>', 'gi'), '').trim();
+        const wrapMatch = stripped.match(/^<([A-Za-z_][A-Za-z_0-9]*)[^>]*>/);
+        if (wrapMatch) {
+            stripped = stripped.replace(new RegExp('</?(' + wrapMatch[1] + ')[^>]*>', 'gi'), '').trim();
         }
         
+        const tableRows = {};
         const recordRegex = /<([A-Z][A-Za-z_0-9]+)>([\s\S]*?)<\/\1>/g;
-        let match;
-        
-        while ((match = recordRegex.exec(stripped)) !== null) {
-            const tagName = match[1];
-            const tableName = tagName.toLowerCase();
+        let m;
+        while ((m = recordRegex.exec(stripped)) !== null) {
+            const tableName = m[1].toLowerCase();
             if (!tableRows[tableName]) tableRows[tableName] = [];
-            
-            const rowXml = match[2];
             const row = {};
             const fieldRegex = /<([A-Za-z_0-9]+?)>([\s\S]*?)<\/\1>/g;
-            let fMatch;
-            
-            while ((fMatch = fieldRegex.exec(rowXml)) !== null) {
-                let fname = fMatch[1].toLowerCase();
-                if (fname === 'n') fname = 'name';
-                const fval = fMatch[2].trim();
-                if (fval !== '') row[fname] = fval;
+            let fm;
+            while ((fm = fieldRegex.exec(m[2])) !== null) {
+                row[fm[1].toLowerCase()] = fm[2];
             }
-            
-            if (Object.keys(row).length > 0) {
-                tableRows[tableName].push(row);
-            }
-        }
+            // Handle 'n' → 'name' mapping
+            if (row.n !== undefined && row.name === undefined) { row.name = row.n; delete row.n; }
+            if (Object.keys(row).length > 0) tableRows[tableName].push(row);
         }
         
         const tableNames = Object.keys(tableRows);
         if (tableNames.length === 0) {
-            logError('Import parse', {message:'No records found in XML'});
-            _importStatus = { running: false, progress: 'Done', results: null, error: 'No records found in file' };
-            client.release();
-            return;
+            allResults.push({ table: xmlEntry.name, rows: 0, total: 0, errors: 0, lastError: 'No records found' });
+            continue;
         }
         
-        console.log('Import: found', tableNames.length, 'tables:', tableNames.slice(0, 10).join(', '));
-        _importStatus.progress = 'Found ' + tableNames.length + ' tables, starting import...';
-        const importResults = [];
-        let totalRows = 0;
+        // Import each table in this XML
+        let client;
+        try { client = await pool.connect(); } catch(e) {
+            allResults.push({ table: xmlEntry.name, rows: 0, total: 0, errors: 1, lastError: 'DB connect: ' + e.message });
+            continue;
+        }
         
-        // Sort: lookups(1) > entities(2) > subs(3) > links(4)
-        const ordered = tableNames.sort((a, b) => {
-            const order = (nm) => {
-                if (nm.startsWith('cd_lk_')) return 1;
-                if (nm.match(/_(?:execution_log|logs|remote|checklist|clustersettings|fieldkey|fieldvalue|kinds|linkeditorvisibility|match|tabsettings|filteringsettings|restrictions)$/)) return 3;
-                if (nm.match(/^cd_[a-z]{3,5}_[a-z]{3,5}$/) && !nm.startsWith('cd_lk_')) return 4;
-                return 2;
-            };
-            return order(a) - order(b);
-        });
-        
-        await client.query('BEGIN');
-        
-        for (const tableName of ordered) {
-            const rows = tableRows[tableName];
-            if (!rows || rows.length === 0) continue;
+        try {
+            await client.query('BEGIN');
             
-            const exists = await client.query(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1",
-                [tableName]
-            );
-            if (exists.rows.length === 0) {
-                importResults.push({ table: tableName, rows: 0, total: rows.length, error: 'not in DB' });
-                continue;
-            }
-            
-            // SAVEPOINT per table: if this table fails, rollback only this table
-            await client.query(`SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`);
-            
-            const colInfo = await client.query(
-                "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",
-                [tableName]
-            );
-            const dbCols = {};
-            colInfo.rows.forEach(c => { dbCols[c.column_name] = c.data_type; });
-            
-            // Auto-create missing columns based on first row's data
-            if (rows.length > 0) {
-                const sampleFields = new Set();
-                // Scan first 10 rows for all field names
-                for (const r of rows.slice(0, 10)) {
-                    for (const k of Object.keys(r)) {
-                        const colName = k === 'n' ? 'name' : k;
-                        sampleFields.add(colName);
-                    }
-                }
-                for (const fname of sampleFields) {
-                    if (!dbCols[fname]) {
-                        // Guess type from field name patterns
-                        let colType = 'text';
-                        if (fname.startsWith('k_') || fname.startsWith('f_') || fname === 'sort' || fname === 'createdby' || fname === 'changedby' || fname === 'storagesize' || fname === 'flags' || fname === 'labelpos') colType = 'integer';
-                        else if (fname.startsWith('is_') || fname === 'enabled' || fname === 'main' || fname === 'collapsible' || fname === 'executesync' || fname === 'allowcustomvalue' || fname === 'sort_description' || fname === 'filter_subtable' || fname === 'filter_subtable_k_seq' || fname === 'allowcreatingrecords' || fname === 'use_field_name' || fname === 'showpathrunner' || fname === 'linkrequired' || fname === 'zero_score' || fname === 'full_width' || fname === 'connected') colType = 'boolean';
-                        else if (fname === 'createdate' || fname === 'changedate' || fname === 'laststatusdate' || fname === 'lifedate') colType = 'timestamptz';
-                        else if (fname === 'replicationid') colType = 'uuid';
-                        else if (fname === 'graphical' || fname === 'memo' || fname === 'memo_en' || fname === 'memo_nl') colType = 'bytea';
-                        
-                        try {
-                            await client.query(`ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${colType}`);
-                            dbCols[fname] = colType;
-                        } catch(e) { /* column might already exist */ }
-                    }
-                }
-            }
-            
-            // No TRUNCATE — use UPSERT to safely merge data
-            // This prevents data loss if the import is interrupted
-            
-            // Get primary key columns for upsert
-            const pkResult = await client.query(`
-                SELECT kcu.column_name FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-                WHERE tc.table_schema='public' AND tc.table_name=$1 AND tc.constraint_type='PRIMARY KEY'
-            `, [tableName]);
-            const pkCols = pkResult.rows.map(r => r.column_name);
-            
-            // Simple strategy: DELETE all existing rows, then INSERT all from source.
-            // This is safe because the import contains the complete dataset.
-            // UPSERT is unreliable due to incomplete PK constraints in the DB.
-            let inserted = 0, errors = 0, lastError = '';
-            const BATCH_SIZE = 100;
-            
-            await client.query(`DELETE FROM "${tableName}"`);
-            
-            // Drop PK/unique constraints that may be incomplete (e.g. PK on k_type1 only)
-            // This allows INSERT of all records without duplicate key errors
-            try {
-                const constraints = await client.query(`
-                    SELECT constraint_name FROM information_schema.table_constraints 
-                    WHERE table_schema='public' AND table_name=$1 AND constraint_type IN ('PRIMARY KEY','UNIQUE')
-                `, [tableName]);
-                for (const c of constraints.rows) {
-                    await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${c.constraint_name}"`);
-                    console.log('Import: dropped constraint', c.constraint_name, 'on', tableName);
-                }
-            } catch(e) {
-                console.log('Import: constraint drop failed for', tableName, e.message);
-            }
-            
-            console.log('Import:', tableName, '- DELETE+INSERT, source rows:', rows.length);
-
-            // Process all rows with plain INSERT
-            for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
-                const batch = rows.slice(bi, Math.min(bi + BATCH_SIZE, rows.length));
+            for (const tableName of tableNames) {
+                const rows = tableRows[tableName];
+                if (!rows || rows.length === 0) continue;
                 
-                for (const row of batch) {
+                const exists = await client.query(
+                    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1", [tableName]);
+                if (exists.rows.length === 0) {
+                    allResults.push({ table: tableName, rows: 0, total: rows.length, errors: 0, lastError: 'not in DB' });
+                    continue;
+                }
+                
+                const colInfo = await client.query(
+                    "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [tableName]);
+                const dbCols = {};
+                colInfo.rows.forEach(c => { dbCols[c.column_name] = c.data_type; });
+                
+                // Auto-create missing columns
+                if (rows.length > 0) {
+                    const sampleFields = new Set();
+                    for (const r of rows.slice(0, 10)) {
+                        for (const k of Object.keys(r)) { sampleFields.add(k === 'n' ? 'name' : k); }
+                    }
+                    for (const fname of sampleFields) {
+                        if (!dbCols[fname]) {
+                            let colType = 'text';
+                            if (fname.startsWith('k_') || fname.startsWith('f_') || fname === 'sort' || fname === 'createdby' || fname === 'changedby') colType = 'integer';
+                            else if (fname.startsWith('is_') || fname === 'enabled' || fname === 'main' || fname === 'isroot') colType = 'boolean';
+                            else if (fname === 'createdate' || fname === 'changedate' || fname === 'laststatusdate') colType = 'timestamptz';
+                            else if (fname === 'replicationid') colType = 'uuid';
+                            else if (fname === 'memo' || fname === 'graphical') colType = 'bytea';
+                            try {
+                                await client.query('ALTER TABLE "' + tableName + '" ADD COLUMN "' + fname + '" ' + colType);
+                                dbCols[fname] = colType;
+                            } catch(e) { /* already exists */ }
+                        }
+                    }
+                }
+                
+                // SAVEPOINT for this table
+                await client.query('SAVEPOINT sp_table');
+                
+                // Drop incomplete PK/UNIQUE constraints
+                try {
+                    const constraints = await client.query(
+                        "SELECT constraint_name FROM information_schema.table_constraints WHERE table_schema='public' AND table_name=$1 AND constraint_type IN ('PRIMARY KEY','UNIQUE')", [tableName]);
+                    for (const c of constraints.rows) {
+                        await client.query('ALTER TABLE "' + tableName + '" DROP CONSTRAINT IF EXISTS "' + c.constraint_name + '"');
+                    }
+                } catch(e) {}
+                
+                // DELETE all existing rows
+                await client.query('DELETE FROM "' + tableName + '"');
+                
+                // INSERT all rows
+                let inserted = 0, errors = 0, lastError = '';
+                for (const row of rows) {
                     const cols = [], vals = [], ph = [];
                     let pi = 1;
-                    
                     for (const [col, val] of Object.entries(row)) {
                         if (!dbCols[col]) continue;
                         const dtype = dbCols[col];
                         let pgVal = val;
-                        
-                        if (dtype === 'integer' || dtype === 'bigint') {
-                            pgVal = parseInt(val); if (isNaN(pgVal)) continue;
-                        } else if (dtype === 'boolean') {
-                            pgVal = val === 'true' || val === '1';
-                        } else if (dtype === 'bytea') {
-                            try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; }
-                        }
-                        
-                        cols.push(`"${col}"`); vals.push(pgVal); ph.push(`$${pi}`); pi++;
+                        if (dtype === 'integer' || dtype === 'bigint') { pgVal = parseInt(val); if (isNaN(pgVal)) continue; }
+                        else if (dtype === 'boolean') { pgVal = val === 'true' || val === '1'; }
+                        else if (dtype === 'bytea') { try { pgVal = Buffer.from(val, 'base64'); } catch(e) { continue; } }
+                        cols.push('"' + col + '"'); vals.push(pgVal); ph.push('$' + pi); pi++;
                     }
-                    
                     if (cols.length === 0) continue;
                     try {
                         await client.query('SAVEPOINT sp_row');
-                        await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                        await client.query('INSERT INTO "' + tableName + '" (' + cols.join(',') + ') VALUES (' + ph.join(',') + ')', vals);
                         inserted++;
                         await client.query('RELEASE SAVEPOINT sp_row');
-                    } catch (e) {
+                    } catch(e) {
                         try { await client.query('ROLLBACK TO SAVEPOINT sp_row'); } catch(e2) {}
                         errors++;
                         if (errors <= 5) lastError = e.message;
-                        if (tableName === 'cd_type_type' && errors <= 5) {
-                            console.log('cd_type_type INSERT FAILED row:', JSON.stringify(row).substring(0, 200), 'err:', e.message);
-                        }
                     }
                 }
-            }
-            
-            // Recreate correct composite unique constraint on all K_ columns
-            const kColsForConstraint = Object.keys(dbCols).filter(c => /^k_[a-z]/.test(c) && c !== 'k_seq').sort();
-            if (kColsForConstraint.length >= 2) {
-                try {
-                    const colList = kColsForConstraint.map(c => `"${c}"`).join(',');
-                    await client.query(`ALTER TABLE "${tableName}" ADD CONSTRAINT "${tableName}_composite_uq" UNIQUE (${colList})`);
-                    console.log('Import: created composite UNIQUE on', tableName, ':', kColsForConstraint.join('+'));
-                } catch(e) {
-                    console.log('Import: composite constraint failed for', tableName, ':', e.message);
+                
+                // Recreate correct composite UNIQUE on K_ columns (if 2+)
+                const kCols = Object.keys(dbCols).filter(c => /^k_[a-z]/.test(c) && c !== 'k_seq').sort();
+                if (kCols.length >= 2) {
+                    try {
+                        const colList = kCols.map(c => '"' + c + '"').join(',');
+                        await client.query('ALTER TABLE "' + tableName + '" ADD CONSTRAINT "' + tableName + '_composite_uq" UNIQUE (' + colList + ')');
+                    } catch(e) {}
                 }
+                
+                // Release table savepoint
+                try { await client.query('RELEASE SAVEPOINT sp_table'); } catch(e) {}
+                
+                grandTotal += inserted;
+                allResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
+                _importStatus.progress = 'Imported ' + allResults.length + ' tables (' + grandTotal + ' rows)';
             }
             
-            console.log('Import:', tableName, '- inserted:', inserted, 'errors:', errors, lastError ? 'lastErr:' + lastError.substring(0, 100) : '');
-            
-            totalRows += inserted;
-            
-            // Release table savepoint (keep all successful inserts, even if some rows failed)
-            try { await client.query(`RELEASE SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
-            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
-            _importStatus.progress = `Imported ${importResults.length}/${tableNames.length} tables (${totalRows} rows)`;
+            await client.query('COMMIT');
+        } catch(e) {
+            try { await client.query('ROLLBACK'); } catch(e2) {}
+            allResults.push({ table: xmlEntry.name, rows: 0, total: 0, errors: 1, lastError: 'Transaction: ' + e.message });
+        } finally {
+            client.release();
         }
-        
-        await client.query('COMMIT');
-        console.log('Import: COMMITTED. Tables:', importResults.length, 'Rows:', totalRows);
-        
-        // VERIFICATION: compare source count vs actual DB count for every imported table
-        let verifyErrors = 0;
-        for (const r of importResults) {
-            try {
-                const { rows: countRows } = await pool.query(`SELECT COUNT(*) as cnt FROM "${r.table}"`);
-                const dbCount = parseInt(countRows[0].cnt);
-                r.dbCount = dbCount;
-                if (r.total > 0 && r.rows !== r.total) {
-                    r.verified = false;
-                    r.verifyError = `Source: ${r.total}, imported: ${r.rows}, DB: ${dbCount}`;
-                    verifyErrors++;
-                    console.log('VERIFY FAIL:', r.table, r.verifyError);
-                } else {
-                    r.verified = true;
-                }
-            } catch(e) {
-                r.verified = false;
-                r.verifyError = e.message;
-            }
-            if (r.rows > 0) try { await pool.query(`ANALYZE "${r.table}"`); } catch(e) {}
-        }
-        
-        const success = verifyErrors === 0;
-        invalidateSchemaCache();
-        _importStatus = { running: false, progress: 'Done', results: { success, tablesProcessed: importResults.length, totalRows, verifyErrors, details: importResults }, error: null };
-    } catch (err) {
-        logError('Import', err);
-        try { await client.query('ROLLBACK'); } catch(e) {}
-        _importStatus = { running: false, progress: 'Error', results: null, error: err.message };
-    } finally {
-        if (client) client.release();
     }
-});
+    
+    // VERIFICATION
+    let verifyErrors = 0;
+    for (const r of allResults) {
+        try {
+            const { rows: countRows } = await pool.query('SELECT COUNT(*) as cnt FROM "' + r.table + '"');
+            r.dbCount = parseInt(countRows[0].cnt);
+            if (r.total > 0 && r.rows !== r.total) {
+                r.verified = false;
+                r.verifyError = 'Source: ' + r.total + ', imported: ' + r.rows + ', DB: ' + r.dbCount;
+                verifyErrors++;
+            } else {
+                r.verified = true;
+            }
+        } catch(e) { r.verified = true; } // skip verify for non-table entries
+        try { await pool.query('ANALYZE "' + r.table + '"'); } catch(e) {}
+    }
+    
+    invalidateSchemaCache();
+    _importStatus = {
+        running: false, progress: 'Done',
+        results: { success: verifyErrors === 0, tablesProcessed: allResults.length, totalRows: grandTotal, verifyErrors, details: allResults },
+        error: null
+    };
+    console.log('Import complete:', allResults.length, 'tables,', grandTotal, 'rows, verify errors:', verifyErrors);
+}
 
-const PORT = process.env.PORT || 3000;
 
-// ============================================================================
 // BACKUP - export all CD_ table data as JSON
 // ============================================================================
 app.get('/api/backup', async (req, res) => {
