@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.25', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.26', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1329,31 +1329,18 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
-            // UNIVERSAL RULE: All K_ fields together form the unique key.
-            // Ignore the DB PK constraint — it may be incomplete (e.g. only k_type1).
-            // Always use ALL K_ columns as the composite key.
-            const allKcols = Object.keys(dbCols).filter(c => c.startsWith('k_')).sort();
-            
-            // If multiple K_ columns: DELETE+INSERT (ON CONFLICT needs a matching constraint)
-            // If single K_ column: UPSERT using that column (safe, it's truly unique)
-            const useDeleteInsert = allKcols.length > 1;
-            const useUpsert = allKcols.length === 1;
-            const upsertCol = useUpsert ? allKcols[0] : null;
-            
-            if (useDeleteInsert) {
-                console.log('Import:', tableName, '- composite key', JSON.stringify(allKcols), ', DELETE+INSERT, rows:', rows.length);
-            }
-            
+            // Simple strategy: DELETE all existing rows, then INSERT all from source.
+            // This is safe because the import contains the complete dataset.
+            // UPSERT is unreliable due to incomplete PK constraints in the DB.
             let inserted = 0, errors = 0, lastError = '';
             const BATCH_SIZE = 100;
             
-            // Delete all existing rows for tables with composite keys
-            if (useDeleteInsert) {
-                await client.query(`DELETE FROM "${tableName}"`);
-            }
+            await client.query(`DELETE FROM "${tableName}"`);
+            console.log('Import:', tableName, '- DELETE+INSERT, rows:', rows.length);
 
+            // Process all rows with plain INSERT
             for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
-                const batch = rows.slice(bi, bi + BATCH_SIZE);
+                const batch = rows.slice(bi, Math.min(bi + BATCH_SIZE, rows.length));
                 
                 for (const row of batch) {
                     const cols = [], vals = [], ph = [];
@@ -1378,17 +1365,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     if (cols.length === 0) continue;
                     try {
                         await client.query('SAVEPOINT sp_row');
-                        if (useUpsert && upsertCol && cols.includes(`"${upsertCol}"`)) {
-                            const updateCols = cols.filter(c => c !== `"${upsertCol}"`);
-                            if (updateCols.length > 0) {
-                                const updateSet = updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ');
-                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${upsertCol}") DO UPDATE SET ${updateSet}`, vals);
-                            } else {
-                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${upsertCol}") DO NOTHING`, vals);
-                            }
-                        } else {
-                            await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
-                        }
+                        await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
                         inserted++;
                         await client.query('RELEASE SAVEPOINT sp_row');
                     } catch (e) {
