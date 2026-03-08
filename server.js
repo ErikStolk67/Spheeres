@@ -52,6 +52,51 @@ app.all('/api/repair-links', async (req, res) => {
     }
 });
 
+app.get('/api/diagnostics', async (req, res) => {
+    try {
+        const results = {};
+        // Count cd_type_type links
+        const ttCount = await pool.query('SELECT COUNT(*) as cnt FROM cd_type_type');
+        results.cd_type_type_count = parseInt(ttCount.rows[0].cnt);
+        
+        // Types per f_table (top 20)
+        const typesPerTable = await pool.query(
+            'SELECT t0.name as table_name, t.f_table, COUNT(*) as type_count FROM cd_types t LEFT JOIN cd_tables t0 ON t0.k_table = t.f_table GROUP BY t.f_table, t0.name ORDER BY COUNT(*) DESC LIMIT 20'
+        );
+        results.types_per_table = typesPerTable.rows;
+        
+        // Total types
+        const totalTypes = await pool.query('SELECT COUNT(*) as cnt FROM cd_types');
+        results.total_types = parseInt(totalTypes.rows[0].cnt);
+        
+        // Check for duplicate types (same name + same f_table)
+        const dupes = await pool.query(
+            'SELECT f_table, name, COUNT(*) as cnt FROM cd_types GROUP BY f_table, name HAVING COUNT(*) > 1'
+        );
+        results.duplicate_types = dupes.rows;
+        
+        // Sample cd_type_type links
+        const sampleLinks = await pool.query('SELECT * FROM cd_type_type LIMIT 10');
+        results.sample_links = sampleLinks.rows;
+        
+        // PROJECTS types specifically
+        const projTypes = await pool.query(
+            "SELECT t.k_type, t.name, t.isroot FROM cd_types t JOIN cd_tables t0 ON t0.k_table = t.f_table WHERE UPPER(t0.name) = 'PROJECTS' ORDER BY t.name"
+        );
+        results.projects_types = projTypes.rows;
+        
+        // PROJECTS links
+        const projLinks = await pool.query(
+            "SELECT tt.* FROM cd_type_type tt JOIN cd_types t ON t.k_type = tt.k_type1 JOIN cd_tables t0 ON t0.k_table = t.f_table WHERE UPPER(t0.name) = 'PROJECTS'"
+        );
+        results.projects_links = projLinks.rows;
+        
+        res.json(results);
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/dictionaries', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM cd_dictionaries ORDER BY name');
     res.json(rows);
