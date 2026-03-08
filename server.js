@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.18', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.19', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1263,11 +1263,38 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
+            // Fallback for link tables: if PK has only 1 column but table has multiple K_ columns,
+            // treat all K_ columns as composite PK (e.g. cd_type_type has k_type1 + k_type2)
+            if (pkCols.length <= 1) {
+                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_'));
+                if (kCols.length >= 2) {
+                    pkCols.length = 0;
+                    kCols.forEach(c => pkCols.push(c));
+                    console.log('Import: composite PK fallback for', tableName, ':', JSON.stringify(pkCols));
+                }
+            }
+            
+            // Log PK info for debugging
+            if (tableName === 'cd_type_type' || pkCols.length > 1) {
+                console.log('Import PK for', tableName, ':', JSON.stringify(pkCols), 'rows to import:', rows.length);
+            }
+            
             // Note: varchar columns are widened to text on first import only if needed
             // Skip per-column ALTER for speed - data that's too long will be truncated
             
             let inserted = 0, errors = 0, lastError = '';
             const BATCH_SIZE = 100;
+            
+            // For tables WITHOUT a PK: delete all existing rows first, then plain INSERT
+            // This handles link tables like cd_type_type that have no PK constraint
+            if (pkCols.length === 0) {
+                try {
+                    await client.query(`DELETE FROM "${tableName}"`);
+                    console.log('Import: no PK for', tableName, '- deleted all rows, will insert', rows.length);
+                } catch(e) {
+                    console.log('Import: delete failed for', tableName, ':', e.message);
+                }
+            }
             
             for (let bi = 0; bi < rows.length; bi += BATCH_SIZE) {
                 const batch = rows.slice(bi, bi + BATCH_SIZE);
