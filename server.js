@@ -75,6 +75,18 @@ app.get('/api/diagnostics', async (req, res) => {
         );
         results.duplicate_types = dupes.rows;
         
+        // Check constraints on cd_type_type
+        const ttConstraints = await pool.query(
+            "SELECT tc.constraint_name, tc.constraint_type, kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_schema='public' AND tc.table_name='cd_type_type'"
+        );
+        results.cd_type_type_constraints = ttConstraints.rows;
+        
+        // Check what PK detection returns for cd_type_type
+        const ttPK = await pool.query(
+            "SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name WHERE tc.table_schema='public' AND tc.table_name='cd_type_type' AND tc.constraint_type='PRIMARY KEY'"
+        );
+        results.cd_type_type_pk = ttPK.rows;
+        
         // Sample cd_type_type links
         const sampleLinks = await pool.query('SELECT * FROM cd_type_type LIMIT 10');
         results.sample_links = sampleLinks.rows;
