@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.31', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.32', build: '08-03-2026 17:45' });
 });
 
 // One-time repair: restore missing cd_type_type links
