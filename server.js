@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.20', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.21', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1342,12 +1342,32 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
         
         await client.query('COMMIT');
         console.log('Import: COMMITTED. Tables:', importResults.length, 'Rows:', totalRows);
+        
+        // VERIFICATION: compare source count vs actual DB count for every imported table
+        let verifyErrors = 0;
         for (const r of importResults) {
-            if (r.rows > 0) try { await client.query(`ANALYZE "${r.table}"`); } catch(e) {}
+            try {
+                const { rows: countRows } = await pool.query(`SELECT COUNT(*) as cnt FROM "${r.table}"`);
+                const dbCount = parseInt(countRows[0].cnt);
+                r.dbCount = dbCount;
+                if (r.total > 0 && r.rows !== r.total) {
+                    r.verified = false;
+                    r.verifyError = `Source: ${r.total}, imported: ${r.rows}, DB: ${dbCount}`;
+                    verifyErrors++;
+                    console.log('VERIFY FAIL:', r.table, r.verifyError);
+                } else {
+                    r.verified = true;
+                }
+            } catch(e) {
+                r.verified = false;
+                r.verifyError = e.message;
+            }
+            if (r.rows > 0) try { await pool.query(`ANALYZE "${r.table}"`); } catch(e) {}
         }
         
+        const success = verifyErrors === 0;
         invalidateSchemaCache();
-        _importStatus = { running: false, progress: 'Done', results: { success: true, tablesProcessed: importResults.length, totalRows, details: importResults }, error: null };
+        _importStatus = { running: false, progress: 'Done', results: { success, tablesProcessed: importResults.length, totalRows, verifyErrors, details: importResults }, error: null };
     } catch (err) {
         logError('Import', err);
         try { await client.query('ROLLBACK'); } catch(e) {}
