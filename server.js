@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.24', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.25', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -583,14 +583,20 @@ app.post('/api/query', express.json(), async (req, res) => {
 
 app.get('/api/stats/counts', async (req, res) => {
     try {
-        const { rows } = await pool.query(`
-            SELECT schemaname, relname as table_name, n_live_tup as count
-            FROM pg_stat_user_tables
-            WHERE schemaname = 'public'
-            ORDER BY relname
-        `);
+        // Get all CD_ tables
+        const { rows: tables } = await pool.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'cd_%' ORDER BY table_name"
+        );
         const counts = {};
-        rows.forEach(r => { counts[r.table_name] = parseInt(r.count); });
+        // Real COUNT(*) per table — accurate, no stale stats
+        for (const t of tables) {
+            try {
+                const { rows } = await pool.query(`SELECT COUNT(*) as c FROM "${t.table_name}"`);
+                counts[t.table_name] = parseInt(rows[0].c);
+            } catch(e) {
+                counts[t.table_name] = 0;
+            }
+        }
         res.json(counts);
     } catch (err) {
         res.status(500).json({ error: err.message });
