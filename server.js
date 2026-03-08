@@ -1263,14 +1263,16 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
-            // Fallback for link tables: if PK has only 1 column but table has multiple K_ columns,
-            // treat all K_ columns as composite PK (e.g. cd_type_type has k_type1 + k_type2)
+            // Fallback for link tables: if PK has only 1 column or none,
+            // use first two K_ columns + K_SEQ (if exists) as composite PK.
+            // This is the generic rule for ALL link tables in Spheeres.
             if (pkCols.length <= 1) {
-                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_'));
+                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_')).sort();
                 if (kCols.length >= 2) {
                     pkCols.length = 0;
-                    kCols.forEach(c => pkCols.push(c));
-                    console.log('Import: composite PK fallback for', tableName, ':', JSON.stringify(pkCols));
+                    pkCols.push(kCols[0], kCols[1]);
+                    if (dbCols['k_seq']) pkCols.push('k_seq');
+                    console.log('Import: link table PK for', tableName, ':', JSON.stringify(pkCols));
                 }
             }
             
