@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.21', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.22', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1274,6 +1274,9 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 continue;
             }
             
+            // SAVEPOINT per table: if this table fails, rollback only this table
+            await client.query(`SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`);
+            
             const colInfo = await client.query(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1",
                 [tableName]
@@ -1366,6 +1369,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     
                     if (cols.length === 0) continue;
                     try {
+                        await client.query('SAVEPOINT sp_row');
                         if (hasRealConstraint && pkCols.length > 0) {
                             // Build conflict columns (supports composite PKs)
                             const conflictCols = pkCols.filter(pk => cols.includes(`"${pk}"`));
@@ -1385,7 +1389,9 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                             await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
                         }
                         inserted++;
+                        await client.query('RELEASE SAVEPOINT sp_row');
                     } catch (e) {
+                        try { await client.query('ROLLBACK TO SAVEPOINT sp_row'); } catch(e2) {}
                         errors++;
                         if (errors <= 3) lastError = e.message;
                     }
@@ -1393,7 +1399,16 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             }
             
             totalRows += inserted;
-            importResults.push({ table: tableName, rows: inserted, total: rows.length, errors, lastError });
+            
+            if (errors > 0) {
+                // Rollback this table's changes
+                try { await client.query(`ROLLBACK TO SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
+                importResults.push({ table: tableName, rows: 0, total: rows.length, errors, lastError });
+            } else {
+                // Release savepoint on success
+                try { await client.query(`RELEASE SAVEPOINT sp_${tableName.replace(/[^a-z0-9_]/g, '')}`); } catch(e) {}
+                importResults.push({ table: tableName, rows: inserted, total: rows.length, errors: 0, lastError: '' });
+            }
             _importStatus.progress = `Imported ${importResults.length}/${tableNames.length} tables (${totalRows} rows)`;
         }
         
