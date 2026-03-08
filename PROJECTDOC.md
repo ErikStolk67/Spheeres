@@ -9,8 +9,8 @@ Single-page app: one HTML file + Node.js backend.
 
 | Item | Value |
 |------|-------|
-| Frontend | `metalspheeres-app.html` (~5550 lines, HTML + CSS + JS) |
-| Backend | `server.js` (~1690 lines, Node.js/Express) |
+| Frontend | `metalspheeres-app.html` (~5850 lines, HTML + CSS + JS) |
+| Backend | `server.js` (~1880 lines, Node.js/Express) |
 | Database | PostgreSQL on Neon (cloud) |
 | Hosting | Render.com free tier, auto-deploy from GitHub `main` |
 | URL | https://spheeres.onrender.com |
@@ -305,11 +305,22 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 | `/api/build-tables` | POST | Create PostgreSQL tables from dictionary |
 | `/api/restore-cd-tables` | POST | Restore cd_tables from PostgreSQL catalog (emergency recovery) |
 
-### 5.4 Debug
+### 5.4 Type Hierarchy (cd_type_type)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/type-links` | POST | Create cd_type_type link: `{parent_id, child_id, k_seq}` |
+| `/api/type-links/:parentId/:childId` | DELETE | Delete a cd_type_type link |
+| `/api/type-links/bulk-delete` | POST | Delete all links for given type_ids |
+| `/api/type-links/reorder` | PUT | Update k_seq for children of a parent |
+
+### 5.5 Debug & System
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/debug/errors` | GET | Import status, last 20 errors, memory usage in MB |
+| `/api/version` | GET | Server version + build timestamp (Europe/Amsterdam) |
+| `/api/query` | POST | Execute SELECT query: `{sql}` → `{rows, fields, rowCount, elapsed}` |
 
 ### 5.5 Import System (XML/ZIP)
 
@@ -320,13 +331,30 @@ If the statistics page says 24 links but the matrix shows fewer, the prefix map 
 3. Server responds immediately with `{success: true, message: 'Import started'}`
 4. Import runs in background, updates `_importStatus` with progress
 5. Frontend polls `/api/import-status` every 1s, shows status bar (bottom-right, non-blocking)
-6. On completion, import report shows per-table results
+6. On completion, import report shows per-table results with verification
 
-**Critical: NO TRUNCATE.** Import uses UPSERT (ON CONFLICT DO UPDATE) to prevent data loss if interrupted.
+**Import strategy per table type:**
+- **Entity/lookup** (has DB PK constraint): UPSERT via `ON CONFLICT DO UPDATE`
+- **Link table** (no DB constraint, ≥2 K_ cols): DELETE all rows + plain INSERT
+- **Subtable** (no DB constraint, 1 K_ col + K_SEQ): DELETE all rows + plain INSERT
+- `ON CONFLICT` requires a real UNIQUE/PK constraint in PostgreSQL — never use it on tables without one
 
-**k_table mapping issue:** cd_types.f_table contains original production k_table values (e.g. 20166, 19722). cd_tables.k_table may have different values from XSD seed (1, 2, 3...). After ZIP import, cd_tables gets the original k_table values, and the JOIN works correctly.
+**Table type naming convention:**
+- Entity: `CD_TABLENAME` (single name)
+- Lookup: `CD_LK_LOOKUPNAME`
+- Link table: `CD_XXXX_YYYY` (both parts exactly 4 letters, e.g. CD_TABL_FIEL, CD_TYPE_TYPE)
+- Subtable: `CD_XXXX_YYYYY` (at least one part > 4 letters, e.g. CD_TABL_TABSETTINGS)
 
-**Startup health check:** On server start, checks if cd_tables is empty and logs a warning. Does NOT auto-seed (was causing boot crashes). Use `POST /api/restore-cd-tables` for manual recovery.
+**Key uniqueness rules (generic for all tables):**
+- Entity/lookup: single K_ field is unique PK
+- Link table: first two K_ fields + K_SEQ (optional) form composite unique key
+- Subtable: single K_ field + K_SEQ (optional) form composite unique key
+
+**Post-import verification:** After COMMIT, every table is checked: source record count vs imported count. Mismatches are flagged as verification failures in the import report.
+
+**k_table mapping:** cd_types.f_table contains original production k_table values. After ZIP import, cd_tables gets the original k_table values, and JOINs work correctly.
+
+**Version & deploy indicator:** Frontend shows version + deploy status (⟳ deploying / ✓ live) via `/api/version` endpoint. HTML served with `Cache-Control: no-cache` to prevent stale versions.
 
 ---
 
@@ -698,28 +726,47 @@ API: `GET /api/entity-types/:entityName` returns `{ types: [...], k_table: N }`
 
 ### 12.7 Types Editor
 
-Opens when clicking Type count in the matrix. Two-panel layout:
+Opens when clicking Type count in the matrix. Two-panel layout.
+
+**Data model:**
+- `cd_types` = unique type records (one per type, never duplicated)
+- `cd_type_type` = hierarchy links (k_type1=parent, k_type2=child)
+- A type can appear under multiple parents via multiple cd_type_type links (clone)
+- `isroot` field on cd_types marks root-level types
+
+**Hierarchy rendering (follows Erik's SQL query):**
+- L1 = root types (WHERE isroot=true)
+- L2 = children via cd_type_type links
+- If a child has isroot=true, its subtree is NOT expanded here (shown under its own root entry)
+- This prevents duplicate subtrees while allowing clones
 
 **Left panel — Tree:**
-- Hierarchical tree of types for the entity
-- Root types: f_type = 19181 (common root) or null
-- Children: f_type points to parent's k_type, shown indented
-- Drag & drop:
-  - Up/down: reorder within same level
-  - Right (>60px): make child of drop target
-  - Blue indicators show drop position
-  - Changes saved to API immediately (f_type updated)
-- "+" button: creates new type (POST /api/tables/:k_table/types)
-- Default "—" item always shown at top
+- Uniform grey blocks (65% width), indented 24px per level
+- Drag & drop via document-level event delegation (IIFE):
+  - Left 25%: promote to parent's level (or ROOT)
+  - Right 25%: make child of drop target
+  - Top/bottom: reorder at same level
+  - Visual indicators: data-zone attribute (blue/yellow highlights)
+- Click: selects type (light blue highlight), updates properties panel WITHOUT re-rendering tree
+- "+" button: creates new cd_types record as root
+- Clone button: sets isroot=true on selected type (appears as both root and child)
+- Default "-" item always shown at top
 
 **Right panel — Properties (General tab):**
 - Name: editable, saved on Save
 - Type: Entity type (dropdown)
 - Kind: from f_kind
-- Icon: icon selector
+- Icon: FontAwesome icon selector
 - Flow folder: checkbox (flowfolder field)
 - Status: Enable/Disable
 - Description: memo_plaintext
+
+**Save logic:**
+- Deduplicates links (same parent+child only once)
+- Deletes all old cd_type_type links for this entity's types (bulk-delete)
+- Inserts new links from current tree state
+- Updates isroot on each cd_types record
+- Does NOT create duplicate cd_types records for clones
 
 **Additional tabs (planned):**
 - Status designer
@@ -757,9 +804,12 @@ The link direction determines the label shown:
 | 11 | **Drag is column-based** | Drag on horizontal axis (column headers), NOT row headers. Within same block only. |
 | 12 | **k_table mismatch** | cd_types.f_table has original production k_table values. cd_tables.k_table may differ after XSD seed. ZIP import fixes this by overwriting cd_tables with original PKs. |
 | 13 | **Render OOM on large uploads** | Server crashes on 8MB+ files. ZIP must be extracted client-side (JSZip). Individual XMLs sent one at a time. |
-| 14 | **No TRUNCATE in imports** | TRUNCATE was removed. Import uses UPSERT. If TRUNCATE is reintroduced, a crash mid-import will leave tables empty. |
+| 14 | **Import: no ON CONFLICT without constraint** | Link/subtables have no DB constraint. ON CONFLICT fails and aborts the transaction. Use DELETE+INSERT for these tables. |
 | 15 | **Import status is per-file** | When importing a ZIP with multiple XMLs, _importStatus only shows the last file's result. Frontend merges results from all files. |
 | 16 | **Express 5.x** | The project uses Express 5.2.1 (not v4). Some middleware patterns differ. |
+| 17 | **Drag events + innerHTML** | e.target can be a text node (nodeType 3) when HTML is built via innerHTML. Always check nodeType before calling closest(). |
+| 18 | **HTML cache** | HTML must be served with Cache-Control: no-cache. Without it, Ctrl+Shift+R may still serve stale HTML. |
+| 19 | **Import verification** | After import, source count vs DB count must match per table. Mismatches indicate lost records (e.g. composite PK issue). |
 
 ---
 
@@ -799,6 +849,9 @@ The link direction determines the label shown:
 | v0.9.12 | 1011cf3 | Types Editor rewrite: cd_type_type hierarchy, proven drag & drop |
 | v0.9.13-17 | various | Version display, deploy indicator, timestamp fixes |
 | v0.9.18 | bf2c34a | Fix drag in app (text node handling), Query Editor, import composite PK fix |
+| v0.9.19 | 826ea16 | Import: DELETE+INSERT for link/subtables without DB constraints |
+| v0.9.20 | a98ba79 | Import: no ON CONFLICT without real DB constraint (fixes transaction abort) |
+| v0.9.21 | 5a625ee | Import verification: source count vs DB count per table |
 
 ---
 
@@ -816,10 +869,14 @@ The link direction determines the label shown:
 - Use contiguous sort values (1,2,3...) when reordering
 - Designers only interact with CD tables (dictionary)
 - Search screen: each designer searches its own CD table
+- Bump MS_VERSION in both frontend and server on every push
+- Verify import counts: source records must equal imported records
+- Use document-level event delegation for popup content (innerHTML destroys element-level events)
+- Check e.target.nodeType === 3 (text node) before calling closest()
 
 ### ❌ DO NOT:
 - Modify table structures (no ALTER TABLE, no CREATE TABLE, no DROP)
-- Use TRUNCATE in imports (use UPSERT instead)
+- Use ON CONFLICT on tables without a real DB UNIQUE/PK constraint
 - Send large files (>2MB) to server in one request (unzip client-side)
 - Block startup with heavy queries (no getSchemaFull at boot)
 - Add F_ column scanning for relationship detection
@@ -833,6 +890,9 @@ The link direction determines the label shown:
 - Show entities/subs/links as children in Lookup Editor (only LK_ tables)
 - Use entity dropdown selectors in designers (use search screen instead)
 - Push during an active import (redeploy interrupts background work)
+- Attach events on elements inside innerHTML-rebuilt popups (use document delegation)
+- Create duplicate cd_types records for clones (clones are cd_type_type links only)
+- Report "0 errors" without verifying actual record counts
 
 ### 🔍 WHEN IN DOUBT:
 - Look at the reference screenshots uploaded by the user
