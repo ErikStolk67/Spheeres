@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.23', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.24', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1323,27 +1323,25 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
-            // Determine table type and correct import strategy
-            const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_') && c !== 'k_seq').sort();
-            const hasKseq = !!dbCols['k_seq'];
-            const isLinkTable = kCols.length >= 2;
-            const isSubTable = kCols.length === 1 && hasKseq;
+            // UNIVERSAL RULE: All K_ fields together form the unique key.
+            // Ignore the DB PK constraint — it may be incomplete (e.g. only k_type1).
+            // Always use ALL K_ columns as the composite key.
+            const allKcols = Object.keys(dbCols).filter(c => c.startsWith('k_')).sort();
             
-            // For link/subtables: ALWAYS use DELETE+INSERT
-            // The DB PK may only cover k_type1 (not k_type1+k_type2), so ON CONFLICT
-            // would overwrite records with the same first key. DELETE+INSERT is safe.
-            // For entities/lookups (1 K_ col, no K_SEQ): use UPSERT with the DB PK.
-            const useDeleteInsert = isLinkTable || isSubTable;
-            const useUpsert = !useDeleteInsert && pkCols.length > 0;
+            // If multiple K_ columns: DELETE+INSERT (ON CONFLICT needs a matching constraint)
+            // If single K_ column: UPSERT using that column (safe, it's truly unique)
+            const useDeleteInsert = allKcols.length > 1;
+            const useUpsert = allKcols.length === 1;
+            const upsertCol = useUpsert ? allKcols[0] : null;
             
             if (useDeleteInsert) {
-                console.log('Import:', tableName, '- link/sub table, DELETE+INSERT, rows:', rows.length);
+                console.log('Import:', tableName, '- composite key', JSON.stringify(allKcols), ', DELETE+INSERT, rows:', rows.length);
             }
             
             let inserted = 0, errors = 0, lastError = '';
             const BATCH_SIZE = 100;
             
-            // Delete all existing rows for link/subtables
+            // Delete all existing rows for tables with composite keys
             if (useDeleteInsert) {
                 await client.query(`DELETE FROM "${tableName}"`);
             }
@@ -1374,20 +1372,13 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     if (cols.length === 0) continue;
                     try {
                         await client.query('SAVEPOINT sp_row');
-                        if (useUpsert && pkCols.length > 0) {
-                            // Build conflict columns (supports composite PKs)
-                            const conflictCols = pkCols.filter(pk => cols.includes(`"${pk}"`));
-                            if (conflictCols.length > 0) {
-                                const conflictStr = conflictCols.map(c => `"${c}"`).join(',');
-                                const updateCols = cols.filter(c => !conflictCols.includes(c.replace(/"/g, '')));
-                                if (updateCols.length > 0) {
-                                    const updateSet = updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ');
-                                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT (${conflictStr}) DO UPDATE SET ${updateSet}`, vals);
-                                } else {
-                                    await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT (${conflictStr}) DO NOTHING`, vals);
-                                }
+                        if (useUpsert && upsertCol && cols.includes(`"${upsertCol}"`)) {
+                            const updateCols = cols.filter(c => c !== `"${upsertCol}"`);
+                            if (updateCols.length > 0) {
+                                const updateSet = updateCols.map(c => `${c} = EXCLUDED.${c}`).join(', ');
+                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${upsertCol}") DO UPDATE SET ${updateSet}`, vals);
                             } else {
-                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
+                                await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')}) ON CONFLICT ("${upsertCol}") DO NOTHING`, vals);
                             }
                         } else {
                             await client.query(`INSERT INTO "${tableName}" (${cols.join(',')}) VALUES (${ph.join(',')})`, vals);
