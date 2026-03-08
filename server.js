@@ -1263,16 +1263,23 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
             
-            // Fallback for link tables: if PK has only 1 column or none,
-            // use first two K_ columns + K_SEQ (if exists) as composite PK.
-            // This is the generic rule for ALL link tables in Spheeres.
+            // Fallback PK for link tables and subtables when DB has no/insufficient PK:
+            // - Link table (≥2 K_ columns): first two K_ columns + K_SEQ if exists
+            // - Subtable (1 K_ column + K_SEQ): that K_ column + K_SEQ
             if (pkCols.length <= 1) {
-                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_')).sort();
+                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_') && c !== 'k_seq').sort();
+                const hasKseq = !!dbCols['k_seq'];
                 if (kCols.length >= 2) {
+                    // Link table
                     pkCols.length = 0;
                     pkCols.push(kCols[0], kCols[1]);
-                    if (dbCols['k_seq']) pkCols.push('k_seq');
+                    if (hasKseq) pkCols.push('k_seq');
                     console.log('Import: link table PK for', tableName, ':', JSON.stringify(pkCols));
+                } else if (kCols.length === 1 && hasKseq) {
+                    // Subtable
+                    pkCols.length = 0;
+                    pkCols.push(kCols[0], 'k_seq');
+                    console.log('Import: subtable PK for', tableName, ':', JSON.stringify(pkCols));
                 }
             }
             
