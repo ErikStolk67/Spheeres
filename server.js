@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.22', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.23', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1322,24 +1322,28 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                 WHERE tc.table_schema='public' AND tc.table_name=$1 AND tc.constraint_type='PRIMARY KEY'
             `, [tableName]);
             const pkCols = pkResult.rows.map(r => r.column_name);
-            const hasRealConstraint = pkResult.rows.length > 0;
             
-            // For tables WITHOUT a real DB constraint (link tables, subtables):
-            // Use DELETE + plain INSERT (ON CONFLICT requires a real constraint)
-            let useDeleteInsert = false;
-            if (!hasRealConstraint) {
-                const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_') && c !== 'k_seq').sort();
-                const hasKseq = !!dbCols['k_seq'];
-                if (kCols.length >= 2 || (kCols.length === 1 && hasKseq)) {
-                    useDeleteInsert = true;
-                    console.log('Import:', tableName, '- no DB constraint, DELETE+INSERT, rows:', rows.length);
-                }
+            // Determine table type and correct import strategy
+            const kCols = Object.keys(dbCols).filter(c => c.startsWith('k_') && c !== 'k_seq').sort();
+            const hasKseq = !!dbCols['k_seq'];
+            const isLinkTable = kCols.length >= 2;
+            const isSubTable = kCols.length === 1 && hasKseq;
+            
+            // For link/subtables: ALWAYS use DELETE+INSERT
+            // The DB PK may only cover k_type1 (not k_type1+k_type2), so ON CONFLICT
+            // would overwrite records with the same first key. DELETE+INSERT is safe.
+            // For entities/lookups (1 K_ col, no K_SEQ): use UPSERT with the DB PK.
+            const useDeleteInsert = isLinkTable || isSubTable;
+            const useUpsert = !useDeleteInsert && pkCols.length > 0;
+            
+            if (useDeleteInsert) {
+                console.log('Import:', tableName, '- link/sub table, DELETE+INSERT, rows:', rows.length);
             }
             
             let inserted = 0, errors = 0, lastError = '';
             const BATCH_SIZE = 100;
             
-            // Delete all existing rows for tables without constraints
+            // Delete all existing rows for link/subtables
             if (useDeleteInsert) {
                 await client.query(`DELETE FROM "${tableName}"`);
             }
@@ -1370,7 +1374,7 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
                     if (cols.length === 0) continue;
                     try {
                         await client.query('SAVEPOINT sp_row');
-                        if (hasRealConstraint && pkCols.length > 0) {
+                        if (useUpsert && pkCols.length > 0) {
                             // Build conflict columns (supports composite PKs)
                             const conflictCols = pkCols.filter(pk => cols.includes(`"${pk}"`));
                             if (conflictCols.length > 0) {
