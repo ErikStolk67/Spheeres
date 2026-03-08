@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.30', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.31', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1167,38 +1167,35 @@ app.get('/api/import-status', (req, res) => {
     res.json(_importStatus);
 });
 
-app.post('/api/import-xml', async (req, res) => {
+app.post('/api/import-xml', express.raw({ type: '*/*', limit: '500mb' }), async (req, res) => {
     if (_importStatus.running) {
         return res.json({ success: false, error: 'Import already running: ' + _importStatus.progress });
     }
-    _importStatus = { running: true, progress: 'Receiving file...', results: null, error: null };
+    _importStatus = { running: true, progress: 'Saving upload to disk...', results: null, error: null };
     
-    // Save upload to temp file on disk (not in memory)
+    // Save buffer to temp file immediately to free memory
     const tmpFile = path.join(os.tmpdir(), 'import_' + Date.now() + '.dat');
-    const writeStream = fs.createWriteStream(tmpFile);
-    let totalBytes = 0;
-    
-    req.on('data', (chunk) => {
-        totalBytes += chunk.length;
-        writeStream.write(chunk);
-        _importStatus.progress = 'Receiving... ' + Math.round(totalBytes / 1024 / 1024) + ' MB';
-    });
-    req.on('end', () => {
-        writeStream.end();
-        res.json({ success: true, message: 'Upload received (' + Math.round(totalBytes / 1024 / 1024) + ' MB). Processing...' });
+    try {
+        fs.writeFileSync(tmpFile, req.body);
+        const sizeMB = Math.round(req.body.length / 1024 / 1024);
+        console.log('Import: received', sizeMB, 'MB, saved to', tmpFile);
+        
+        // Free the buffer from memory
+        req.body = null;
+        
+        res.json({ success: true, message: 'Upload received (' + sizeMB + ' MB). Processing...' });
+        
         processImportFile(tmpFile).catch(e => {
             logError('Import process', e);
             _importStatus = { running: false, progress: 'Error', results: null, error: e.message };
         }).finally(() => {
             try { fs.unlinkSync(tmpFile); } catch(e) {}
         });
-    });
-    req.on('error', (e) => {
-        writeStream.end();
+    } catch(e) {
         try { fs.unlinkSync(tmpFile); } catch(e2) {}
-        _importStatus = { running: false, progress: 'Error', results: null, error: 'Upload failed: ' + e.message };
-        res.json({ success: false, error: 'Upload failed' });
-    });
+        _importStatus = { running: false, progress: 'Error', results: null, error: 'Save failed: ' + e.message };
+        res.json({ success: false, error: 'Save failed: ' + e.message });
+    }
 });
 
 async function processImportFile(tmpFile) {
