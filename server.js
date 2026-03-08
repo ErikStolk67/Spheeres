@@ -28,7 +28,7 @@ const pool = new Pool({
 // ============================================================================
 
 app.get('/api/version', (req, res) => {
-    res.json({ version: 'v0.9.27', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
+    res.json({ version: 'v0.9.28', build: new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', dateStyle: 'short', timeStyle: 'short' }) });
 });
 
 // One-time repair: restore missing cd_type_type links
@@ -1336,6 +1336,22 @@ app.post('/api/import-xml', express.raw({ type: '*/*', limit: '100mb' }), async 
             const BATCH_SIZE = 100;
             
             await client.query(`DELETE FROM "${tableName}"`);
+            
+            // Drop PK/unique constraints that may be incomplete (e.g. PK on k_type1 only)
+            // This allows INSERT of all records without duplicate key errors
+            try {
+                const constraints = await client.query(`
+                    SELECT constraint_name FROM information_schema.table_constraints 
+                    WHERE table_schema='public' AND table_name=$1 AND constraint_type IN ('PRIMARY KEY','UNIQUE')
+                `, [tableName]);
+                for (const c of constraints.rows) {
+                    await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${c.constraint_name}"`);
+                    console.log('Import: dropped constraint', c.constraint_name, 'on', tableName);
+                }
+            } catch(e) {
+                console.log('Import: constraint drop failed for', tableName, e.message);
+            }
+            
             console.log('Import:', tableName, '- DELETE+INSERT, source rows:', rows.length);
 
             // Process all rows with plain INSERT
